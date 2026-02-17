@@ -1,65 +1,100 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Layers3, LogIn, ShieldCheck, Users } from "lucide-react";
+
+import { OtpForm } from "@/components/auth/otp-form";
+import { Button } from "@/components/ui/button";
+import { StatusPill } from "@/components/ui/status-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
+
+const highlights = [
+  {
+    title: "Role-based dashboards",
+    body: "Faculty, HoDs, Registrar, Accounts and Director land on their own workspace after sign in.",
+    icon: Users,
+  },
+  {
+    title: "OTP-only security",
+    body: "No passwords to remember. Every session is checked through institute email OTPs.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "End-to-end workflows",
+    body: "One place to request earned leave, ex-India visits, LTC, air travel exceptions and more.",
+    icon: Layers3,
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="space-y-12">
+      <SurfaceCard className="grid gap-10 bg-gradient-to-br from-white via-white to-slate-50 p-8 lg:grid-cols-2">
+        <div className="space-y-6">
+          <StatusPill label="LeaveFlow Portal" tone="review" />
+          <div className="space-y-3">
+            <h1 className="text-4xl font-semibold leading-tight text-slate-900">
+              Sign in to continue to your IIT Ropar leave dashboard.
+            </h1>
+            <p className="text-base text-slate-500">
+              Every stakeholder needs to authenticate before viewing approvals
+              or raising a request. Use the shared institute email login below;
+              once verified we will route you to the dashboard associated with
+              your role.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button asChild>
+              <Link href="/login" className="flex items-center gap-2">
+                <LogIn className="h-4 w-4" /> Log in to Continue
+              </Link>
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="#learn-more" className="flex items-center gap-2">
+                Learn how it works <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <p className="text-sm text-slate-500">
+            Need access? Request it from Establishment & Admin. After
+            onboarding, this page will always ask you to log in before showing
+            personalised data.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-4">
+          <OtpForm />
         </div>
-      </main>
+      </SurfaceCard>
+
+      <section id="learn-more" className="space-y-6">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+            Before you sign in
+          </p>
+          <h2 className="text-3xl font-semibold text-slate-900">
+            What to expect after authentication
+          </h2>
+          <p className="text-base text-slate-500">
+            Once the OTP is verified we will take you straight to the experience
+            configured for your role. These cards outline what each persona can
+            do after logging in. More institute-specific information will appear
+            here soon.
+          </p>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-3">
+          {highlights.map((highlight) => (
+            <SurfaceCard
+              key={highlight.title}
+              className="h-full space-y-3 border-slate-200/80 p-5"
+            >
+              <highlight.icon className="h-6 w-6 text-slate-400" />
+              <p className="text-lg font-semibold text-slate-900">
+                {highlight.title}
+              </p>
+              <p className="text-sm text-slate-500">{highlight.body}</p>
+            </SurfaceCard>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

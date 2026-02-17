@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum RoleKey {
+  FACULTY
+  STAFF
+  HOD
+  ASSOCIATE_HOD
+  DEAN
+  REGISTRAR
+  DIRECTOR
+  ACCOUNTS
+  ESTABLISHMENT
+}
+
+enum DepartmentType {
+  ACADEMIC
+  ADMINISTRATIVE
+  ESTABLISHMENT
+  ACCOUNTS
+  DIRECTORATE
+}
+
+enum LeaveStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  RETURNED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  ESCALATED
+  SKIPPED
+}
+
+enum WorkflowActor {
+  APPLICANT
+  HOD
+  ASSOCIATE_HOD
+  DEAN
+  REGISTRAR
+  DIRECTOR
+  ACCOUNTS
+  ESTABLISHMENT
+}
+
+model Department {
+  id          String         @id @default(cuid())
+  name        String
+  code        String         @unique
+  type        DepartmentType
+  description String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  users       User[]
+}
+
+model Role {
+  id          String    @id @default(cuid())
+  name        String
+  key         RoleKey   @unique
+  description String?
+  isApprover  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users       User[]
+}
+
+model User {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  name                String
+  employeeCode        String?           @unique
+  designation         String?
+  phone               String?
+  roleId              String?
+  departmentId        String?
+  reportsToId         String?
+  associateApproverId String?
+  isTeaching          Boolean           @default(false)
+  isActive            Boolean           @default(true)
+  lastLoginAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  role                Role?             @relation(fields: [roleId], references: [id])
+  department          Department?       @relation(fields: [departmentId], references: [id])
+  reportsTo           User?             @relation("ReportingChain", fields: [reportsToId], references: [id])
+  directReports       User[]            @relation("ReportingChain")
+  associateApprover   User?             @relation("AssociateApprover", fields: [associateApproverId], references: [id])
+  delegatedApprovers  User[]            @relation("AssociateApprover")
+  leaveApplications   LeaveApplication[] @relation("Applicant")
+  assignedSteps       ApprovalStep[]    @relation("StepAssigned")
+  actedSteps          ApprovalStep[]    @relation("StepActor")
+  escalatedSteps      ApprovalStep[]    @relation("StepEscalated")
+  notifications       Notification[]
+  attachments         LeaveAttachment[]
+  officeOrders        OfficeOrder[]     @relation("IssuedOrders")
+  otpTokens           OtpToken[]
+  leaveBalances       LeaveBalance[]
+}
+
+model LeaveType {
+  id                       String         @id @default(cuid())
+  name                     String         @unique
+  code                     String         @unique
+  description              String?
+  category                 String
+  maxDaysPerRequest        Int?
+  requiresOfficeOrder      Boolean        @default(false)
+  requiresDirectorApproval Boolean        @default(false)
+  requiresAccountsReview   Boolean        @default(false)
+  requiresTravelPermission Boolean        @default(false)
+  workflowNotes            String?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  leaveApplications        LeaveApplication[]
+  balances                 LeaveBalance[]
+}
+
+model LeaveBalance {
+  id             String    @id @default(cuid())
+  userId         String
+  leaveTypeId    String
+  totalAllocated Int
+  totalConsumed  Int       @default(0)
+  totalEncashed  Int       @default(0)
+  periodStart    DateTime
+  periodEnd      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User      @relation(fields: [userId], references: [id])
+  leaveType      LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([userId, leaveTypeId, periodStart])
+}
+
+model LeaveApplication {
+  id                       String         @id @default(cuid())
+  referenceCode            String         @unique
+  applicantId              String
+  leaveTypeId              String
+  startDate                DateTime
+  endDate                  DateTime
+  totalDays                Int
+  status                   LeaveStatus    @default(DRAFT)
+  purpose                  String
+  destination              String?
+  exIndia                  Boolean        @default(false)
+  stationLeave             Boolean        @default(false)
+  ltc                      Boolean        @default(false)
+  contactDuringLeave       String?
+  accountsClearanceNeeded  Boolean        @default(false)
+  directorApprovalNeeded   Boolean        @default(false)
+  submittedAt              DateTime?
+  approvedAt               DateTime?
+  cancelledAt              DateTime?
+  notes                    String?
+  metadata                 Json?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  applicant                User           @relation("Applicant", fields: [applicantId], references: [id])
+  leaveType                LeaveType      @relation(fields: [leaveTypeId], references: [id])
+  approvalSteps            ApprovalStep[]
+  attachments              LeaveAttachment[]
+  officeOrder              OfficeOrder?   @relation("ApplicationOfficeOrder")
+}
+
+model ApprovalStep {
+  id                 String          @id @default(cuid())
+  leaveApplicationId String
+  sequence           Int
+  actor              WorkflowActor
+  status             ApprovalStatus  @default(PENDING)
+  remarks            String?
+  assignedToId       String?
+  actedById          String?
+  escalatedToId      String?
+  actedAt            DateTime?
+  dueAt              DateTime?
+  metadata           Json?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  leaveApplication   LeaveApplication @relation(fields: [leaveApplicationId], references: [id])
+  assignedTo         User?            @relation("StepAssigned", fields: [assignedToId], references: [id])
+  actedBy            User?            @relation("StepActor", fields: [actedById], references: [id])
+  escalatedTo        User?            @relation("StepEscalated", fields: [escalatedToId], references: [id])
+
+  @@unique([leaveApplicationId, sequence])
+}
+
+model OfficeOrder {
+  id                 String         @id @default(cuid())
+  leaveApplicationId String         @unique
+  issuedById         String
+  orderNumber        String         @unique
+  documentUrl        String?
+  notes              String?
+  issuedAt           DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  leaveApplication   LeaveApplication @relation("ApplicationOfficeOrder", fields: [leaveApplicationId], references: [id])
+  issuedBy           User            @relation("IssuedOrders", fields: [issuedById], references: [id])
+}
+
+model LeaveAttachment {
+  id                 String         @id @default(cuid())
+  leaveApplicationId String
+  uploadedById       String
+  label              String
+  url                String
+  mimeType           String?
+  createdAt          DateTime       @default(now())
+
+  leaveApplication   LeaveApplication @relation(fields: [leaveApplicationId], references: [id])
+  uploadedBy         User            @relation(fields: [uploadedById], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  metadata  Json?
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+}
+
+model OtpToken {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String
+  expiresAt DateTime
+  consumedAt DateTime?
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+  userId    String?
+
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([email])
+  @@index([expiresAt])
+}

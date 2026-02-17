@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## LeaveFlow · IIT Ropar
+
+LeaveFlow is the new digital cockpit for IIT Ropar’s leave, LTC and travel permission workflows. It keeps HoDs, Dean Affairs, Registrar, Accounts and the Director’s office aligned with contextual nudges, OTP-based access and Prisma-backed audit trails.
+
+### Stack
+
+- Next.js 14 App Router + React 19 + TypeScript
+- Tailwind CSS v4 with a custom design system
+- Prisma ORM + PostgreSQL (Supabase friendly) with seed data covering departments, roles and approval steps
+- Zod + React Hook Form for resilient client UX
+- Nodemailer OTP delivery with console fallback
+- ESLint 9, Prettier 3, Husky + lint-staged for safe commits
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
+cp .env.example .env
+# fill DATABASE_URL / email SMTP settings (Supabase recommended)
+
+npm run prisma:generate
+npm run db:push           # creates tables in the target database
+npm run prisma:seed       # optional sample data + workflows
+
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit <http://localhost:3000> for the dashboard mock and <http://localhost:3000/login> for the OTP experience.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Key                           | Purpose                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` / `DIRECT_URL` | Postgres connection strings (Supabase works out-of-the-box).                                             |
+| `NEXT_PUBLIC_APP_URL`         | URL used when building absolute links inside emails.                                                     |
+| `NEXT_PUBLIC_OTP_MINUTES`     | Client hint for OTP expiry (mirrors server value).                                                       |
+| `EMAIL_*` vars                | SMTP credentials for Nodemailer. When omitted the server logs OTPs to the console for local development. |
+| `OTP_EXP_MINUTES`             | Server-side expiry enforcement for OTP tokens.                                                           |
 
-## Learn More
+See `.env.example` for defaults.
 
-To learn more about Next.js, take a look at the following resources:
+## Database shape
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Key Prisma models:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `User`, `Role`, `Department` — cover faculty vs non-teaching staff, HoD assignments and reporting chains.
+- `LeaveType`, `LeaveApplication`, `ApprovalStep` — describe each leave family, the application metadata and multi-hop approvals with escalation actors (HoD → Dean → Registrar → Accounts → Director).
+- `OfficeOrder`, `LeaveAttachment`, `Notification` — attach orders, supporting documents and alert stakeholders.
+- `OtpToken`, `LeaveBalance` — ephemeral OTPs with hashed storage and leave balance tracking per cycle.
 
-## Deploy on Vercel
+Run `npm run prisma:seed` for a realistic dataset (CSE department, HoD, Dean, Registrar, etc.) demonstrating Earned Leave, LTC and Air India exemption flows.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Auth flow
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. `/api/auth/request-otp` throttles requests, creates a hashed OTP row and emails/prints the code.
+2. `/api/auth/verify-otp` validates the code, stamps `lastLoginAt`, records a notification and returns a session token placeholder.
+3. The React client uses React Hook Form + Zod for both email and OTP steps with inline status states.
+
+## Available scripts
+
+| Script                      | Description                                                     |
+| --------------------------- | --------------------------------------------------------------- |
+| `npm run dev`               | Start the Next.js dev server with Turbopack.                    |
+| `npm run build` / `start`   | Production bundle & serve.                                      |
+| `npm run lint` / `lint:fix` | ESLint 9 (core web vitals config).                              |
+| `npm run format`            | Prettier sweep for TS/JS/MD/CSS/JSON.                           |
+| `npm run prisma:*`          | Helpers for `generate`, `db push`, migrations, deploy and seed. |
+| `npm run lint-staged`       | Invoked by Husky pre-commit to lint + format staged files.      |
+
+## Next steps
+
+- Wire Supabase Auth or a custom session layer using the OTP token + NextAuth/lucia.
+- Build per-leave dynamic forms (Earned, Station, LTC, Ex-India, Airline permission) using Prisma metadata.
+- Add role-based dashboards (HoD queue, Accounts backlog, Director escalations) and office-order PDF generation.
+- Integrate notifications (email + internal inbox) and escalate overdue approvals automatically.
