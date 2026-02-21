@@ -3,7 +3,6 @@ import { ArrowRight, Layers3, LogIn, ShieldCheck, Users } from "lucide-react";
 
 import { OtpForm } from "@/components/auth/otp-form";
 import { Button } from "@/components/ui/button";
-import { StatusPill } from "@/components/ui/status-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
 const highlights = [
@@ -29,7 +28,6 @@ export default function Home() {
     <div className="space-y-12">
       <SurfaceCard className="grid gap-10 bg-gradient-to-br from-white via-white to-slate-50 p-8 lg:grid-cols-2">
         <div className="space-y-6">
-          <StatusPill label="LeaveFlow Portal" tone="review" />
           <div className="space-y-3">
             <h1 className="text-4xl font-semibold leading-tight text-slate-900">
               Sign in to continue to your IIT Ropar leave dashboard.

@@ -1,4 +1,4 @@
-import { FilePlus2, Files, ReceiptIndianRupee } from "lucide-react";
+import { FilePlus2, Files, ReceiptIndianRupee, FileCheck2 } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -10,6 +10,7 @@ export const staffDashboard: RoleDashboardConfig = {
     "Request casual / earned leave, route through reporting officer, registrar and Accounts when needed.",
   helper:
     "Non-teaching flows always reach Registrar; LTC items also hit Accounts.",
+
   quickActions: [
     {
       label: "Request leave",
@@ -24,12 +25,19 @@ export const staffDashboard: RoleDashboardConfig = {
       icon: ReceiptIndianRupee,
     },
     {
+      label: "Submit joining letter",
+      description: "Upload joining report after returning from leave.",
+      cta: "Upload letter",
+      icon: FileCheck2,
+    },
+    {
       label: "Upload supporting docs",
       description: "Assign scans for registrar and accounts review.",
       cta: "Upload docs",
       icon: Files,
     },
   ],
+
   sections: [
     {
       title: "Reporting chain",
@@ -39,6 +47,11 @@ export const staffDashboard: RoleDashboardConfig = {
           label: "Notify reporting officer",
           detail: "Ensure supervisor knows your relief plan.",
           action: "Send note",
+        },
+        {
+          label: "Submit joining letter",
+          detail: "Mandatory after rejoining duty post leave.",
+          action: "Upload letter",
         },
         {
           label: "Check registrar status",

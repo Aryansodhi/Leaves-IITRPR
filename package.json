@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@prisma/client": "^6.1.0",
+    "@prisma/client": "^6.19.2",
     "@radix-ui/react-slot": "^1.2.4",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
@@ -44,7 +44,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
-    "prisma": "^6.1.0",
+    "prisma": "^6.19.2",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
