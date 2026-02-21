@@ -17,6 +17,8 @@ export type QuickAction = {
   description: string;
   cta: string;
   icon: ComponentType<{ className?: string }>;
+  href?: string;
+  target?: "_self" | "_blank" | "_parent" | "_top";
 };
 
 export type SectionItem = {

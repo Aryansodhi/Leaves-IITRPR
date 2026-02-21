@@ -1,4 +1,4 @@
-import { Building2, Layers3, MailPlus } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -11,22 +11,25 @@ export const establishmentDashboard: RoleDashboardConfig = {
   helper: "Every approved teaching leave lands here for order issue.",
   quickActions: [
     {
-      label: "Draft office order",
-      description: "Use pre-filled templates from workflows.",
-      cta: "Create order",
-      icon: Building2,
+      label: "Joining report",
+      description: "Collect joining confirmation to close office orders.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/establishment",
+      icon: FileCheck2,
     },
     {
-      label: "Limited leave tracker",
-      description: "Monitor quotas like special leave, sabbatical slots.",
-      cta: "View tracker",
-      icon: Layers3,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/establishment",
+      icon: FileSignature,
     },
     {
-      label: "Notify Accounts",
-      description: "Send sanctioned info for LTC / reimbursements.",
-      cta: "Send update",
-      icon: MailPlus,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/establishment",
+      icon: MapPin,
     },
   ],
   sections: [

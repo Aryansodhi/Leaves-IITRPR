@@ -1,4 +1,4 @@
-import { ArrowDownCircle, BriefcaseBusiness, Stamp } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -11,22 +11,25 @@ export const registrarDashboard: RoleDashboardConfig = {
   helper: "Staff leave always lands here after the reporting officer stage.",
   quickActions: [
     {
-      label: "Staff approvals",
-      description: "Requests cleared by reporting officers.",
-      cta: "Approve staff leave",
-      icon: BriefcaseBusiness,
+      label: "Joining report",
+      description: "Capture joining confirmations for staff cases.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/registrar",
+      icon: FileCheck2,
     },
     {
-      label: "Issue circulars",
-      description: "Notify departments about limited leave quotas.",
-      cta: "Draft circular",
-      icon: Stamp,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/registrar",
+      icon: FileSignature,
     },
     {
-      label: "Escalate to Director",
-      description: "Forward special cases (long breaks, sabbaticals).",
-      cta: "Escalate",
-      icon: ArrowDownCircle,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/registrar",
+      icon: MapPin,
     },
   ],
   sections: [

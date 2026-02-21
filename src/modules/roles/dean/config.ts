@@ -1,4 +1,4 @@
-import { CheckCircle2, Globe2, Users } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -12,22 +12,25 @@ export const deanDashboard: RoleDashboardConfig = {
     "Dean is the final stop for most teaching leave unless Director approval is flagged.",
   quickActions: [
     {
-      label: "Dean approval queue",
-      description: "Requests already vetted by HoDs.",
-      cta: "Open queue",
-      icon: CheckCircle2,
+      label: "Joining report",
+      description: "Record post-leave joining updates from departments.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/dean",
+      icon: FileCheck2,
     },
     {
-      label: "HoD leave nominations",
-      description: "Assign temporary HoDs when needed.",
-      cta: "Assign acting HoD",
-      icon: Users,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/dean",
+      icon: FileSignature,
     },
     {
-      label: "Ex-India pipeline",
-      description: "Monitor travel requiring Director or MoE approval.",
-      cta: "View pipeline",
-      icon: Globe2,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/dean",
+      icon: MapPin,
     },
   ],
   sections: [

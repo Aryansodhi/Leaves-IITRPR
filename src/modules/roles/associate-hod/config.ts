@@ -1,4 +1,4 @@
-import { BadgeCheck, Layers3, MailPlus } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -11,22 +11,25 @@ export const associateHoDDashboard: RoleDashboardConfig = {
   helper: "Only sees queues explicitly delegated by the HoD.",
   quickActions: [
     {
-      label: "Delegated approvals",
-      description: "Requests you must process while HoD is away.",
-      cta: "Open list",
-      icon: BadgeCheck,
+      label: "Joining report",
+      description: "Confirm faculty have rejoined after leave.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/associate-hod",
+      icon: FileCheck2,
     },
     {
-      label: "Notify Dean on decisions",
-      description: "Send summary whenever you approve / decline.",
-      cta: "Send update",
-      icon: MailPlus,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/associate-hod",
+      icon: FileSignature,
     },
     {
-      label: "Teaching continuity",
-      description: "Record class coverage commitments.",
-      cta: "Log coverage",
-      icon: Layers3,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/associate-hod",
+      icon: MapPin,
     },
   ],
   sections: [

@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, FileCheck2 } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -12,22 +12,25 @@ export const facultyDashboard: RoleDashboardConfig = {
     "Every request starts here. We route it to HoD ➝ Dean ➝ Establishment automatically.",
   quickActions: [
     {
-      label: "Apply Earned / Station Leave",
-      description: "Start EL, station leave or combine with travel plans.",
-      cta: "Start application",
-      icon: CalendarDays,
-    },
-    {
-      label: "Submit Joining Report",
+      label: "Joining report",
       description: "Confirm you are back from sanctioned leave.",
-      cta: "Submit report",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/faculty",
       icon: FileCheck2,
     },
     {
-      label: "Track My Requests",
-      description: "See what’s with HoD, Dean or Establishment.",
-      cta: "Open tracker",
-      icon: CheckCircle2,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/faculty",
+      icon: FileSignature,
+    },
+    {
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/faculty",
+      icon: MapPin,
     },
   ],
   sections: [

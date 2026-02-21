@@ -1,4 +1,4 @@
-import { ArrowLeftRight, CheckCircle2, Users } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -11,22 +11,25 @@ export const hodDashboard: RoleDashboardConfig = {
   helper: "HoD approvals precede Dean/Director for teaching staff.",
   quickActions: [
     {
-      label: "Faculty leave queue",
-      description: "All earned / station leave awaiting HoD signature.",
-      cta: "Review queue",
-      icon: CheckCircle2,
+      label: "Joining report",
+      description: "Confirm faculty have resumed duties after leave.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/hod",
+      icon: FileCheck2,
     },
     {
-      label: "Delegate to Associate HoD",
-      description: "Assign acting approver for your absence.",
-      cta: "Set delegate",
-      icon: ArrowLeftRight,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/hod",
+      icon: FileSignature,
     },
     {
-      label: "Teaching coverage",
-      description: "Plan lecture swaps before granting leave.",
-      cta: "Open coverage",
-      icon: Users,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/hod",
+      icon: MapPin,
     },
   ],
   sections: [

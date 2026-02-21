@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -42,9 +44,25 @@ export const RoleDashboard = ({ config }: { config: RoleDashboardConfig }) => (
                   <p className="text-sm text-slate-500">{action.description}</p>
                 </div>
               </div>
-              <Button variant="secondary" className="w-full justify-center">
-                {action.cta}
-              </Button>
+              {action.href ? (
+                <Button
+                  asChild
+                  variant="secondary"
+                  className="w-full justify-center"
+                >
+                  <Link
+                    href={action.href}
+                    target={action.target ?? "_self"}
+                    rel={action.target === "_blank" ? "noreferrer" : undefined}
+                  >
+                    {action.cta}
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="secondary" className="w-full justify-center">
+                  {action.cta}
+                </Button>
+              )}
             </div>
           </SurfaceCard>
         ))}

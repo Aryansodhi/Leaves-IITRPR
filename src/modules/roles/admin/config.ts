@@ -1,4 +1,4 @@
-import { FilePlus2, Upload } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -12,16 +12,25 @@ export const adminDashboard: RoleDashboardConfig = {
     "Admins never touch the database directly—use the forms below to invite faculty, staff, and approvers.",
   quickActions: [
     {
-      label: "Add single member",
-      description: "Capture name, role, and department for one colleague.",
-      cta: "Open form",
-      icon: FilePlus2,
+      label: "Joining report",
+      description: "Log rejoining confirmations from onboarded members.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/admin",
+      icon: FileCheck2,
     },
     {
-      label: "Upload CSV",
-      description: "Import many users at once with a spreadsheet export.",
-      cta: "Upload file",
-      icon: Upload,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/admin",
+      icon: FileSignature,
+    },
+    {
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/admin",
+      icon: MapPin,
     },
   ],
   sections: [

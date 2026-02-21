@@ -1,4 +1,4 @@
-import { FilePlus2, Files, ReceiptIndianRupee, FileCheck2 } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -13,28 +13,25 @@ export const staffDashboard: RoleDashboardConfig = {
 
   quickActions: [
     {
-      label: "Request leave",
-      description: "Casual, earned or restricted holiday for staff.",
-      cta: "New request",
-      icon: FilePlus2,
-    },
-    {
-      label: "LTC claim",
-      description: "Start Leave Travel Concession workflow with bills.",
-      cta: "Open LTC form",
-      icon: ReceiptIndianRupee,
-    },
-    {
-      label: "Submit joining letter",
+      label: "Joining report",
       description: "Upload joining report after returning from leave.",
-      cta: "Upload letter",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/staff",
       icon: FileCheck2,
     },
     {
-      label: "Upload supporting docs",
-      description: "Assign scans for registrar and accounts review.",
-      cta: "Upload docs",
-      icon: Files,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/staff",
+      icon: FileSignature,
+    },
+    {
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/staff",
+      icon: MapPin,
     },
   ],
 

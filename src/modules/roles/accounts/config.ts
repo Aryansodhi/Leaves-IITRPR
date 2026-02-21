@@ -1,4 +1,4 @@
-import { PlaneTakeoff, ReceiptIndianRupee, ShieldPlus } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -12,22 +12,25 @@ export const accountsDashboard: RoleDashboardConfig = {
     "Only specific leave categories need you—mostly LTC and airline permissions.",
   quickActions: [
     {
-      label: "LTC audit queue",
-      description: "Claims waiting for scrutiny.",
-      cta: "Open audits",
-      icon: ReceiptIndianRupee,
+      label: "Joining report",
+      description: "Record that the employee rejoined post leave.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/accounts",
+      icon: FileCheck2,
     },
     {
-      label: "Travel reimbursements",
-      description: "Non-LTC reimbursements tied to leave.",
-      cta: "View reimbursements",
-      icon: PlaneTakeoff,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/accounts",
+      icon: FileSignature,
     },
     {
-      label: "Airline exception log",
-      description: "Cases seeking non-Air India travel.",
-      cta: "Review log",
-      icon: ShieldPlus,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/accounts",
+      icon: MapPin,
     },
   ],
   sections: [

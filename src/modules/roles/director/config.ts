@@ -1,4 +1,4 @@
-import { Globe2, Landmark, ShieldCheck } from "lucide-react";
+import { FileCheck2, FileSignature, MapPin } from "lucide-react";
 
 import type { RoleDashboardConfig } from "../types";
 
@@ -11,22 +11,26 @@ export const directorDashboard: RoleDashboardConfig = {
   helper: "Only requests flagged by Dean/Registrar appear here.",
   quickActions: [
     {
-      label: "Executive approvals",
-      description: "Long leave, sabbatical, special cases.",
-      cta: "Review cases",
-      icon: Landmark,
+      label: "Joining report",
+      description: "Review critical rejoining confirmations escalated to you.",
+      cta: "Fill the form",
+      href: "/joining-report?returnTo=/dashboard/director",
+      // Open in same window; target removed.
+      icon: FileCheck2,
     },
     {
-      label: "Ex-India endorsements",
-      description: "Trips beyond 30 days or MoE clearance.",
-      cta: "View dossiers",
-      icon: Globe2,
+      label: "Earned leave form",
+      description: "Application for leave or extension (bilingual).",
+      cta: "Fill the form",
+      href: "/earned-leave?returnTo=/dashboard/director",
+      icon: FileSignature,
     },
     {
-      label: "Airline exemptions",
-      description: "Confirm or decline non-Air India requests.",
-      cta: "Sign decision",
-      icon: ShieldCheck,
+      label: "Station leave form",
+      description: "Station leave permission request.",
+      cta: "Fill the form",
+      href: "/station-leave?returnTo=/dashboard/director",
+      icon: MapPin,
     },
   ],
   sections: [
