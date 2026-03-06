@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  LeaveRequestDetailsModal,
+  type LeaveRequestDetails,
+} from "@/components/leaves/leave-request-details-modal";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
-type ApprovalRecord = {
+type ApprovalRecord = LeaveRequestDetails & {
   applicationId: string;
-  referenceCode: string;
   status: string;
   applicationStatus: string;
   appliedAt: string;
@@ -18,16 +21,29 @@ type ApprovalRecord = {
     department: string;
     designation: string;
   };
-  leaveWindow: {
-    from: string;
-    to: string;
-    totalDays: number;
-  };
-  purpose: string;
-  contactDuringLeave?: string | null;
-  destination?: string | null;
   remarks?: string | null;
   actedAt?: string | null;
+};
+
+const matchesDateFilters = (
+  value: string,
+  fromDate: string,
+  toDate: string,
+) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  if (fromDate) {
+    const from = new Date(`${fromDate}T00:00:00`);
+    if (parsed < from) return false;
+  }
+
+  if (toDate) {
+    const to = new Date(`${toDate}T23:59:59.999`);
+    if (parsed > to) return false;
+  }
+
+  return true;
 };
 
 const statusTone = (value: string) => {
@@ -49,6 +65,11 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<ApprovalRecord | null>(null);
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const loadItems = async () => {
     setLoading(true);
@@ -89,20 +110,52 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     void loadItems();
   }, []);
 
-  const pendingItems = useMemo(
+  const availableRoles = useMemo(
     () =>
-      items.filter(
-        (item) => item.status === "PENDING" || item.status === "IN_REVIEW",
+      Array.from(new Set(items.map((item) => item.applicant.role))).sort(
+        (a, b) => a.localeCompare(b),
       ),
     [items],
   );
 
-  const handledItems = useMemo(
+  const availableLeaveTypes = useMemo(
     () =>
-      items.filter(
-        (item) => item.status !== "PENDING" && item.status !== "IN_REVIEW",
+      Array.from(new Set(items.map((item) => item.leaveType))).sort((a, b) =>
+        a.localeCompare(b),
       ),
     [items],
+  );
+
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (roleFilter !== "ALL" && item.applicant.role !== roleFilter) {
+          return false;
+        }
+
+        if (typeFilter !== "ALL" && item.leaveType !== typeFilter) {
+          return false;
+        }
+
+        return matchesDateFilters(item.appliedAt, fromDate, toDate);
+      }),
+    [fromDate, items, roleFilter, toDate, typeFilter],
+  );
+
+  const pendingItems = useMemo(
+    () =>
+      filteredItems.filter(
+        (item) => item.status === "PENDING" || item.status === "IN_REVIEW",
+      ),
+    [filteredItems],
+  );
+
+  const handledItems = useMemo(
+    () =>
+      filteredItems.filter(
+        (item) => item.status !== "PENDING" && item.status !== "IN_REVIEW",
+      ),
+    [filteredItems],
   );
 
   const runDecision = async (
@@ -157,6 +210,67 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         </p>
       </SurfaceCard>
 
+      <SurfaceCard className="space-y-4 border-slate-200/80 p-5">
+        <div className="grid gap-4 md:grid-cols-3">
+          <label className="space-y-2 text-sm text-slate-700">
+            <span className="font-medium text-slate-900">Filter by role</span>
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+            >
+              <option value="ALL">All roles</option>
+              {availableRoles.map((itemRole) => (
+                <option key={itemRole} value={itemRole}>
+                  {itemRole}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-2 text-sm text-slate-700">
+            <span className="font-medium text-slate-900">
+              Filter by leave type
+            </span>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+            >
+              <option value="ALL">All leave types</option>
+              {availableLeaveTypes.map((leaveType) => (
+                <option key={leaveType} value={leaveType}>
+                  {leaveType}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-2xl border border-slate-200/80 p-4 text-sm text-slate-600">
+            Showing {filteredItems.length} request
+            {filteredItems.length === 1 ? "" : "s"}
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm text-slate-700">
+            <span className="font-medium text-slate-900">Applied from</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+            />
+          </label>
+          <label className="space-y-2 text-sm text-slate-700">
+            <span className="font-medium text-slate-900">Applied to</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+            />
+          </label>
+        </div>
+      </SurfaceCard>
+
       {error ? (
         <SurfaceCard className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
@@ -201,9 +315,13 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
               <div className="space-y-1 text-sm text-slate-700">
                 <p>
                   <span className="font-semibold">Leave window:</span>{" "}
-                  {new Date(item.leaveWindow.from).toLocaleDateString("en-GB")}{" "}
-                  to {new Date(item.leaveWindow.to).toLocaleDateString("en-GB")}{" "}
-                  ({item.leaveWindow.totalDays} days)
+                  {new Date(item.startDate).toLocaleDateString("en-GB")} to{" "}
+                  {new Date(item.endDate).toLocaleDateString("en-GB")} (
+                  {item.totalDays} days)
+                </p>
+                <p>
+                  <span className="font-semibold">Leave type:</span>{" "}
+                  {item.leaveType}
                 </p>
                 <p>
                   <span className="font-semibold">Purpose:</span> {item.purpose}
@@ -227,6 +345,13 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
               />
 
               <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelected(item)}
+                  disabled={busyId === item.applicationId}
+                >
+                  View
+                </Button>
                 <Button
                   variant="secondary"
                   onClick={() => runDecision(item.applicationId, "REJECT")}
@@ -264,20 +389,31 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 <p className="text-sm font-semibold text-slate-900">
                   {item.referenceCode}
                 </p>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
-                >
-                  {item.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" onClick={() => setSelected(item)}>
+                    View
+                  </Button>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
+                  >
+                    {item.status}
+                  </span>
+                </div>
               </div>
               <p className="text-xs text-slate-600">
-                {item.applicant.name} | {item.purpose} |{" "}
+                {item.applicant.name} | {item.leaveType} | {item.purpose} |{" "}
                 {item.actedAt ? new Date(item.actedAt).toLocaleString() : "-"}
               </p>
             </SurfaceCard>
           ))
         )}
       </section>
+
+      <LeaveRequestDetailsModal
+        isOpen={selected !== null}
+        onClose={() => setSelected(null)}
+        request={selected}
+      />
     </div>
   );
 };

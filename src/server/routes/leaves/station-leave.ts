@@ -466,12 +466,28 @@ export const getStationLeaveApprovals = async (actor: SessionActor) => {
       },
     },
     include: {
+      assignedTo: {
+        include: {
+          role: true,
+        },
+      },
       leaveApplication: {
         include: {
+          leaveType: true,
           applicant: {
             include: {
               role: true,
               department: true,
+            },
+          },
+          approvalSteps: {
+            orderBy: { sequence: "asc" },
+            include: {
+              assignedTo: {
+                include: {
+                  role: true,
+                },
+              },
             },
           },
         },
@@ -494,9 +510,14 @@ export const getStationLeaveApprovals = async (actor: SessionActor) => {
       return {
         applicationId: step.leaveApplicationId,
         referenceCode: step.leaveApplication.referenceCode,
+        leaveType: step.leaveApplication.leaveType.name,
+        leaveTypeCode: step.leaveApplication.leaveType.code,
         status: step.status,
         applicationStatus: step.leaveApplication.status,
         appliedAt:
+          step.leaveApplication.submittedAt?.toISOString() ??
+          step.leaveApplication.createdAt.toISOString(),
+        submittedAt:
           step.leaveApplication.submittedAt?.toISOString() ??
           step.leaveApplication.createdAt.toISOString(),
         applicant: {
@@ -508,17 +529,27 @@ export const getStationLeaveApprovals = async (actor: SessionActor) => {
             "Department not set",
           designation: step.leaveApplication.applicant.designation ?? "",
         },
-        leaveWindow: {
-          from: step.leaveApplication.startDate.toISOString(),
-          to: step.leaveApplication.endDate.toISOString(),
-          totalDays: step.leaveApplication.totalDays,
-        },
+        startDate: step.leaveApplication.startDate.toISOString(),
+        endDate: step.leaveApplication.endDate.toISOString(),
+        totalDays: step.leaveApplication.totalDays,
         purpose: step.leaveApplication.purpose,
         contactDuringLeave: step.leaveApplication.contactDuringLeave,
         destination: step.leaveApplication.destination,
+        notes: step.leaveApplication.notes,
+        currentApprover:
+          step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
         formData,
         remarks: step.remarks,
         actedAt: step.actedAt?.toISOString() ?? null,
+        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => ({
+          sequence: entry.sequence,
+          actor: entry.actor,
+          status: entry.status,
+          assignedTo:
+            entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
+          actedAt: entry.actedAt?.toISOString() ?? null,
+          remarks: entry.remarks ?? null,
+        })),
       };
     }),
   };

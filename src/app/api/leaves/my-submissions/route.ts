@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { LeaveStatus } from "@prisma/client";
+import { LeaveStatus, type Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import {
@@ -8,9 +8,6 @@ import {
   requireSessionActor,
 } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
-
-const isPendingStatus = (status: LeaveStatus) =>
-  status === LeaveStatus.SUBMITTED || status === LeaveStatus.UNDER_REVIEW;
 
 export async function GET() {
   try {
@@ -42,29 +39,48 @@ export async function GET() {
       const currentStep = entry.approvalSteps.find(
         (step) => step.status === "PENDING" || step.status === "IN_REVIEW",
       );
+      const metadata = entry.metadata as Prisma.JsonObject | null;
+      const formData =
+        metadata && typeof metadata.formData === "object"
+          ? (metadata.formData as Record<string, string>)
+          : null;
 
       return {
         id: entry.id,
         referenceCode: entry.referenceCode,
         leaveType: entry.leaveType.name,
+        leaveTypeCode: entry.leaveType.code,
         status: entry.status,
         startDate: entry.startDate.toISOString(),
         endDate: entry.endDate.toISOString(),
         totalDays: entry.totalDays,
         submittedAt:
           entry.submittedAt?.toISOString() ?? entry.createdAt.toISOString(),
+        purpose: entry.purpose,
+        destination: entry.destination,
+        contactDuringLeave: entry.contactDuringLeave,
+        notes: entry.notes,
+        formData,
         currentApprover:
           currentStep?.assignedTo?.name ??
           currentStep?.assignedTo?.role?.name ??
           null,
+        approvalTrail: entry.approvalSteps.map((step) => ({
+          sequence: step.sequence,
+          actor: step.actor,
+          status: step.status,
+          assignedTo:
+            step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
+          actedAt: step.actedAt?.toISOString() ?? null,
+          remarks: step.remarks ?? null,
+        })),
       };
     });
 
     return NextResponse.json({
       ok: true,
       data: {
-        pending: mapped.filter((entry) => isPendingStatus(entry.status)),
-        history: mapped.filter((entry) => !isPendingStatus(entry.status)),
+        items: mapped,
       },
     });
   } catch (error) {
