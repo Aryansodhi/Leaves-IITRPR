@@ -13,24 +13,69 @@ import { prisma } from "@/server/db/prisma";
 const joiningReportPayloadSchema = z.object({
   form: z.object({
     name: z.string().trim().min(1),
-    fromDate: z.string().trim().min(1),
-    toDate: z.string().trim().min(1),
-    totalDays: z.string().trim().min(1),
-    rejoinDate: z.string().trim().min(1),
+    fromDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
+    toDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
+    totalDays: z.string().trim().regex(/^\d+$/),
+    dutySession: z.enum(["Forenoon", "Afternoon"]),
+    leaveCategory: z.enum([
+      "Earned Leave",
+      "Half Pay Leave",
+      "Medical Leave",
+      "Extra Ordinary Leave",
+      "Vacation Leave",
+    ]),
+    rejoinDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
     orderNo: z.string().trim().min(1),
-    orderDate: z.string().trim().min(1),
-    englishRejoin: z.string().trim().min(1),
-    englishDays: z.string().trim().min(1),
-    englishFrom: z.string().trim().min(1),
-    englishTo: z.string().trim().min(1),
+    orderDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
+    englishRejoin: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
+    englishDays: z.string().trim().regex(/^\d+$/),
+    englishFrom: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
+    englishTo: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
     englishOrder: z.string().trim().min(1),
-    englishOrderDate: z.string().trim().min(1),
+    englishOrderDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
     signature: z.string().trim().min(1),
     signName: z.string().trim().min(1),
     signDesignation: z.string().trim().min(1),
-    signedDate: z.string().trim().min(1),
+    signedDate: z
+      .string()
+      .trim()
+      .refine((value) => parseDateInput(value) !== null),
   }),
 });
+
+const toIsoDateString = (value?: Date | null) => {
+  if (!value) return "";
+  return new Date(value.getTime() - value.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
+const calculateInclusiveDays = (startDate: Date, endDate: Date) =>
+  Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
 
 const lockedApplicantRoles = new Set<RoleKey>([
   RoleKey.DEAN,
@@ -217,7 +262,7 @@ const resolveApproverForJoiningReport = async (input: {
         departmentId: input.departmentId,
         reportsToId: input.reportsToId,
       })),
-      viewerOnly: true,
+      viewerOnly: false,
     };
   }
 
@@ -228,7 +273,7 @@ const resolveApproverForJoiningReport = async (input: {
       approverId: registrar.id,
       approverName: registrar.name,
       approverRole: registrar.roleKey,
-      viewerOnly: true,
+      viewerOnly: false,
     };
   }
 
@@ -302,13 +347,31 @@ export const getJoiningReportBootstrap = async (actor: SessionActor) => {
         signName: profile.name ?? "",
         signDesignation: profile.designation ?? "",
         signature: profile.name ?? "",
-        signedDate: new Date().toLocaleDateString("en-GB"),
-        rejoinDate: new Date().toLocaleDateString("en-GB"),
-        englishRejoin: new Date().toLocaleDateString("en-GB"),
+        signedDate: toIsoDateString(new Date()),
+        rejoinDate: toIsoDateString(new Date()),
+        englishRejoin: toIsoDateString(new Date()),
+        dutySession:
+          typeof latestMetadata === "object" && latestMetadata
+            ? String(
+                (latestMetadata as Record<string, unknown>).dutySession ?? "",
+              )
+            : "",
+        leaveCategory:
+          typeof latestMetadata === "object" && latestMetadata
+            ? String(
+                (latestMetadata as Record<string, unknown>).leaveCategory ?? "",
+              )
+            : "",
         totalDays:
           typeof latestMetadata === "object" && latestMetadata
             ? String(
                 (latestMetadata as Record<string, unknown>).totalDays ?? "",
+              )
+            : "",
+        englishDays:
+          typeof latestMetadata === "object" && latestMetadata
+            ? String(
+                (latestMetadata as Record<string, unknown>).englishDays ?? "",
               )
             : "",
       },
@@ -365,11 +428,23 @@ export const submitJoiningReport = async (
 
   const startDate = parseDateInput(parsed.form.fromDate) ?? new Date();
   const endDate = parseDateInput(parsed.form.toDate) ?? startDate;
-  const totalDays = Math.max(
-    Number.parseInt(parsed.form.totalDays || parsed.form.englishDays, 10) || 1,
-    1,
-  );
+  if (endDate < startDate) {
+    throw new Error(
+      "The To date must be the same as or later than the From date.",
+    );
+  }
+
+  const totalDays = Math.max(calculateInclusiveDays(startDate, endDate), 1);
   const decisionRequired = !approver.viewerOnly;
+  const persistedForm = {
+    ...parsed.form,
+    totalDays: `${totalDays}`,
+    englishDays: `${totalDays}`,
+    englishFrom: parsed.form.fromDate,
+    englishTo: parsed.form.toDate,
+    englishRejoin: parsed.form.rejoinDate,
+    englishOrderDate: parsed.form.orderDate,
+  };
 
   const application = await prisma.leaveApplication.create({
     data: {
@@ -386,7 +461,7 @@ export const submitJoiningReport = async (
       submittedAt: new Date(),
       approvedAt: decisionRequired ? null : new Date(),
       metadata: {
-        formData: parsed.form,
+        formData: persistedForm,
         routing: {
           applicantRole: profile.role.key,
           approverRole: approver.approverRole,

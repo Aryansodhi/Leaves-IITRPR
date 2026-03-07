@@ -18,6 +18,13 @@ type SessionActor = {
 const toBoolean = (value: Prisma.JsonValue | undefined, fallback: boolean) =>
   typeof value === "boolean" ? value : fallback;
 
+const isJoiningReportType = (input: {
+  code?: string | null;
+  name?: string | null;
+}) =>
+  (input.code ?? "").toUpperCase() === "JR" ||
+  (input.name ?? "").toLowerCase().includes("joining");
+
 export const getLeaveApprovals = async (actor: SessionActor) => {
   const steps = await prisma.approvalStep.findMany({
     where: {
@@ -66,8 +73,16 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
           ? (metadata.formData as Record<string, string>)
           : null;
       const stepMetadata = step.metadata as Prisma.JsonObject | null;
-      const decisionRequired = toBoolean(stepMetadata?.decisionRequired, true);
-      const viewerOnly = toBoolean(stepMetadata?.viewerOnly, false);
+      const isJoiningReport = isJoiningReportType({
+        code: step.leaveApplication.leaveType.code,
+        name: step.leaveApplication.leaveType.name,
+      });
+      const decisionRequired = isJoiningReport
+        ? true
+        : toBoolean(stepMetadata?.decisionRequired, true);
+      const viewerOnly = isJoiningReport
+        ? false
+        : toBoolean(stepMetadata?.viewerOnly, false);
 
       return {
         applicationId: step.leaveApplicationId,
@@ -138,6 +153,7 @@ export const decideLeaveApproval = async (
     include: {
       leaveApplication: {
         include: {
+          leaveType: true,
           approvalSteps: true,
         },
       },
@@ -149,7 +165,14 @@ export const decideLeaveApproval = async (
   }
 
   const stepMetadata = step.metadata as Prisma.JsonObject | null;
-  if (toBoolean(stepMetadata?.decisionRequired, true) === false) {
+  const isJoiningReport = isJoiningReportType({
+    code: step.leaveApplication.leaveType.code,
+    name: step.leaveApplication.leaveType.name,
+  });
+  if (
+    !isJoiningReport &&
+    toBoolean(stepMetadata?.decisionRequired, true) === false
+  ) {
     throw withStatus("This request is available for viewing only.", 403);
   }
 
@@ -162,6 +185,10 @@ export const decideLeaveApproval = async (
 
   if (hasPriorPendingStep) {
     throw withStatus("This request is awaiting an earlier approval step.", 409);
+  }
+
+  if (isJoiningReport && parsed.decision === "REJECT") {
+    throw withStatus("Joining report can only be approved.", 403);
   }
 
   const now = new Date();

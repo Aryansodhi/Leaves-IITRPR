@@ -145,6 +145,12 @@ const humanizeFormEntry = (key: string, value: string) => {
   if (["rejoindate", "englishrejoin"].includes(normalized)) {
     return `The applicant reported rejoining duty on ${value}.`;
   }
+  if (["dutysession"].includes(normalized)) {
+    return `The applicant reported for duty during the ${value.toLowerCase()}.`;
+  }
+  if (["leavecategory"].includes(normalized)) {
+    return `The leave category selected in the form is ${value}.`;
+  }
   if (["orderno", "englishorder"].includes(normalized)) {
     return `The office order reference noted in the form is ${value}.`;
   }
@@ -424,6 +430,12 @@ const FilledUnderline = ({
 
 const StationLeavePreview = ({ request }: { request: LeaveRequestDetails }) => {
   const form = request.formData ?? {};
+  const approvalStatusLabel =
+    request.status === "APPROVED"
+      ? "Approved"
+      : request.status === "REJECTED"
+        ? "Rejected"
+        : "Pending";
 
   return (
     <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
@@ -509,25 +521,19 @@ const StationLeavePreview = ({ request }: { request: LeaveRequestDetails }) => {
             width="w-44"
           />
         </div>
-        <div className="flex items-center justify-between pt-2">
-          <span className="text-[12px] text-slate-800">AR/DR (Estt.)</span>
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-slate-800">
-              (Signature of the applicant)
-            </span>
-            <FilledUnderline value={form.applicantSign} width="w-64" />
-          </div>
+        <div className="flex items-center justify-end gap-2 pt-2 text-right">
+          <span className="text-[12px] text-slate-800">
+            (Signature of the applicant)
+          </span>
+          <FilledUnderline value={form.applicantSign} width="w-64" />
         </div>
       </div>
 
       <div className="space-y-3 text-center text-[13px] text-slate-900">
-        <p className="font-semibold">Permitted / Not permitted</p>
-        <div className="flex items-center justify-end gap-2 text-right">
-          <span className="text-[12px] text-slate-800">
-            (Signature of the approving authority)
-          </span>
-          <FilledUnderline value="" width="w-64" />
-        </div>
+        <p className="font-semibold">Approval status</p>
+        <p className="text-sm font-semibold text-slate-900">
+          {approvalStatusLabel}
+        </p>
       </div>
     </SurfaceCard>
   );
@@ -598,10 +604,8 @@ const JoiningReportPreview = ({
             width="w-16"
             align="justify-center"
           />
-          <span>
-            दिन की अर्जित छुट्टी / अर्ध वेतन छुट्टी / चिकित्सक छुट्टी / असाधारण
-            छुट्टी / सत्र की समाप्ति पर छुट्टी के पश्चात
-          </span>
+          <span>दिन की</span>
+          <FilledUnderline value={form.leaveCategory} width="w-64" />
         </p>
 
         <p className="flex flex-wrap items-center gap-2 leading-relaxed">
@@ -610,9 +614,11 @@ const JoiningReportPreview = ({
             value={formatFormDate(form.rejoinDate)}
             width="w-28"
           />
+          <span>को</span>
+          <FilledUnderline value={form.dutySession} width="w-32" />
           <span>
-            को पूर्वाह्न / अपराह्न को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही
-            हूँ, जो की कार्यालय आदेश सं.
+            को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय
+            आदेश सं.
           </span>
           <FilledUnderline value={form.orderNo} width="w-40" />
           <span>दिनांक</span>
@@ -627,9 +633,9 @@ const JoiningReportPreview = ({
           <span>I, hereby report myself for duty this day on</span>
           <FilledUnderline value={form.englishRejoin} width="w-36" />
           <span>
-            forenoon / afternoon after availing Earned Leave / Half Pay Leave /
-            Medical Leave / Extra Ordinary Leave / Vacation Leave
+            {form.dutySession || "Forenoon / Afternoon"} after availing
           </span>
+          <FilledUnderline value={form.leaveCategory} width="w-52" />
           <span>for</span>
           <FilledUnderline
             value={form.englishDays}

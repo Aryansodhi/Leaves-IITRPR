@@ -59,6 +59,10 @@ const statusTone = (value: string) => {
   return "bg-slate-100 text-slate-700 ring-slate-200";
 };
 
+const isJoiningReportRecord = (item: ApprovalRecord) =>
+  (item.leaveTypeCode ?? "").toUpperCase() === "JR" ||
+  item.leaveType.toLowerCase().includes("joining");
+
 export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,19 +172,16 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/station-leave/approvals/${applicationId}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            decision,
-            remarks: remarksById[applicationId] || undefined,
-          }),
+      const response = await fetch(`/api/leaves/approvals/${applicationId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          decision,
+          remarks: remarksById[applicationId] || undefined,
+        }),
+      });
 
       const result = (await response.json()) as {
         ok?: boolean;
@@ -387,15 +388,17 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                   </Button>
                   {item.decisionRequired ? (
                     <>
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          runDecision(item.applicationId, "REJECT")
-                        }
-                        disabled={busyId === item.applicationId}
-                      >
-                        Reject
-                      </Button>
+                      {!isJoiningReportRecord(item) ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            runDecision(item.applicationId, "REJECT")
+                          }
+                          disabled={busyId === item.applicationId}
+                        >
+                          Reject
+                        </Button>
+                      ) : null}
                       <Button
                         onClick={() =>
                           runDecision(item.applicationId, "APPROVE")

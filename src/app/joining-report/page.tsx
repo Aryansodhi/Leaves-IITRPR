@@ -1,7 +1,11 @@
 "use client";
 
-import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type {
+  FormEvent,
+  InputHTMLAttributes,
+  SelectHTMLAttributes,
+} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -40,6 +44,8 @@ const requiredInputIds = [
   "fromDate",
   "toDate",
   "totalDays",
+  "dutySession",
+  "leaveCategory",
   "rejoinDate",
   "orderNo",
   "orderDate",
@@ -59,22 +65,54 @@ const UnderlineInput = ({
   id,
   width = "w-44",
   className,
+  type = "text",
+  ...props
 }: {
   id: string;
   width?: string;
   className?: string;
-}) => (
+} & InputHTMLAttributes<HTMLInputElement>) => (
   <input
     id={id}
     name={id}
-    type="text"
+    type={type}
     className={cn(
       "inline-block align-baseline border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-sm leading-[1.05rem] text-slate-900 focus:border-slate-800 focus:outline-none",
       width,
       className,
     )}
+    {...props}
   />
 );
+
+const DUTY_SESSION_OPTIONS = [
+  { value: "Forenoon", label: "पूर्वाह्न / Forenoon" },
+  { value: "Afternoon", label: "अपराह्न / Afternoon" },
+] as const;
+
+const LEAVE_CATEGORY_OPTIONS = [
+  { value: "Earned Leave", label: "अर्जित छुट्टी / Earned Leave" },
+  { value: "Half Pay Leave", label: "अर्ध वेतन छुट्टी / Half Pay Leave" },
+  { value: "Medical Leave", label: "चिकित्सक छुट्टी / Medical Leave" },
+  {
+    value: "Extra Ordinary Leave",
+    label: "असाधारण छुट्टी / Extra Ordinary Leave",
+  },
+  { value: "Vacation Leave", label: "Vacation Leave" },
+] as const;
+
+const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
+  if (!fromValue || !toValue) return "";
+
+  const from = new Date(`${fromValue}T00:00:00`);
+  const to = new Date(`${toValue}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+    return "";
+  }
+
+  const difference = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  return `${difference}`;
+};
 
 export default function JoiningReportPage() {
   const router = useRouter();
@@ -91,12 +129,20 @@ export default function JoiningReportPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<JoiningReportHistoryItem[]>([]);
+  const [choiceValues, setChoiceValues] = useState({
+    dutySession: "",
+    leaveCategory: "",
+  });
   const [workflowMessage, setWorkflowMessage] = useState(
     "This joining report will be routed automatically after submission.",
   );
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
-    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
+    const inputs = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "input, select",
+      ),
+    );
     inputs.forEach((input) => {
       const key = input.name || input.id;
       const hasError = key ? missing.has(key) : false;
@@ -134,28 +180,110 @@ export default function JoiningReportPage() {
       string,
       string
     >;
+
+    const calculatedDays = calculateInclusiveDays(data.fromDate, data.toDate);
+    data.totalDays = calculatedDays;
+    data.englishDays = calculatedDays;
+    data.englishFrom = data.fromDate;
+    data.englishTo = data.toDate;
+    data.englishRejoin = data.rejoinDate;
+    data.englishOrderDate = data.orderDate;
+
     saveFormDraft("joining-report", data);
     const missing = requiredInputIds.filter((key) => !data[key]?.trim());
-    const missingSet = new Set(missing);
-    markMissingInputs(form, missingSet);
-    if (missingSet.size > 0) {
-      setMissingFields(Array.from(missingSet));
+    const invalid = new Set<string>();
+
+    if (!calculatedDays) {
+      invalid.add("fromDate");
+      invalid.add("toDate");
+      invalid.add("totalDays");
+      invalid.add("englishDays");
+    }
+
+    const flagged = new Set([...missing, ...invalid]);
+    markMissingInputs(form, flagged);
+    if (flagged.size > 0) {
+      setMissingFields(Array.from(flagged));
+      if (invalid.size > 0) {
+        setSubmitError(
+          "Please select a valid leave period. The To date must be the same as or later than the From date.",
+        );
+      }
       return;
     }
 
     setMissingFields([]);
+    setSubmitError(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
 
-  useEffect(() => {
+  const setFormFieldValue = useCallback((field: string, value: string) => {
     const form = formRef.current;
-    if (form) {
-      void applyAutofillToForm(form, "joining-report");
-    }
+    if (!form) return;
 
-    void loadBootstrap();
+    const input = form.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[name="${field}"]`,
+    );
+
+    if (input && input.value !== value) {
+      input.value = value;
+    }
   }, []);
+
+  const syncDurationFields = useCallback(
+    (fromValue: string, toValue: string) => {
+      const days = calculateInclusiveDays(fromValue, toValue);
+      setFormFieldValue("totalDays", days);
+      setFormFieldValue("englishDays", days);
+    },
+    [setFormFieldValue],
+  );
+
+  const handlePeriodDateChange = (
+    sourceField: "fromDate" | "toDate" | "englishFrom" | "englishTo",
+    targetField: "englishFrom" | "englishTo" | "fromDate" | "toDate",
+  ) => {
+    return (event: React.ChangeEvent<HTMLInputElement>) => {
+      const nextValue = event.target.value;
+      setFormFieldValue(targetField, nextValue);
+
+      const fromValue =
+        sourceField === "fromDate" || sourceField === "englishFrom"
+          ? nextValue
+          : (formRef.current?.querySelector<HTMLInputElement>(
+              '[name="fromDate"]',
+            )?.value ?? "");
+      const toValue =
+        sourceField === "toDate" || sourceField === "englishTo"
+          ? nextValue
+          : (formRef.current?.querySelector<HTMLInputElement>('[name="toDate"]')
+              ?.value ?? "");
+
+      syncDurationFields(fromValue, toValue);
+    };
+  };
+
+  const handleMirroredDateChange = (
+    targetField:
+      | "englishRejoin"
+      | "rejoinDate"
+      | "englishOrderDate"
+      | "orderDate",
+  ) => {
+    return (event: React.ChangeEvent<HTMLInputElement>) => {
+      setFormFieldValue(targetField, event.target.value);
+    };
+  };
+
+  const handleChoiceChange = (field: "dutySession" | "leaveCategory") => {
+    return (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setChoiceValues((current) => ({
+        ...current,
+        [field]: event.target.value,
+      }));
+    };
+  };
 
   const handleConfirmSubmit = async () => {
     setSubmitError(null);
@@ -220,7 +348,7 @@ export default function JoiningReportPage() {
     }
   };
 
-  const loadBootstrap = async () => {
+  const loadBootstrap = useCallback(async () => {
     const form = formRef.current;
 
     try {
@@ -248,12 +376,27 @@ export default function JoiningReportPage() {
       if (form) {
         Object.entries(defaults).forEach(([key, value]) => {
           if (!value) return;
-          const input = form.querySelector<HTMLInputElement>(
-            `input[name="${key}"]`,
-          );
+          const input = form.querySelector<
+            HTMLInputElement | HTMLSelectElement
+          >(`[name="${key}"]`);
           if (input && !input.value.trim()) {
             input.value = value;
           }
+        });
+
+        const fromValue =
+          form.querySelector<HTMLInputElement>('[name="fromDate"]')?.value ??
+          "";
+        const toValue =
+          form.querySelector<HTMLInputElement>('[name="toDate"]')?.value ?? "";
+        syncDurationFields(fromValue, toValue);
+        setChoiceValues({
+          dutySession:
+            form.querySelector<HTMLSelectElement>('[name="dutySession"]')
+              ?.value ?? "",
+          leaveCategory:
+            form.querySelector<HTMLSelectElement>('[name="leaveCategory"]')
+              ?.value ?? "",
         });
       }
 
@@ -265,7 +408,16 @@ export default function JoiningReportPage() {
           : "Unable to load joining report profile data.",
       );
     }
-  };
+  }, [syncDurationFields]);
+
+  useEffect(() => {
+    const form = formRef.current;
+    if (form) {
+      void applyAutofillToForm(form, "joining-report");
+    }
+
+    void loadBootstrap();
+  }, [loadBootstrap]);
 
   useEffect(() => {
     const roleKeyRaw =
@@ -277,7 +429,7 @@ export default function JoiningReportPage() {
       setIsRoleLocked(false);
       setSubmitError(null);
       setWorkflowMessage(
-        "On submit, your joining report will be forwarded to the HoD of your department for viewing only.",
+        "On submit, your joining report will be forwarded to the HoD of your department for approval.",
       );
       return;
     }
@@ -286,7 +438,7 @@ export default function JoiningReportPage() {
       setIsRoleLocked(false);
       setSubmitError(null);
       setWorkflowMessage(
-        "On submit, your joining report will be forwarded to the Registrar for viewing only.",
+        "On submit, your joining report will be forwarded to the Registrar for approval.",
       );
       return;
     }
@@ -375,58 +527,94 @@ export default function JoiningReportPage() {
                 <span>मैं,</span>
                 <UnderlineInput id="name" width="w-56" />
                 <span>दिनांक</span>
-                <UnderlineInput id="fromDate" width="w-28" />
+                <DateUnderlineInput
+                  id="fromDate"
+                  width="w-36"
+                  onChange={handlePeriodDateChange("fromDate", "englishFrom")}
+                />
                 <span>से</span>
-                <UnderlineInput id="toDate" width="w-28" />
+                <DateUnderlineInput
+                  id="toDate"
+                  width="w-36"
+                  onChange={handlePeriodDateChange("toDate", "englishTo")}
+                />
                 <span>तक</span>
-                <UnderlineInput id="totalDays" width="w-16" />
-                <span>
-                  दिन की अर्जित छुट्टी / अर्ध वेतन छुट्टी / चिकित्सक छुट्टी /
-                  असाधारण छुट्टी / सत्र की समाप्ति पर छुट्टी के पश्चात
-                </span>
+                <UnderlineInput id="totalDays" width="w-16" readOnly />
+                <span>दिन की</span>
+                <InlineSelect
+                  id="leaveCategory"
+                  width="w-72"
+                  options={LEAVE_CATEGORY_OPTIONS}
+                  value={choiceValues.leaveCategory}
+                  onChange={handleChoiceChange("leaveCategory")}
+                />
               </p>
 
               <p className="flex flex-wrap items-center gap-2 leading-relaxed">
                 <span>आज दिनांक</span>
-                <UnderlineInput id="rejoinDate" width="w-28" />
+                <DateUnderlineInput
+                  id="rejoinDate"
+                  width="w-36"
+                  onChange={handleMirroredDateChange("englishRejoin")}
+                />
+                <span>को</span>
+                <InlineSelect
+                  id="dutySession"
+                  width="w-52"
+                  options={DUTY_SESSION_OPTIONS}
+                  value={choiceValues.dutySession}
+                  onChange={handleChoiceChange("dutySession")}
+                />
                 <span>
-                  को पूर्वाह्न / अपराह्न को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा
-                  / रही हूँ, जो की कार्यालय आदेश सं.
+                  को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की
+                  कार्यालय आदेश सं.
                 </span>
                 <UnderlineInput id="orderNo" width="w-48" />
                 <span>दिनांक</span>
-                <UnderlineInput id="orderDate" width="w-28" />
+                <DateUnderlineInput
+                  id="orderDate"
+                  width="w-36"
+                  onChange={handleMirroredDateChange("englishOrderDate")}
+                />
                 <span>के द्वारा स्वीकृत किया था।</span>
               </p>
 
               <p className="flex flex-wrap items-center gap-2 leading-relaxed">
                 <span>I, hereby report myself for duty this day on</span>
-                <UnderlineInput
+                <DateUnderlineInput
                   id="englishRejoin"
                   width="w-40"
                   className="ml-2"
+                  onChange={handleMirroredDateChange("rejoinDate")}
                 />{" "}
                 <span>
-                  forenoon / afternoon after availing Earned Leave / Half Pay
-                  Leave / Medical Leave / Extra Ordinary Leave / Vacation Leave
+                  {choiceValues.dutySession || "forenoon / afternoon"} after
+                  availing
+                </span>
+                <span>
+                  {choiceValues.leaveCategory ||
+                    "Earned Leave / Half Pay Leave / Medical Leave / Extra Ordinary Leave / Vacation Leave"}
                 </span>
                 <span>for</span>
                 <UnderlineInput
                   id="englishDays"
                   width="w-16"
                   className="ml-2"
+                  readOnly
                 />{" "}
                 <span>days from</span>
-                <UnderlineInput
+                <DateUnderlineInput
                   id="englishFrom"
-                  width="w-32"
+                  width="w-40"
                   className="ml-2"
+                  onChange={handlePeriodDateChange("englishFrom", "fromDate")}
                 />{" "}
                 <span>to</span>
-                <UnderlineInput
+                <DateUnderlineInput
                   id="englishTo"
-                  width="w-32"
+                  width="w-40"
                   className="ml-2"
+                  onChange={handlePeriodDateChange("englishTo", "toDate")}
                 />{" "}
                 <span>sanctioned vide Office Order No.</span>
                 <UnderlineInput
@@ -435,10 +623,11 @@ export default function JoiningReportPage() {
                   className="ml-2"
                 />{" "}
                 <span>dated</span>
-                <UnderlineInput
+                <DateUnderlineInput
                   id="englishOrderDate"
-                  width="w-28"
+                  width="w-36"
                   className="ml-2"
+                  onChange={handleMirroredDateChange("orderDate")}
                 />
                 .
               </p>
@@ -459,7 +648,8 @@ export default function JoiningReportPage() {
               </div>
 
               <p className="text-right">
-                दिनांक / Dated: <UnderlineInput id="signedDate" width="w-32" />
+                दिनांक / Dated:{" "}
+                <DateUnderlineInput id="signedDate" width="w-40" />
               </p>
             </div>
           </SurfaceCard>
@@ -639,6 +829,59 @@ const generatePdfFromForm = async (element: HTMLElement, title: string) => {
   const safeName = title.replace(/\s+/g, "-").toLowerCase();
   pdf.save(`${safeName}.pdf`);
 };
+
+const DateUnderlineInput = ({
+  id,
+  width = "w-36",
+  className,
+  ...props
+}: {
+  id: string;
+  width?: string;
+  className?: string;
+} & InputHTMLAttributes<HTMLInputElement>) => (
+  <UnderlineInput
+    id={id}
+    type="date"
+    width={width}
+    className={cn("scheme-light", className)}
+    {...props}
+  />
+);
+
+const InlineSelect = ({
+  id,
+  width = "w-56",
+  value,
+  options,
+  className,
+  ...props
+}: {
+  id: string;
+  width?: string;
+  value: string;
+  className?: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "size">) => (
+  <select
+    id={id}
+    name={id}
+    value={value}
+    className={cn(
+      "inline-block rounded-none border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-sm leading-[1.05rem] text-slate-900 focus:border-slate-800 focus:outline-none",
+      width,
+      className,
+    )}
+    {...props}
+  >
+    <option value="">Select</option>
+    {options.map((option) => (
+      <option key={option.value} value={option.value}>
+        {option.label}
+      </option>
+    ))}
+  </select>
+);
 
 const ConfirmationModal = ({
   state,

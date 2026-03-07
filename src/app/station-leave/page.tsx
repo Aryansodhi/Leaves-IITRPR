@@ -445,30 +445,11 @@ export default function StationLeavePage() {
                 <span>Date:</span>
                 <UnderlineInput id="date" width="w-44" />
               </div>
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center justify-end gap-2 pt-2 text-right">
                 <span className="text-[12px] text-slate-800">
-                  AR/DR (Estt.)
+                  (Signature of the applicant)
                 </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] text-slate-800">
-                    (Signature of the applicant)
-                  </span>
-                  <UnderlineInput id="applicantSign" width="w-64" />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-center text-[13px] text-slate-900">
-              <p className="font-semibold">Permitted / Not permitted</p>
-              <div className="flex items-center justify-end gap-2 text-right">
-                <span className="text-[12px] text-slate-800">
-                  (Signature of the approving authority)
-                </span>
-                <UnderlineInput
-                  id="hodSign"
-                  width="w-64"
-                  className="opacity-60"
-                />
+                <UnderlineInput id="applicantSign" width="w-64" />
               </div>
             </div>
           </SurfaceCard>
