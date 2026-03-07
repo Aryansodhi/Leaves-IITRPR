@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
-import type { FormEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { FormEvent, InputHTMLAttributes } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -16,24 +16,74 @@ import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
 
+const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
+  if (!fromValue || !toValue) return "";
+
+  const from = new Date(`${fromValue}T00:00:00`);
+  const to = new Date(`${toValue}T00:00:00`);
+  if (
+    Number.isNaN(from.getTime()) ||
+    Number.isNaN(to.getTime()) ||
+    to < from
+  ) {
+    return "";
+  }
+
+  const difference = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  return `${difference}`;
+};
+
 const UnderlineInput = ({
   id,
   width = "w-48",
   className,
+  readOnly,
+  ...props
 }: {
   id: string;
   width?: string;
   className?: string;
-}) => (
+  readOnly?: boolean;
+} & InputHTMLAttributes<HTMLInputElement>) => (
   <input
     id={id}
     name={id}
     type="text"
+    readOnly={readOnly}
     className={cn(
       "border-0 border-b border-dashed border-slate-400 bg-transparent px-1 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none",
+      readOnly && "cursor-not-allowed opacity-75 bg-slate-50",
       width,
       className,
     )}
+    {...props}
+  />
+);
+
+const DateUnderlineInput = ({
+  id,
+  width = "w-32",
+  className,
+  readOnly,
+  ...props
+}: {
+  id: string;
+  width?: string;
+  className?: string;
+  readOnly?: boolean;
+} & InputHTMLAttributes<HTMLInputElement>) => (
+  <input
+    id={id}
+    name={id}
+    type="date"
+    readOnly={readOnly}
+    className={cn(
+      "border-0 border-b border-dashed border-slate-400 bg-transparent px-1 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none scheme-light",
+      readOnly && "cursor-not-allowed opacity-75",
+      width,
+      className,
+    )}
+    {...props}
   />
 );
 
@@ -47,6 +97,11 @@ export default function EarnedLeavePage() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [stationLeaveRequired, setStationLeaveRequired] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [ltcChoice, setLtcChoice] = useState<string>("");
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -84,11 +139,51 @@ export default function EarnedLeavePage() {
       string
     >;
     saveFormDraft("earned-leave", data);
+    
+    // Exclude row 6 (prefix/suffix) fields from required validation
+    const optionalFields = new Set([
+      "prefixFromDate",
+      "prefixToDate",
+      "prefixDays",
+      "suffixFromDate",
+      "suffixToDate",
+      "suffixDays",
+    ]);
+    
+    // Exclude station leave dates if "No" is selected
+    if (data.stationYesNo === "No") {
+      optionalFields.add("stationFrom");
+      optionalFields.add("stationTo");
+    }
+    
+    // Exclude administrative fields (read-only, filled by admin staff)
+    const adminFields = new Set([
+      "recommended",
+      "hodSignature",
+      "adminFrom",
+      "adminTo",
+      "adminLeaveType",
+      "balance",
+      "adminDays",
+      "assistant",
+      "arDr",
+      "registrar",
+      "authoritySign",
+    ]);
+    
     const required = Array.from(
       form.querySelectorAll<HTMLInputElement>("input"),
     )
-      .map((input) => input.name || input.id)
-      .filter(Boolean);
+      .map((input) => {
+        const key = input.name || input.id;
+        if (!key) return null;
+        if (optionalFields.has(key)) return null;
+        if (adminFields.has(key)) return null;
+        if (input.type === "hidden" || input.type === "radio") return null;
+        if (input.readOnly) return null;
+        return key;
+      })
+      .filter((key): key is string => key !== null);
     const missing = required.filter((key) => !data[key]?.trim());
     const missingSet = new Set(missing);
     markMissingInputs(form, missingSet);
@@ -97,22 +192,160 @@ export default function EarnedLeavePage() {
       return;
     }
 
+    const invalidSet = new Set<string>();
+    const contactNo = (data.contactNo ?? "").trim();
+    const pin = (data.pin ?? "").trim();
+    const ltc = (data.ltc ?? "").trim();
+
+    if (!/^\d{10}$/.test(contactNo)) {
+      invalidSet.add("contactNo");
+    }
+    if (!/^\d{6}$/.test(pin)) {
+      invalidSet.add("pin");
+    }
+    if (!(ltc === "PROPOSE" || ltc === "NOT_PROPOSE")) {
+      invalidSet.add("ltc");
+    }
+
+    if (invalidSet.size > 0) {
+      markMissingInputs(form, invalidSet);
+      setMissingFields(Array.from(invalidSet));
+      setSubmitError(
+        "Please select LTC option, enter a valid 10-digit contact number, and a valid 6-digit PIN.",
+      );
+      return;
+    }
+
     setMissingFields([]);
+    setSubmitError(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
+
+  const handlePeriodDateChange = useCallback(() => {
+    const form = formRef.current;
+    if (!form) return;
+    const fromInput = form.querySelector<HTMLInputElement>("#fromDate");
+    const toInput = form.querySelector<HTMLInputElement>("#toDate");
+    const daysInput = form.querySelector<HTMLInputElement>("#days");
+
+    if (fromInput && toInput && daysInput) {
+      const days = calculateInclusiveDays(fromInput.value, toInput.value);
+      daysInput.value = days;
+    }
+  }, []);
+
+  const handlePrefixDateChange = useCallback(() => {
+    const form = formRef.current;
+    if (!form) return;
+    const fromInput = form.querySelector<HTMLInputElement>("#prefixFromDate");
+    const toInput = form.querySelector<HTMLInputElement>("#prefixToDate");
+    const daysInput = form.querySelector<HTMLInputElement>("#prefixDays");
+
+    if (fromInput && toInput && daysInput) {
+      const days = calculateInclusiveDays(fromInput.value, toInput.value);
+      daysInput.value = days;
+    }
+  }, []);
+
+  const handleSuffixDateChange = useCallback(() => {
+    const form = formRef.current;
+    if (!form) return;
+    const fromInput = form.querySelector<HTMLInputElement>("#suffixFromDate");
+    const toInput = form.querySelector<HTMLInputElement>("#suffixToDate");
+    const daysInput = form.querySelector<HTMLInputElement>("#suffixDays");
+
+    if (fromInput && toInput && daysInput) {
+      const days = calculateInclusiveDays(fromInput.value, toInput.value);
+      daysInput.value = days;
+    }
+  }, []);
 
   useEffect(() => {
     const form = formRef.current;
     if (!form) return;
 
-    void applyAutofillToForm(form, "earned-leave");
-  }, []);
+    // Set today's date for signature date field
+    const signatureDateInput = form.querySelector<HTMLInputElement>(
+      "#applicantSignatureDate",
+    );
+    if (signatureDateInput && !signatureDateInput.value) {
+      signatureDateInput.value = new Date().toISOString().split("T")[0];
+    }
 
-  const handleConfirmSubmit = () => {
-    setConfirmed(true);
-    setDialogState("success");
-    console.log("Earned leave form submitted", pendingDataRef.current);
+    void applyAutofillToForm(form, "earned-leave").then(() => {
+      const ltcInput = form.querySelector<HTMLInputElement>("#ltc");
+      if (!ltcInput) return;
+      const rawValue = (ltcInput.value ?? "").trim().toLowerCase();
+      if (rawValue === "not_propose" || rawValue.includes("not")) {
+        setLtcChoice("NOT_PROPOSE");
+        ltcInput.value = "NOT_PROPOSE";
+        return;
+      }
+      if (rawValue === "propose" || rawValue.includes("propose")) {
+        setLtcChoice("PROPOSE");
+        ltcInput.value = "PROPOSE";
+      }
+    });
+
+    // Set up date change listeners
+    const fromDateInput = form.querySelector<HTMLInputElement>("#fromDate");
+    const toDateInput = form.querySelector<HTMLInputElement>("#toDate");
+    const prefixFromInput = form.querySelector<HTMLInputElement>(
+      "#prefixFromDate",
+    );
+    const prefixToInput = form.querySelector<HTMLInputElement>("#prefixToDate");
+    const suffixFromInput = form.querySelector<HTMLInputElement>(
+      "#suffixFromDate",
+    );
+    const suffixToInput = form.querySelector<HTMLInputElement>("#suffixToDate");
+
+    fromDateInput?.addEventListener("change", handlePeriodDateChange);
+    toDateInput?.addEventListener("change", handlePeriodDateChange);
+    prefixFromInput?.addEventListener("change", handlePrefixDateChange);
+    prefixToInput?.addEventListener("change", handlePrefixDateChange);
+    suffixFromInput?.addEventListener("change", handleSuffixDateChange);
+    suffixToInput?.addEventListener("change", handleSuffixDateChange);
+
+    return () => {
+      fromDateInput?.removeEventListener("change", handlePeriodDateChange);
+      toDateInput?.removeEventListener("change", handlePeriodDateChange);
+      prefixFromInput?.removeEventListener("change", handlePrefixDateChange);
+      prefixToInput?.removeEventListener("change", handlePrefixDateChange);
+      suffixFromInput?.removeEventListener("change", handleSuffixDateChange);
+      suffixToInput?.removeEventListener("change", handleSuffixDateChange);
+    };
+  }, [handlePeriodDateChange, handlePrefixDateChange, handleSuffixDateChange]);
+
+  const handleConfirmSubmit = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitMessage(null);
+
+    try {
+      const response = await fetch("/api/earned-leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ form: pendingDataRef.current }),
+      });
+
+      const result = await response.json();
+
+      if (!result.ok) {
+        throw new Error(result.message || "Failed to submit earned leave application.");
+      }
+
+      setConfirmed(true);
+      setSubmitMessage(result.message || "Earned leave application submitted successfully.");
+      setDialogState("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Unable to submit earned leave application.";
+      setSubmitError(errorMessage);
+      setDialogState(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCloseDialog = () => {
@@ -210,19 +443,25 @@ export default function EarnedLeavePage() {
                     label="8. कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था / Alternative arrangements"
                     inputId="arrangements"
                   />
-                  <Row
-                    label="9. मैं एल.टी.सी. लेने हेतु प्रस्तावित करता हूँ / I propose/do not propose to avail myself of Leave Travel Concession during the leave."
-                    inputId="ltc"
-                  />
+                  <RowLtc ltcChoice={ltcChoice} setLtcChoice={setLtcChoice} />
                   <RowAddress />
-                  <RowStation />
+                  <RowStation
+                    stationLeaveRequired={stationLeaveRequired}
+                    setStationLeaveRequired={setStationLeaveRequired}
+                  />
                 </tbody>
               </table>
             </div>
 
             <p className="text-right text-[12px] text-slate-900">
               आवेदक के हस्ताक्षर दिनांक सहित / Signature of the applicant with
-              date: <UnderlineInput id="applicantSignature" width="w-60" />
+              date: <UnderlineInput id="applicantSignature" width="w-40" />{" "}
+              <DateUnderlineInput
+                id="applicantSignatureDate"
+                width="w-32"
+                readOnly
+                defaultValue={new Date().toISOString().split("T")[0]}
+              />
             </p>
 
             <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
@@ -232,7 +471,7 @@ export default function EarnedLeavePage() {
               </p>
               <p>
                 सिफारिश की गई / Recommended या नहीं की गई / not recommended:{" "}
-                <UnderlineInput id="recommended" width="w-44" />
+                <UnderlineInput id="recommended" width="w-44" readOnly />
               </p>
               <p>
                 विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature
@@ -241,6 +480,7 @@ export default function EarnedLeavePage() {
                   id="hodSignature"
                   width="w-60"
                   className="ml-2"
+                  readOnly
                 />
               </p>
             </div>
@@ -253,25 +493,25 @@ export default function EarnedLeavePage() {
               <p>
                 प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of
                 leave) for period, from
-                <UnderlineInput id="adminFrom" width="w-32" /> to{" "}
-                <UnderlineInput id="adminTo" width="w-32" /> is available as per
+                <UnderlineInput id="adminFrom" width="w-32" readOnly /> to{" "}
+                <UnderlineInput id="adminTo" width="w-32" readOnly /> is available as per
                 following details:
               </p>
               <p>
                 अवकाश का प्रकार / Nature of leave applied for{" "}
-                <UnderlineInput id="adminLeaveType" width="w-44" /> आज की तिथि
+                <UnderlineInput id="adminLeaveType" width="w-44" readOnly /> आज की तिथि
                 तक शेष / Balance as on date
-                <UnderlineInput id="balance" width="w-28" /> कुल दिनों के लिए
+                <UnderlineInput id="balance" width="w-28" readOnly /> कुल दिनों के लिए
                 अवकाश / Leave applied for (No. of days)
-                <UnderlineInput id="adminDays" width="w-24" />
+                <UnderlineInput id="adminDays" width="w-24" readOnly />
               </p>
               <p>
                 संबंधित सहायक / Dealing Assistant{" "}
-                <UnderlineInput id="assistant" width="w-44" className="ml-2" />{" "}
+                <UnderlineInput id="assistant" width="w-44" className="ml-2" readOnly />{" "}
                 अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
-                <UnderlineInput id="arDr" width="w-44" className="ml-2" />{" "}
+                <UnderlineInput id="arDr" width="w-44" className="ml-2" readOnly />{" "}
                 कुलसचिव / Registrar
-                <UnderlineInput id="registrar" width="w-44" className="ml-2" />
+                <UnderlineInput id="registrar" width="w-44" className="ml-2" readOnly />
               </p>
               <p>
                 छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत
@@ -286,11 +526,22 @@ export default function EarnedLeavePage() {
                   id="authoritySign"
                   width="w-60"
                   className="ml-2"
+                  readOnly
                 />
               </p>
             </div>
           </SurfaceCard>
 
+          {submitError && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {submitError}
+            </div>
+          )}
+          {submitMessage && (
+            <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {submitMessage}
+            </div>
+          )}
           <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-3">
             <div className="text-xs text-slate-600">
               {confirmed
@@ -300,8 +551,8 @@ export default function EarnedLeavePage() {
                   : "Fill all fields, then submit."}
             </div>
             <div className="flex items-center gap-2">
-              <Button type="submit" className="px-4 text-sm">
-                Submit
+              <Button type="submit" className="px-4 text-sm" disabled={isSubmitting}>
+                {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </div>
           </div>
@@ -314,6 +565,7 @@ export default function EarnedLeavePage() {
           onConfirm={handleConfirmSubmit}
           onDownload={handleDownloadPdf}
           isDownloading={isDownloading}
+          isSubmitting={isSubmitting}
         />
       </div>
     </DashboardShell>
@@ -426,6 +678,7 @@ const ConfirmationModal = ({
   onConfirm,
   onDownload,
   isDownloading,
+  isSubmitting,
 }: {
   state: DialogState;
   title: string;
@@ -433,6 +686,7 @@ const ConfirmationModal = ({
   onConfirm: () => void;
   onDownload: () => void;
   isDownloading: boolean;
+  isSubmitting: boolean;
 }) => {
   if (!state) return null;
   const isSuccess = state === "success";
@@ -495,8 +749,9 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
+                disabled={isSubmitting}
               >
-                Yes, submit
+                {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>
             </>
           )}
@@ -518,16 +773,16 @@ const Row = ({ label, inputId }: { label: string; inputId: string }) => (
 const RowPeriod = () => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      5. छुट्टी की अवधि / Period of Leave
+      5. छुट्टी की अवधि/ Period of Leave
     </td>
     <td className="px-3 py-2 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
         <span>से / From:</span>
-        <UnderlineInput id="fromDate" width="w-32" />
-        <span>तक / To:</span>
-        <UnderlineInput id="toDate" width="w-32" />
-        <span>दिनों की संख्या / No. of days:</span>
-        <UnderlineInput id="days" width="w-20" />
+        <DateUnderlineInput id="fromDate" width="w-32" />
+        <span>तक/To:</span>
+        <DateUnderlineInput id="toDate" width="w-32" />
+        <span>दिनों की संख्या/No. of days:</span>
+        <UnderlineInput id="days" width="w-20" readOnly />
       </div>
     </td>
   </tr>
@@ -536,7 +791,7 @@ const RowPeriod = () => (
 const RowPrefixSuffix = () => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      6. रविवार, छुट्टी या अवकाश, छुट्टी से पहले या बाद में प्रस्तावित है
+      6. यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं
       <div className="text-[11px] font-normal">
         Sunday and holiday, if any, proposed to be prefixed/suffixed to leave
       </div>
@@ -544,27 +799,82 @@ const RowPrefixSuffix = () => (
     <td className="px-3 py-2 text-[12px] space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span>के पूर्व Prefix</span>
-        <UnderlineInput id="prefixFrom" width="w-28" />
-        <span>से / From:</span>
-        <UnderlineInput id="prefixFromDate" width="w-28" />
-        <span>तक / To:</span>
-        <UnderlineInput id="prefixToDate" width="w-28" />
-        <span>दिनों की संख्या / No. of days:</span>
-        <UnderlineInput id="prefixDays" width="w-20" />
+        <span>से/From:</span>
+        <DateUnderlineInput id="prefixFromDate" width="w-28" />
+        <span>तक/To:</span>
+        <DateUnderlineInput id="prefixToDate" width="w-28" />
+        <span>दिनों की संख्या/No. of days:</span>
+        <UnderlineInput id="prefixDays" width="w-20" readOnly />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span>के पश्चात Suffix</span>
-        <UnderlineInput id="suffixFrom" width="w-28" />
-        <span>से / From:</span>
-        <UnderlineInput id="suffixFromDate" width="w-28" />
-        <span>तक / To:</span>
-        <UnderlineInput id="suffixToDate" width="w-28" />
-        <span>दिनों की संख्या / No. of days:</span>
-        <UnderlineInput id="suffixDays" width="w-20" />
+        <span>से/From:</span>
+        <DateUnderlineInput id="suffixFromDate" width="w-28" />
+        <span>तक/To:</span>
+        <DateUnderlineInput id="suffixToDate" width="w-28" />
+        <span>दिनों की संख्या/No. of days:</span>
+        <UnderlineInput id="suffixDays" width="w-20" readOnly />
       </div>
     </td>
   </tr>
 );
+
+const RowLtc = ({
+  ltcChoice,
+  setLtcChoice,
+}: {
+  ltcChoice: string;
+  setLtcChoice: (value: string) => void;
+}) => {
+  const handleLtcChange = (value: "PROPOSE" | "NOT_PROPOSE") => {
+    setLtcChoice(value);
+    const form = document.querySelector<HTMLFormElement>("form");
+    const hiddenInput = form?.querySelector<HTMLInputElement>("#ltc");
+    if (hiddenInput) {
+      hiddenInput.value = value;
+    }
+  };
+
+  return (
+    <tr className="border-t border-slate-400">
+      <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+        9. I propose/do not propose to avail Leave Travel Concession during the
+        leave.
+      </td>
+      <td className="px-3 py-2 text-[12px]">
+        <input type="hidden" id="ltc" name="ltc" value={ltcChoice} readOnly />
+        <div className="flex flex-wrap items-center gap-6">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="ltcChoice"
+              value="PROPOSE"
+              checked={ltcChoice === "PROPOSE"}
+              onChange={(e) =>
+                handleLtcChange(e.target.value as "PROPOSE" | "NOT_PROPOSE")
+              }
+              className="h-3.5 w-3.5 border-slate-300 text-slate-700 focus:ring-slate-500"
+            />
+            <span>Propose</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="ltcChoice"
+              value="NOT_PROPOSE"
+              checked={ltcChoice === "NOT_PROPOSE"}
+              onChange={(e) =>
+                handleLtcChange(e.target.value as "PROPOSE" | "NOT_PROPOSE")
+              }
+              className="h-3.5 w-3.5 border-slate-300 text-slate-700 focus:ring-slate-500"
+            />
+            <span>Do not propose</span>
+          </label>
+        </div>
+      </td>
+    </tr>
+  );
+};
 
 const RowAddress = () => (
   <tr className="border-t border-slate-400">
@@ -575,31 +885,97 @@ const RowAddress = () => (
       <UnderlineInput id="address" className="w-full" />
       <div className="flex flex-wrap items-center gap-3">
         <span>संपर्क नं. / Contact No.</span>
-        <UnderlineInput id="contactNo" width="w-40" />
+        <UnderlineInput
+          id="contactNo"
+          width="w-40"
+          maxLength={10}
+          pattern="\d{10}"
+          inputMode="numeric"
+        />
         <span>पिन / PIN:</span>
-        <UnderlineInput id="pin" width="w-24" />
+        <UnderlineInput
+          id="pin"
+          width="w-24"
+          maxLength={6}
+          pattern="\d{6}"
+          inputMode="numeric"
+        />
       </div>
     </td>
   </tr>
 );
 
-const RowStation = () => (
-  <tr className="border-t border-slate-400">
-    <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      11. क्या स्टेशन अवकाश की आवश्यकता है / Whether Station leave is required
-    </td>
-    <td className="px-3 py-2 space-y-2 text-[12px]">
-      <div className="flex flex-wrap items-center gap-2">
-        <span>हाँ / Yes / No :</span>
-        <UnderlineInput id="stationYesNo" width="w-20" />
-        <span>यदि हाँ / If yes :</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span>से / From :</span>
-        <UnderlineInput id="stationFrom" width="w-28" />
-        <span>तक / To :</span>
-        <UnderlineInput id="stationTo" width="w-28" />
-      </div>
-    </td>
-  </tr>
-);
+const RowStation = ({
+  stationLeaveRequired,
+  setStationLeaveRequired,
+}: {
+  stationLeaveRequired: string;
+  setStationLeaveRequired: (value: string) => void;
+}) => {
+  const handleYesNoChange = (value: string) => {
+    setStationLeaveRequired(value);
+    const form = document.querySelector<HTMLFormElement>("form");
+    if (form) {
+      const hiddenInput = form.querySelector<HTMLInputElement>("#stationYesNo");
+      if (hiddenInput) {
+        hiddenInput.value = value;
+      }
+    }
+  };
+
+  return (
+    <tr className="border-t border-slate-400">
+      <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+        11. क्या स्टेशन अवकाश की आवश्यकता है / Whether Station leave is required
+      </td>
+      <td className="px-3 py-2 space-y-2 text-[12px]">
+        <div className="flex flex-wrap items-center gap-3">
+          <span>हाँ / Yes / No :</span>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="stationLeaveRadio"
+                value="Yes"
+                checked={stationLeaveRequired === "Yes"}
+                onChange={(e) => handleYesNoChange(e.target.value)}
+                className="w-3.5 h-3.5 text-slate-600 border-slate-300 focus:ring-slate-500"
+              />
+              <span>हाँ / Yes</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="stationLeaveRadio"
+                value="No"
+                checked={stationLeaveRequired === "No"}
+                onChange={(e) => handleYesNoChange(e.target.value)}
+                className="w-3.5 h-3.5 text-slate-600 border-slate-300 focus:ring-slate-500"
+              />
+              <span>नहीं / No</span>
+            </label>
+          </div>
+          <input
+            type="hidden"
+            id="stationYesNo"
+            name="stationYesNo"
+            value={stationLeaveRequired}
+          />
+        </div>
+        {stationLeaveRequired === "Yes" && (
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <span>यदि हाँ / If yes :</span>
+            <span>से / From :</span>
+            <DateUnderlineInput id="stationFrom" width="w-28" />
+            <span>तक / To :</span>
+            <DateUnderlineInput id="stationTo" width="w-28" />
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+};
+
+
+
+

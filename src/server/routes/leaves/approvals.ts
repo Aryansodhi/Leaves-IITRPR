@@ -6,6 +6,11 @@ import { prisma } from "@/server/db/prisma";
 const approvalActionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
   remarks: z.string().trim().max(500).optional(),
+  recommended: z.enum(["RECOMMENDED", "NOT_RECOMMENDED"]).optional(),
+  hodSignature: z.string().trim().optional(),
+  accountsSignature: z.string().trim().optional(),
+  balance: z.string().trim().optional(), // for accounts to fill
+  decisionDate: z.string().trim().optional(),
 });
 
 const withStatus = (message: string, status: number) =>
@@ -86,6 +91,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
 
       return {
         applicationId: step.leaveApplicationId,
+        currentApprovalActor: step.actor,
         referenceCode: step.leaveApplication.referenceCode,
         leaveType: step.leaveApplication.leaveType.name,
         leaveTypeCode: step.leaveApplication.leaveType.code,
@@ -120,15 +126,29 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         actedAt: step.actedAt?.toISOString() ?? null,
         decisionRequired,
         viewerOnly,
-        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => ({
-          sequence: entry.sequence,
-          actor: entry.actor,
-          status: entry.status,
-          assignedTo:
-            entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
-          actedAt: entry.actedAt?.toISOString() ?? null,
-          remarks: entry.remarks ?? null,
-        })),
+        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => {
+          const meta = entry.metadata as Prisma.JsonObject | null;
+          return {
+            sequence: entry.sequence,
+            actor: entry.actor,
+            status: entry.status,
+            assignedTo:
+              entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
+            actedAt: entry.actedAt?.toISOString() ?? null,
+            remarks: entry.remarks ?? null,
+            recommended:
+              typeof meta?.recommended === "string" ? meta.recommended : null,
+            hodSignature:
+              typeof meta?.hodSignature === "string" ? meta.hodSignature : null,
+            accountsSignature:
+              typeof meta?.accountsSignature === "string"
+                ? meta.accountsSignature
+                : null,
+            balance: typeof meta?.balance === "string" ? meta.balance : null,
+            decisionDate:
+              typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+          };
+        }),
       };
     }),
   };
@@ -170,11 +190,23 @@ export const decideLeaveApproval = async (
     code: step.leaveApplication.leaveType.code,
     name: step.leaveApplication.leaveType.name,
   });
+  const isAccountsStep = step.actor === "ACCOUNTS";
   if (
     !isJoiningReport &&
     toBoolean(stepMetadata?.decisionRequired, true) === false
   ) {
     throw withStatus("This request is available for viewing only.", 403);
+  }
+
+  if (isAccountsStep && parsed.decision === "REJECT") {
+    throw withStatus(
+      "Accounts section cannot reject the request. Please fill the balance and continue.",
+      403,
+    );
+  }
+
+  if (isAccountsStep && !(parsed.balance && parsed.balance.trim())) {
+    throw withStatus("Please provide balance as on date.", 400);
   }
 
   const hasPriorPendingStep = step.leaveApplication.approvalSteps.some(
@@ -220,6 +252,14 @@ export const decideLeaveApproval = async (
         remarks: parsed.remarks ?? null,
         actedById: actor.userId,
         actedAt: now,
+        metadata: {
+          ...(step.metadata as Prisma.JsonObject),
+          ...(parsed.recommended && { recommended: parsed.recommended }),
+          ...(parsed.hodSignature && { hodSignature: parsed.hodSignature }),
+          ...(parsed.accountsSignature && { accountsSignature: parsed.accountsSignature }),
+          ...(parsed.balance && { balance: parsed.balance }),
+          ...(parsed.decisionDate && { decisionDate: parsed.decisionDate }),
+        },
       },
     }),
   ];

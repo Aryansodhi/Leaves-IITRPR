@@ -6,11 +6,16 @@ import {
   LeaveRequestDetailsModal,
   type LeaveRequestDetails,
 } from "@/components/leaves/leave-request-details-modal";
+import {
+  EarnedLeaveApprovalModal,
+  type EarnedLeaveApprovalData,
+} from "@/components/leaves/earned-leave-approval-modal";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
 type ApprovalRecord = LeaveRequestDetails & {
   applicationId: string;
+  currentApprovalActor?: string | null;
   status: string;
   applicationStatus: string;
   appliedAt: string;
@@ -63,6 +68,10 @@ const isJoiningReportRecord = (item: ApprovalRecord) =>
   (item.leaveTypeCode ?? "").toUpperCase() === "JR" ||
   item.leaveType.toLowerCase().includes("joining");
 
+const isEarnedLeaveRecord = (item: ApprovalRecord) =>
+  (item.leaveTypeCode ?? "").toUpperCase() === "EL" ||
+  item.leaveType.toLowerCase().includes("earned");
+
 export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +79,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<ApprovalRecord | null>(null);
+  const [selectedEarnedLeave, setSelectedEarnedLeave] = useState<EarnedLeaveApprovalData | null>(null);
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
@@ -199,6 +209,95 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const openEarnedLeaveApproval = (item: ApprovalRecord) => {
+    const handled = item.status !== "PENDING" && item.status !== "IN_REVIEW";
+    const approvalData: EarnedLeaveApprovalData = {
+      applicationId: item.applicationId,
+      referenceCode: item.referenceCode,
+      leaveType: item.leaveType,
+      applicantName: item.applicant.name,
+      applicantRole: item.applicant.role,
+      applicantDepartment: item.applicant.department,
+      applicantDesignation: item.applicant.designation,
+      currentApprovalActor: item.currentApprovalActor ?? null,
+      formData: item.formData ?? null,
+      purpose: item.purpose,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      totalDays: item.totalDays,
+      decisionRequired: !handled,
+      viewerOnly: handled,
+      onApprove: async (data) => {
+        setBusyId(item.applicationId);
+        setError(null);
+        try {
+          const response = await fetch(`/api/leaves/approvals/${item.applicationId}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              decision: "APPROVE",
+              remarks: data.remarks,
+              recommended: data.recommended,
+              hodSignature: data.hodSignature,
+              accountsSignature: data.accountsSignature,
+              balance: data.balance,
+              decisionDate: data.decisionDate,
+            }),
+          });
+
+          const result = (await response.json()) as {
+            ok?: boolean;
+            message?: string;
+          };
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message ?? "Unable to approve request.");
+          }
+
+          setSelectedEarnedLeave(null);
+          await loadItems();
+        } finally {
+          setBusyId(null);
+        }
+      },
+      onReject: async ({ remarks, hodSignature }) => {
+        setBusyId(item.applicationId);
+        setError(null);
+        try {
+          const response = await fetch(`/api/leaves/approvals/${item.applicationId}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              decision: "REJECT",
+              remarks,
+              hodSignature,
+            }),
+          });
+
+          const result = (await response.json()) as {
+            ok?: boolean;
+            message?: string;
+          };
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message ?? "Unable to reject request.");
+          }
+
+          setSelectedEarnedLeave(null);
+          await loadItems();
+        } finally {
+          setBusyId(null);
+        }
+      },
+      onClose: () => {
+        setSelectedEarnedLeave(null);
+      },
+    };
+    setSelectedEarnedLeave(approvalData);
   };
 
   return (
@@ -381,14 +480,20 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 <div className="flex items-center justify-end gap-2">
                   <Button
                     variant="secondary"
-                    onClick={() => setSelected(item)}
+                    onClick={() => {
+                      if (isEarnedLeaveRecord(item)) {
+                        openEarnedLeaveApproval(item);
+                      } else {
+                        setSelected(item);
+                      }
+                    }}
                     disabled={busyId === item.applicationId}
                   >
                     View
                   </Button>
                   {item.decisionRequired ? (
                     <>
-                      {!isJoiningReportRecord(item) ? (
+                      {!isJoiningReportRecord(item) && !isEarnedLeaveRecord(item) ? (
                         <Button
                           variant="secondary"
                           onClick={() =>
@@ -399,16 +504,18 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                           Reject
                         </Button>
                       ) : null}
-                      <Button
-                        onClick={() =>
-                          runDecision(item.applicationId, "APPROVE")
-                        }
-                        disabled={busyId === item.applicationId}
-                      >
-                        {busyId === item.applicationId
-                          ? "Saving..."
-                          : "Approve"}
-                      </Button>
+                      {!isEarnedLeaveRecord(item) ? (
+                        <Button
+                          onClick={() =>
+                            runDecision(item.applicationId, "APPROVE")
+                          }
+                          disabled={busyId === item.applicationId}
+                        >
+                          {busyId === item.applicationId
+                            ? "Saving..."
+                            : "Approve"}
+                        </Button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -440,7 +547,16 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                   <div className="flex items-center gap-2">
                     <Button
                       variant="secondary"
-                      onClick={() => setSelected(item)}
+                      onClick={() => {
+                        if (isEarnedLeaveRecord(item)) {
+                          // handled items shown in read‑only mode
+                          openEarnedLeaveApproval({
+                            ...item,
+                          } as ApprovalRecord);
+                        } else {
+                          setSelected(item);
+                        }
+                      }}
                     >
                       View
                     </Button>
@@ -465,6 +581,11 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         isOpen={selected !== null}
         onClose={() => setSelected(null)}
         request={selected}
+      />
+
+      <EarnedLeaveApprovalModal
+        isOpen={selectedEarnedLeave !== null}
+        data={selectedEarnedLeave}
       />
     </div>
   );

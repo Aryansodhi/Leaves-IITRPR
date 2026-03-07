@@ -12,6 +12,11 @@ export type LeaveApprovalTrailItem = {
   assignedTo: string | null;
   actedAt: string | null;
   remarks: string | null;
+  recommended?: string | null;
+  hodSignature?: string | null;
+  accountsSignature?: string | null;
+  balance?: string | null;
+  decisionDate?: string | null;
 };
 
 export type LeaveRequestDetails = {
@@ -177,7 +182,13 @@ export const LeaveRequestDetailsModal = ({
   );
   const professionalSummary = buildProfessionalSummary(request);
   const hasFormPreview =
-    request.leaveTypeCode === "SL" || request.leaveTypeCode === "JR";
+    // show full form for station leave (SL), joining report (JR), or when request has
+    // form data and has already been approved. Approved records are often reviewed
+    // later by applicants or controllers so the original data should be visible.
+    Boolean(request.formData && Object.keys(request.formData).length > 0) &&
+    (request.status === "APPROVED" ||
+      request.leaveTypeCode === "SL" ||
+      request.leaveTypeCode === "JR");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
@@ -341,6 +352,41 @@ export const LeaveRequestDetailsModal = ({
                       compact
                     />
                   </div>
+                  {(
+                    step.recommended ||
+                    step.hodSignature ||
+                    step.accountsSignature ||
+                    step.balance ||
+                    step.decisionDate
+                  ) && (
+                    <div className="mt-2 space-y-2">
+                      {step.recommended && (
+                        <p className="text-sm">
+                          <strong>Recommendation:</strong> {step.recommended}
+                        </p>
+                      )}
+                      {step.balance && (
+                        <p className="text-sm">
+                          <strong>Balance as on date:</strong> {step.balance}
+                        </p>
+                      )}
+                      {step.hodSignature && (
+                        <p className="text-sm">
+                          <strong>Signature:</strong> {step.hodSignature}
+                        </p>
+                      )}
+                      {step.accountsSignature && !step.hodSignature && (
+                        <p className="text-sm">
+                          <strong>Certified by:</strong> {step.accountsSignature}
+                        </p>
+                      )}
+                      {step.decisionDate && (
+                        <p className="text-sm">
+                          <strong>Decision date:</strong> {step.decisionDate}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

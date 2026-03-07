@@ -65,15 +65,30 @@ export async function GET() {
           currentStep?.assignedTo?.name ??
           currentStep?.assignedTo?.role?.name ??
           null,
-        approvalTrail: entry.approvalSteps.map((step) => ({
-          sequence: step.sequence,
-          actor: step.actor,
-          status: step.status,
-          assignedTo:
-            step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
-          actedAt: step.actedAt?.toISOString() ?? null,
-          remarks: step.remarks ?? null,
-        })),
+        approvalTrail: entry.approvalSteps.map((step) => {
+          const meta = step.metadata as Prisma.JsonObject | null;
+          return {
+            sequence: step.sequence,
+            actor: step.actor,
+            status: step.status,
+            assignedTo:
+              step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
+            actedAt: step.actedAt?.toISOString() ?? null,
+            remarks: step.remarks ?? null,
+            recommended:
+              typeof meta?.recommended === "string" ? meta.recommended : null,
+            hodSignature:
+              typeof meta?.hodSignature === "string" ? meta.hodSignature : null,
+            accountsSignature:
+              typeof meta?.accountsSignature === "string"
+                ? meta.accountsSignature
+                : null,
+            balance: typeof meta?.balance === "string" ? meta.balance : null,
+            decisionDate:
+              typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+          };
+        }),
+
       };
     });
 
