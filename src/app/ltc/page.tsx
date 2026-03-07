@@ -5,13 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
+import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
@@ -134,7 +133,7 @@ export default function LtcPage() {
     if (!form) return;
     setIsDownloading(true);
     try {
-      await generatePdfFromForm(form, "LTC");
+      await downloadFormAsPdf(form, "LTC");
     } catch (err) {
       console.error("PDF generation failed", err);
       window.alert("Unable to generate PDF. Please try again.");
@@ -206,105 +205,6 @@ export default function LtcPage() {
     </DashboardShell>
   );
 }
-
-const generatePdfFromForm = async (element: HTMLElement, title: string) => {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    onclone: (doc) => {
-      const containsUnsupported = (val?: string | null) =>
-        Boolean(val && /(oklab|oklch|\slab\s*\()/i.test(val));
-      const safeBorder = "rgba(15, 23, 42, 0.2)";
-      const safeInk = "#0f172a";
-
-      doc.querySelectorAll("style").forEach((styleTag) => {
-        if (containsUnsupported(styleTag.textContent)) {
-          styleTag.remove();
-        }
-      });
-
-      const resetStyle = doc.createElement("style");
-      resetStyle.textContent = `
-        * { color: ${safeInk} !important; background: #ffffff !important; background-image: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
-        * { border-color: ${safeBorder} !important; outline-color: ${safeInk} !important; }
-        svg *, path, line, rect, circle { fill: ${safeInk} !important; stroke: ${safeInk} !important; }
-      `;
-      doc.head.appendChild(resetStyle);
-
-      doc.body.style.background = "#ffffff";
-      doc.body.style.backgroundImage = "none";
-
-      doc.querySelectorAll<HTMLElement>("*").forEach((el) => {
-        const style = doc.defaultView?.getComputedStyle(el);
-        if (!style) return;
-
-        if (containsUnsupported(style.color)) el.style.color = safeInk;
-
-        if (
-          containsUnsupported(style.backgroundColor) ||
-          containsUnsupported(style.backgroundImage)
-        ) {
-          el.style.backgroundColor = "#ffffff";
-          el.style.backgroundImage = "none";
-        }
-
-        [
-          "borderColor",
-          "borderTopColor",
-          "borderRightColor",
-          "borderBottomColor",
-          "borderLeftColor",
-        ].forEach((prop) => {
-          const val = (style as unknown as Record<string, string>)[prop];
-          if (containsUnsupported(val)) {
-            (el.style as unknown as Record<string, string>)[prop] = safeBorder;
-          }
-        });
-
-        if (containsUnsupported(style.outlineColor)) {
-          el.style.outlineColor = safeInk;
-        }
-
-        if (containsUnsupported(style.boxShadow)) {
-          el.style.boxShadow = "none";
-        }
-
-        if (containsUnsupported(style.textShadow)) {
-          el.style.textShadow = "none";
-        }
-
-        if (containsUnsupported(style.fill)) {
-          el.style.fill = safeInk;
-        }
-
-        if (containsUnsupported(style.stroke)) {
-          el.style.stroke = safeInk;
-        }
-      });
-    },
-  });
-  const imgData = canvas.toDataURL("image/png");
-  const pdf = new jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgWidth = pageWidth;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
-
-  while (heightLeft > 0) {
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    if (heightLeft > 0) {
-      position -= pageHeight;
-      pdf.addPage();
-    }
-  }
-
-  const safeName = title.replace(/\s+/g, "-").toLowerCase();
-  pdf.save(`${safeName}.pdf`);
-};
 
 const ConfirmationModal = ({
   state,

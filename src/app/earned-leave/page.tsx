@@ -5,13 +5,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
+import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
@@ -21,11 +20,7 @@ const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
 
   const from = new Date(`${fromValue}T00:00:00`);
   const to = new Date(`${toValue}T00:00:00`);
-  if (
-    Number.isNaN(from.getTime()) ||
-    Number.isNaN(to.getTime()) ||
-    to < from
-  ) {
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
     return "";
   }
 
@@ -139,7 +134,7 @@ export default function EarnedLeavePage() {
       string
     >;
     saveFormDraft("earned-leave", data);
-    
+
     // Exclude row 6 (prefix/suffix) fields from required validation
     const optionalFields = new Set([
       "prefixFromDate",
@@ -149,13 +144,13 @@ export default function EarnedLeavePage() {
       "suffixToDate",
       "suffixDays",
     ]);
-    
+
     // Exclude station leave dates if "No" is selected
     if (data.stationYesNo === "No") {
       optionalFields.add("stationFrom");
       optionalFields.add("stationTo");
     }
-    
+
     // Exclude administrative fields (read-only, filled by admin staff)
     const adminFields = new Set([
       "recommended",
@@ -170,7 +165,7 @@ export default function EarnedLeavePage() {
       "registrar",
       "authoritySign",
     ]);
-    
+
     const required = Array.from(
       form.querySelectorAll<HTMLInputElement>("input"),
     )
@@ -291,13 +286,11 @@ export default function EarnedLeavePage() {
     // Set up date change listeners
     const fromDateInput = form.querySelector<HTMLInputElement>("#fromDate");
     const toDateInput = form.querySelector<HTMLInputElement>("#toDate");
-    const prefixFromInput = form.querySelector<HTMLInputElement>(
-      "#prefixFromDate",
-    );
+    const prefixFromInput =
+      form.querySelector<HTMLInputElement>("#prefixFromDate");
     const prefixToInput = form.querySelector<HTMLInputElement>("#prefixToDate");
-    const suffixFromInput = form.querySelector<HTMLInputElement>(
-      "#suffixFromDate",
-    );
+    const suffixFromInput =
+      form.querySelector<HTMLInputElement>("#suffixFromDate");
     const suffixToInput = form.querySelector<HTMLInputElement>("#suffixToDate");
 
     fromDateInput?.addEventListener("change", handlePeriodDateChange);
@@ -332,15 +325,21 @@ export default function EarnedLeavePage() {
       const result = await response.json();
 
       if (!result.ok) {
-        throw new Error(result.message || "Failed to submit earned leave application.");
+        throw new Error(
+          result.message || "Failed to submit earned leave application.",
+        );
       }
 
       setConfirmed(true);
-      setSubmitMessage(result.message || "Earned leave application submitted successfully.");
+      setSubmitMessage(
+        result.message || "Earned leave application submitted successfully.",
+      );
       setDialogState("success");
     } catch (err) {
       const errorMessage =
-        err instanceof Error ? err.message : "Unable to submit earned leave application.";
+        err instanceof Error
+          ? err.message
+          : "Unable to submit earned leave application.";
       setSubmitError(errorMessage);
       setDialogState(null);
     } finally {
@@ -357,7 +356,7 @@ export default function EarnedLeavePage() {
     if (!form) return;
     setIsDownloading(true);
     try {
-      await generatePdfFromForm(form, "Earned Leave");
+      await downloadFormAsPdf(form, "Earned Leave");
     } catch (err) {
       console.error("PDF generation failed", err);
       window.alert("Unable to generate PDF. Please try again.");
@@ -494,24 +493,39 @@ export default function EarnedLeavePage() {
                 प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of
                 leave) for period, from
                 <UnderlineInput id="adminFrom" width="w-32" readOnly /> to{" "}
-                <UnderlineInput id="adminTo" width="w-32" readOnly /> is available as per
-                following details:
+                <UnderlineInput id="adminTo" width="w-32" readOnly /> is
+                available as per following details:
               </p>
               <p>
                 अवकाश का प्रकार / Nature of leave applied for{" "}
-                <UnderlineInput id="adminLeaveType" width="w-44" readOnly /> आज की तिथि
-                तक शेष / Balance as on date
-                <UnderlineInput id="balance" width="w-28" readOnly /> कुल दिनों के लिए
-                अवकाश / Leave applied for (No. of days)
+                <UnderlineInput id="adminLeaveType" width="w-44" readOnly /> आज
+                की तिथि तक शेष / Balance as on date
+                <UnderlineInput id="balance" width="w-28" readOnly /> कुल दिनों
+                के लिए अवकाश / Leave applied for (No. of days)
                 <UnderlineInput id="adminDays" width="w-24" readOnly />
               </p>
               <p>
                 संबंधित सहायक / Dealing Assistant{" "}
-                <UnderlineInput id="assistant" width="w-44" className="ml-2" readOnly />{" "}
+                <UnderlineInput
+                  id="assistant"
+                  width="w-44"
+                  className="ml-2"
+                  readOnly
+                />{" "}
                 अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
-                <UnderlineInput id="arDr" width="w-44" className="ml-2" readOnly />{" "}
+                <UnderlineInput
+                  id="arDr"
+                  width="w-44"
+                  className="ml-2"
+                  readOnly
+                />{" "}
                 कुलसचिव / Registrar
-                <UnderlineInput id="registrar" width="w-44" className="ml-2" readOnly />
+                <UnderlineInput
+                  id="registrar"
+                  width="w-44"
+                  className="ml-2"
+                  readOnly
+                />
               </p>
               <p>
                 छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत
@@ -551,7 +565,11 @@ export default function EarnedLeavePage() {
                   : "Fill all fields, then submit."}
             </div>
             <div className="flex items-center gap-2">
-              <Button type="submit" className="px-4 text-sm" disabled={isSubmitting}>
+              <Button
+                type="submit"
+                className="px-4 text-sm"
+                disabled={isSubmitting}
+              >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </div>
@@ -571,105 +589,6 @@ export default function EarnedLeavePage() {
     </DashboardShell>
   );
 }
-
-const generatePdfFromForm = async (element: HTMLElement, title: string) => {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    onclone: (doc) => {
-      const containsUnsupported = (val?: string | null) =>
-        Boolean(val && /(oklab|oklch|\slab\s*\()/i.test(val));
-      const safeBorder = "rgba(15, 23, 42, 0.2)";
-      const safeInk = "#0f172a";
-
-      doc.querySelectorAll("style").forEach((styleTag) => {
-        if (containsUnsupported(styleTag.textContent)) {
-          styleTag.remove();
-        }
-      });
-
-      const resetStyle = doc.createElement("style");
-      resetStyle.textContent = `
-        * { color: ${safeInk} !important; background: #ffffff !important; background-image: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
-        * { border-color: ${safeBorder} !important; outline-color: ${safeInk} !important; }
-        svg *, path, line, rect, circle { fill: ${safeInk} !important; stroke: ${safeInk} !important; }
-      `;
-      doc.head.appendChild(resetStyle);
-
-      doc.body.style.background = "#ffffff";
-      doc.body.style.backgroundImage = "none";
-
-      doc.querySelectorAll<HTMLElement>("*").forEach((el) => {
-        const style = doc.defaultView?.getComputedStyle(el);
-        if (!style) return;
-
-        if (containsUnsupported(style.color)) el.style.color = safeInk;
-
-        if (
-          containsUnsupported(style.backgroundColor) ||
-          containsUnsupported(style.backgroundImage)
-        ) {
-          el.style.backgroundColor = "#ffffff";
-          el.style.backgroundImage = "none";
-        }
-
-        [
-          "borderColor",
-          "borderTopColor",
-          "borderRightColor",
-          "borderBottomColor",
-          "borderLeftColor",
-        ].forEach((prop) => {
-          const val = (style as unknown as Record<string, string>)[prop];
-          if (containsUnsupported(val)) {
-            (el.style as unknown as Record<string, string>)[prop] = safeBorder;
-          }
-        });
-
-        if (containsUnsupported(style.outlineColor)) {
-          el.style.outlineColor = safeInk;
-        }
-
-        if (containsUnsupported(style.boxShadow)) {
-          el.style.boxShadow = "none";
-        }
-
-        if (containsUnsupported(style.textShadow)) {
-          el.style.textShadow = "none";
-        }
-
-        if (containsUnsupported(style.fill)) {
-          el.style.fill = safeInk;
-        }
-
-        if (containsUnsupported(style.stroke)) {
-          el.style.stroke = safeInk;
-        }
-      });
-    },
-  });
-  const imgData = canvas.toDataURL("image/png");
-  const pdf = new jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgWidth = pageWidth;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
-
-  while (heightLeft > 0) {
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    if (heightLeft > 0) {
-      position -= pageHeight;
-      pdf.addPage();
-    }
-  }
-
-  const safeName = title.replace(/\s+/g, "-").toLowerCase();
-  pdf.save(`${safeName}.pdf`);
-};
 
 const ConfirmationModal = ({
   state,
@@ -975,7 +894,3 @@ const RowStation = ({
     </tr>
   );
 };
-
-
-
-

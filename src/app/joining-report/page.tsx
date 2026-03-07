@@ -9,8 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { downloadFormAsPdf } from "@/lib/pdf-export";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -339,7 +338,7 @@ export default function JoiningReportPage() {
     if (!form) return;
     setIsDownloading(true);
     try {
-      await generatePdfFromForm(form, "Joining Report");
+      await downloadFormAsPdf(form, "Joining Report");
     } catch (err) {
       console.error("PDF generation failed", err);
       window.alert("Unable to generate PDF. Please try again.");
@@ -725,111 +724,6 @@ export default function JoiningReportPage() {
   );
 }
 
-const generatePdfFromForm = async (element: HTMLElement, title: string) => {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    onclone: (doc) => {
-      const containsUnsupported = (val?: string | null) =>
-        Boolean(val && /(oklab|oklch|\slab\s*\()/i.test(val));
-      const safeBorder = "rgba(15, 23, 42, 0.2)";
-      const safeInk = "#0f172a";
-
-      // Remove any style tags that declare lab/oklab/oklch colors
-      doc.querySelectorAll("style").forEach((styleTag) => {
-        if (containsUnsupported(styleTag.textContent)) {
-          styleTag.remove();
-        }
-      });
-
-      // Global reset to kill gradients/shadows
-      const resetStyle = doc.createElement("style");
-      resetStyle.textContent = `
-        * { color: ${safeInk} !important; background: #ffffff !important; background-image: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
-        * { border-color: ${safeBorder} !important; outline-color: ${safeInk} !important; }
-        svg *, path, line, rect, circle { fill: ${safeInk} !important; stroke: ${safeInk} !important; }
-      `;
-      doc.head.appendChild(resetStyle);
-
-      doc.body.style.background = "#ffffff";
-      doc.body.style.backgroundImage = "none";
-
-      doc.querySelectorAll<HTMLElement>("*").forEach((el) => {
-        const style = doc.defaultView?.getComputedStyle(el);
-        if (!style) return;
-
-        // overwrite any remaining lab/oklab values
-        if (containsUnsupported(style.color)) el.style.color = safeInk;
-
-        if (
-          containsUnsupported(style.backgroundColor) ||
-          containsUnsupported(style.backgroundImage)
-        ) {
-          el.style.backgroundColor = "#ffffff";
-          el.style.backgroundImage = "none";
-        }
-
-        [
-          "borderColor",
-          "borderTopColor",
-          "borderRightColor",
-          "borderBottomColor",
-          "borderLeftColor",
-        ].forEach((prop) => {
-          const val = (style as unknown as Record<string, string>)[prop];
-          if (containsUnsupported(val)) {
-            (el.style as unknown as Record<string, string>)[prop] = safeBorder;
-          }
-        });
-
-        if (containsUnsupported(style.outlineColor)) {
-          el.style.outlineColor = safeInk;
-        }
-
-        if (containsUnsupported(style.boxShadow)) {
-          el.style.boxShadow = "none";
-        }
-
-        if (containsUnsupported(style.textShadow)) {
-          el.style.textShadow = "none";
-        }
-
-        if (containsUnsupported(style.fill)) {
-          el.style.fill = safeInk;
-        }
-
-        if (containsUnsupported(style.stroke)) {
-          el.style.stroke = safeInk;
-        }
-      });
-    },
-  });
-  const imgData = canvas.toDataURL("image/png");
-  const pdf = new jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const marginX = 24;
-  const marginY = 24;
-  const usablePageHeight = pageHeight - marginY * 2;
-  const imgWidth = pageWidth - marginX * 2;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = marginY;
-
-  while (heightLeft > 0) {
-    pdf.addImage(imgData, "PNG", marginX, position, imgWidth, imgHeight);
-    heightLeft -= usablePageHeight;
-    if (heightLeft > 0) {
-      position = heightLeft - imgHeight + marginY;
-      pdf.addPage();
-    }
-  }
-
-  const safeName = title.replace(/\s+/g, "-").toLowerCase();
-  pdf.save(`${safeName}.pdf`);
-};
-
 const DateUnderlineInput = ({
   id,
   width = "w-36",
@@ -861,7 +755,7 @@ const InlineSelect = ({
   width?: string;
   value: string;
   className?: string;
-  options: ReadonlyArray<{ value: string; label: string }>;
+  options: ReadonlyArray<{ readonly value: string; readonly label: string }>;
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "size">) => (
   <select
     id={id}

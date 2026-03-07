@@ -75,7 +75,17 @@ const earnedLeavePayloadSchema = z.object({
       .string()
       .trim()
       .regex(/^\d{6}$/),
-    stationYesNo: z.enum(["Yes", "No"]).optional(),
+    stationYesNo: z.preprocess(
+      (value) => {
+        if (typeof value !== "string") return value;
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) return undefined;
+        if (normalized === "yes") return "Yes";
+        if (normalized === "no") return "No";
+        return value;
+      },
+      z.enum(["Yes", "No"]).optional(),
+    ),
     stationFrom: z.string().trim().optional(),
     stationTo: z.string().trim().optional(),
     prefixFromDate: z.string().trim().optional(),
