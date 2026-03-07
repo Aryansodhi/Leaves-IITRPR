@@ -273,6 +273,15 @@ const userSeeds = [
     departmentCode: "ESTAB",
     role: RoleKey.ADMIN,
   },
+  {
+    key: "admin2",
+    name: "Portal Admin 2",
+    email: "2023csb1296+admin@iitrpr.ac.in",
+    designation: "Clerical Admin",
+    employeeCode: "IITRPR-ADM02",
+    departmentCode: "ESTAB",
+    role: RoleKey.ADMIN,
+  },
 ];
 
 async function main() {

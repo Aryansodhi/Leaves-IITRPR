@@ -67,8 +67,14 @@ const earnedLeavePayloadSchema = z.object({
     arrangements: z.string().trim().optional(),
     ltc: z.enum(["PROPOSE", "NOT_PROPOSE"]),
     address: z.string().trim().min(1),
-    contactNo: z.string().trim().regex(/^\d{10}$/),
-    pin: z.string().trim().regex(/^\d{6}$/),
+    contactNo: z
+      .string()
+      .trim()
+      .regex(/^\d{10}$/),
+    pin: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/),
     stationYesNo: z.enum(["Yes", "No"]).optional(),
     stationFrom: z.string().trim().optional(),
     stationTo: z.string().trim().optional(),
@@ -289,7 +295,9 @@ export const submitEarnedLeave = async (
   const endDate = parseDateInput(parsed.form.toDate);
 
   if (!startDate || !endDate) {
-    throw new Error("Invalid date format. Please provide valid From and To dates.");
+    throw new Error(
+      "Invalid date format. Please provide valid From and To dates.",
+    );
   }
 
   if (endDate < startDate) {
@@ -311,12 +319,19 @@ export const submitEarnedLeave = async (
   if (parsed.form.pin) {
     contactParts.push(`PIN: ${parsed.form.pin}`);
   }
-  const contactDuringLeave = contactParts.length > 0 ? contactParts.join(", ") : null;
+  const contactDuringLeave =
+    contactParts.length > 0 ? contactParts.join(", ") : null;
 
   // Check if station leave is required
   const stationLeave = parsed.form.stationYesNo === "Yes";
-  const stationFrom = stationLeave && parsed.form.stationFrom ? parseDateInput(parsed.form.stationFrom) : null;
-  const stationTo = stationLeave && parsed.form.stationTo ? parseDateInput(parsed.form.stationTo) : null;
+  const stationFrom =
+    stationLeave && parsed.form.stationFrom
+      ? parseDateInput(parsed.form.stationFrom)
+      : null;
+  const stationTo =
+    stationLeave && parsed.form.stationTo
+      ? parseDateInput(parsed.form.stationTo)
+      : null;
 
   // Check if director escalation is needed (before using in metadata)
   const needsDirectorEscalation =
@@ -383,7 +398,8 @@ export const submitEarnedLeave = async (
   const sanctionerUser =
     applicantRole === RoleKey.STAFF ? registrarUser : deanUser;
 
-  const stepsToCreate: Prisma.ApprovalStepCreateWithoutLeaveApplicationInput[] = [];
+  const stepsToCreate: Prisma.ApprovalStepCreateWithoutLeaveApplicationInput[] =
+    [];
 
   // controlling authority step
   stepsToCreate.push({
@@ -462,7 +478,7 @@ export const submitEarnedLeave = async (
       ltc: parsed.form.ltc === "PROPOSE",
       contactDuringLeave,
       submittedAt: new Date(),
-      metadata: metadata as any,
+      metadata: metadata as Prisma.InputJsonValue,
       approvalSteps: {
         create: stepsToCreate,
       },
@@ -519,9 +535,12 @@ export const approveEarnedLeave = async (
   }
 
   const step = application.approvalSteps[0];
-  const decision = parsed.decision === "APPROVE" ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED;
+  const decision =
+    parsed.decision === "APPROVE"
+      ? ApprovalStatus.APPROVED
+      : ApprovalStatus.REJECTED;
 
-  await prisma.$transaction(async (tx: any) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Update the approval step
     await tx.approvalStep.update({
       where: { id: step.id },

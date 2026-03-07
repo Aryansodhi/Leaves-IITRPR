@@ -71,22 +71,15 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     void loadProfile();
   }, []);
 
-  const roleKey =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem("lf-user-role")
-      : null;
+  const roleKey = profile?.roleKey ?? null;
   const roleSlug =
     profile?.roleSlug ??
     resolveRoleSlug(pathname, searchParams.get("returnTo"), roleKey);
 
   const leavesActive = pathname.startsWith(`/dashboard/${roleSlug}/leaves`);
 
-  const userName =
-    profile?.name ??
-    (typeof window !== "undefined"
-      ? window.localStorage.getItem("lf-user-name")
-      : null);
-  const userRole = profile?.roleKey ?? roleKey;
+  const userName = profile?.name ?? null;
+  const userRole = roleKey;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 py-8">

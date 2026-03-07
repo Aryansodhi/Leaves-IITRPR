@@ -3,7 +3,6 @@
 import type { FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useRef, useState, forwardRef } from "react";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -89,6 +88,7 @@ export default function StationLeavePage() {
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
   const formRef = useRef<HTMLFormElement>(null);
+  const printableRef = useRef<HTMLDivElement>(null);
   const pendingDataRef = useRef<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
@@ -258,11 +258,11 @@ export default function StationLeavePage() {
   };
 
   const handleDownloadPdf = async () => {
-    const form = formRef.current;
-    if (!form) return;
+    const printable = printableRef.current;
+    if (!printable) return;
     setIsDownloading(true);
     try {
-      await generatePdfFromForm(form, "Station Leave");
+      await generatePdfFromForm(printable, "Station Leave");
     } catch (err) {
       console.error("PDF generation failed", err);
       window.alert("Unable to generate PDF. Please try again.");
@@ -386,73 +386,83 @@ export default function StationLeavePage() {
         </Button>
 
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
-            <header className="space-y-1 text-center text-slate-900">
-              <div className="flex items-start justify-center gap-4">
-                <Image
-                  src="/iit_ropar.png"
-                  alt="IIT Ropar"
-                  width={64}
-                  height={64}
-                  className="object-contain"
+          <div ref={printableRef}>
+            <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
+              <header className="space-y-1 text-center text-slate-900">
+                <div className="flex items-start justify-center gap-4">
+                  {/* html2canvas captures plain img more reliably for PDF export than next/image wrappers */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/iit_ropar.png"
+                    alt="IIT Ropar"
+                    width={64}
+                    height={64}
+                    loading="eager"
+                    decoding="async"
+                    className="object-contain"
+                  />
+                  <div className="space-y-1 text-left">
+                    <p className="text-base font-semibold">
+                      भारतीय प्रौद्योगिकी संस्थान रोपड़
+                    </p>
+                    <p className="text-base font-semibold uppercase">
+                      INDIAN INSTITUTE OF TECHNOLOGY ROPAR
+                    </p>
+                    <p className="text-[11px] text-slate-700">
+                      नंगल रोड,रूपनगर,पंजाब-140001/ Nangal Road, Rupnagar,
+                      Punjab-140001
+                    </p>
+                    <p className="text-[11px] text-slate-700">
+                      दूरभाष/Tele: +91-1881-227078,फैक्स /Fax : +91-1881-223395
+                    </p>
+                  </div>
+                </div>
+                <div className="border-b border-slate-500" />
+                <p className="text-base font-semibold underline">
+                  STATION LEAVE PERMISSION (SLP)
+                </p>
+              </header>
+
+              <div className="space-y-3 text-[13px] text-slate-900">
+                <LineItem number="1." label="Name" inputId="name" />
+                <LineItem
+                  number="2."
+                  label="Designation"
+                  inputId="designation"
                 />
-                <div className="space-y-1 text-left">
-                  <p className="text-base font-semibold">
-                    भारतीय प्रौद्योगिकी संस्थान रोपड़
-                  </p>
-                  <p className="text-base font-semibold uppercase">
-                    INDIAN INSTITUTE OF TECHNOLOGY ROPAR
-                  </p>
-                  <p className="text-[11px] text-slate-700">
-                    नंगल रोड,रूपनगर,पंजाब-140001/ Nangal Road, Rupnagar,
-                    Punjab-140001
-                  </p>
-                  <p className="text-[11px] text-slate-700">
-                    दूरभाष/Tele: +91-1881-227078,फैक्स /Fax : +91-1881-223395
-                  </p>
+                <LineItem number="3." label="Department" inputId="department" />
+                <StationLeaveDatesRow />
+                <LineItem
+                  number="5."
+                  label="Nature of Leave sanctioned (if applicable)"
+                  inputId="nature"
+                />
+                <LineItem
+                  number="6."
+                  label="Purpose of the Station Leave Permission"
+                  inputId="purpose"
+                />
+                <StationLeaveContactRow />
+              </div>
+
+              <div className="space-y-2 text-[13px] text-slate-900">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>Place:</span>
+                  <UnderlineInput id="place" width="w-44" />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>Date:</span>
+                  <UnderlineInput id="date" width="w-44" />
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2 text-right">
+                  <span className="text-[12px] text-slate-800">
+                    (Signature of the applicant)
+                  </span>
+                  <UnderlineInput id="applicantSign" width="w-64" />
                 </div>
               </div>
-              <div className="border-b border-slate-500" />
-              <p className="text-base font-semibold underline">
-                STATION LEAVE PERMISSION (SLP)
-              </p>
-            </header>
-
-            <div className="space-y-3 text-[13px] text-slate-900">
-              <LineItem number="1." label="Name" inputId="name" />
-              <LineItem number="2." label="Designation" inputId="designation" />
-              <LineItem number="3." label="Department" inputId="department" />
-              <StationLeaveDatesRow />
-              <LineItem
-                number="5."
-                label="Nature of Leave sanctioned (if applicable)"
-                inputId="nature"
-              />
-              <LineItem
-                number="6."
-                label="Purpose of the Station Leave Permission"
-                inputId="purpose"
-              />
-              <StationLeaveContactRow />
-            </div>
-
-            <div className="space-y-2 text-[13px] text-slate-900">
-              <div className="flex flex-wrap items-center gap-2">
-                <span>Place:</span>
-                <UnderlineInput id="place" width="w-44" />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span>Date:</span>
-                <UnderlineInput id="date" width="w-44" />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-2 text-right">
-                <span className="text-[12px] text-slate-800">
-                  (Signature of the applicant)
-                </span>
-                <UnderlineInput id="applicantSign" width="w-64" />
-              </div>
-            </div>
-          </SurfaceCard>
+            </SurfaceCard>
+          </div>
 
           <SurfaceCard className="space-y-2 border-slate-200/80 p-4">
             <p className="text-sm font-semibold text-slate-900">Routing</p>
@@ -525,99 +535,229 @@ export default function StationLeavePage() {
   );
 }
 
+const waitForImages = async (element: HTMLElement) => {
+  const images = Array.from(element.querySelectorAll("img"));
+
+  await Promise.all(
+    images.map(async (img) => {
+      if (img.complete && img.naturalWidth > 0) return;
+
+      if (typeof img.decode === "function") {
+        try {
+          await img.decode();
+          return;
+        } catch {
+          // fallback to load/error events below
+        }
+      }
+
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", done, { once: true });
+      });
+    }),
+  );
+};
+
 const generatePdfFromForm = async (element: HTMLElement, title: string) => {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    onclone: (doc) => {
-      const containsUnsupported = (val?: string | null) =>
-        Boolean(val && /(oklab|oklch|\slab\s*\()/i.test(val));
-      const safeBorder = "rgba(15, 23, 42, 0.2)";
-      const safeInk = "#0f172a";
+  await waitForImages(element);
 
-      doc.querySelectorAll("style").forEach((styleTag) => {
-        if (containsUnsupported(styleTag.textContent)) {
-          styleTag.remove();
+  const sanitizeClone = (doc: Document) => {
+    const containsUnsupported = (val?: string | null) =>
+      Boolean(val && /(oklab|oklch|\blab\s*\(|\blch\s*\()/i.test(val));
+    const safeBorder = "rgba(15, 23, 42, 0.2)";
+    const safeInk = "#0f172a";
+
+    doc.querySelectorAll("style").forEach((styleTag) => {
+      if (containsUnsupported(styleTag.textContent)) {
+        styleTag.remove();
+      }
+    });
+
+    // html2canvas can fail on modern color functions (lab/lch) inside SVG styles.
+    // We do not need decorative icons in the exported form, so strip SVGs in clone.
+    doc.querySelectorAll("svg").forEach((svg) => svg.remove());
+    doc.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+      img.style.display = "block";
+      img.style.objectFit = "contain";
+      img.style.objectPosition = "center";
+      img.style.maxWidth = "100%";
+      img.style.height = "auto";
+    });
+
+    const resetStyle = doc.createElement("style");
+    resetStyle.textContent = `
+      * { color: ${safeInk} !important; background: #ffffff !important; background-image: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
+      * { border-color: ${safeBorder} !important; outline-color: ${safeInk} !important; }
+      svg *, path, line, rect, circle { fill: ${safeInk} !important; stroke: ${safeInk} !important; }
+    `;
+    doc.head.appendChild(resetStyle);
+
+    doc.body.style.background = "#ffffff";
+    doc.body.style.backgroundImage = "none";
+
+    doc.querySelectorAll<HTMLElement>("*").forEach((el) => {
+      const style = doc.defaultView?.getComputedStyle(el);
+      if (!style) return;
+
+      if (containsUnsupported(style.color)) el.style.color = safeInk;
+
+      if (
+        containsUnsupported(style.backgroundColor) ||
+        containsUnsupported(style.backgroundImage)
+      ) {
+        el.style.backgroundColor = "#ffffff";
+        el.style.backgroundImage = "none";
+      }
+
+      [
+        "borderColor",
+        "borderTopColor",
+        "borderRightColor",
+        "borderBottomColor",
+        "borderLeftColor",
+      ].forEach((prop) => {
+        const val = (style as unknown as Record<string, string>)[prop];
+        if (containsUnsupported(val)) {
+          (el.style as unknown as Record<string, string>)[prop] = safeBorder;
         }
       });
 
-      const resetStyle = doc.createElement("style");
-      resetStyle.textContent = `
-        * { color: ${safeInk} !important; background: #ffffff !important; background-image: none !important; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
-        * { border-color: ${safeBorder} !important; outline-color: ${safeInk} !important; }
-        svg *, path, line, rect, circle { fill: ${safeInk} !important; stroke: ${safeInk} !important; }
-      `;
-      doc.head.appendChild(resetStyle);
+      if (containsUnsupported(style.outlineColor)) {
+        el.style.outlineColor = safeInk;
+      }
 
-      doc.body.style.background = "#ffffff";
-      doc.body.style.backgroundImage = "none";
+      if (containsUnsupported(style.boxShadow)) {
+        el.style.boxShadow = "none";
+      }
 
-      doc.querySelectorAll<HTMLElement>("*").forEach((el) => {
-        const style = doc.defaultView?.getComputedStyle(el);
-        if (!style) return;
+      if (containsUnsupported(style.textShadow)) {
+        el.style.textShadow = "none";
+      }
 
-        if (containsUnsupported(style.color)) el.style.color = safeInk;
+      if (containsUnsupported(style.fill)) {
+        el.style.fill = safeInk;
+      }
 
-        if (
-          containsUnsupported(style.backgroundColor) ||
-          containsUnsupported(style.backgroundImage)
-        ) {
-          el.style.backgroundColor = "#ffffff";
-          el.style.backgroundImage = "none";
-        }
+      if (containsUnsupported(style.stroke)) {
+        el.style.stroke = safeInk;
+      }
+    });
 
-        [
-          "borderColor",
-          "borderTopColor",
-          "borderRightColor",
-          "borderBottomColor",
-          "borderLeftColor",
-        ].forEach((prop) => {
-          const val = (style as unknown as Record<string, string>)[prop];
-          if (containsUnsupported(val)) {
-            (el.style as unknown as Record<string, string>)[prop] = safeBorder;
-          }
-        });
+    doc
+      .querySelectorAll<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >("input, textarea, select")
+      .forEach((field) => {
+        const style = doc.defaultView?.getComputedStyle(field);
+        const replacement = doc.createElement("span");
+        const value =
+          field instanceof HTMLInputElement && field.type === "checkbox"
+            ? field.checked
+              ? "Yes"
+              : "No"
+            : field.value;
 
-        if (containsUnsupported(style.outlineColor)) {
-          el.style.outlineColor = safeInk;
-        }
+        replacement.textContent = value || "-";
+        replacement.style.display =
+          style?.display === "block" ? "block" : "inline-block";
+        replacement.style.minHeight = style?.height || "1.25rem";
+        replacement.style.minWidth = style?.minWidth || style?.width || "3rem";
+        replacement.style.padding = style?.padding || "0 0.25rem";
+        replacement.style.margin = style?.margin || "0";
+        replacement.style.borderBottom = `1px dashed ${safeBorder}`;
+        replacement.style.color = safeInk;
+        replacement.style.verticalAlign = "middle";
+        replacement.style.font = style?.font || "500 13px/1.4 sans-serif";
+        replacement.style.whiteSpace = "pre-wrap";
 
-        if (containsUnsupported(style.boxShadow)) {
-          el.style.boxShadow = "none";
-        }
-
-        if (containsUnsupported(style.textShadow)) {
-          el.style.textShadow = "none";
-        }
-
-        if (containsUnsupported(style.fill)) {
-          el.style.fill = safeInk;
-        }
-
-        if (containsUnsupported(style.stroke)) {
-          el.style.stroke = safeInk;
-        }
+        field.replaceWith(replacement);
       });
-    },
-  });
-  const imgData = canvas.toDataURL("image/png");
+  };
+
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(element, {
+      scale: 1.5,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width: element.scrollWidth,
+      height: element.scrollHeight,
+      ignoreElements: (el) => el instanceof SVGElement,
+      onclone: sanitizeClone,
+    });
+  } catch {
+    // Fallback with lighter rendering options for very large/complex forms.
+    canvas = await html2canvas(element, {
+      scale: 1,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      width: element.scrollWidth,
+      height: element.scrollHeight,
+      ignoreElements: (el) => el instanceof SVGElement,
+      onclone: sanitizeClone,
+    });
+  }
   const pdf = new jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgWidth = pageWidth;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
+  const margin = 24;
+  const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+  const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+  const pageCanvasHeightPx = Math.max(
+    1,
+    Math.floor((pageHeight * canvas.width) / pageWidth),
+  );
 
-  while (heightLeft > 0) {
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    if (heightLeft > 0) {
-      position -= pageHeight;
+  let renderedHeight = 0;
+  let pageIndex = 0;
+
+  while (renderedHeight < canvas.height) {
+    const sliceHeight = Math.min(
+      pageCanvasHeightPx,
+      canvas.height - renderedHeight,
+    );
+    const sliceCanvas = document.createElement("canvas");
+    sliceCanvas.width = canvas.width;
+    sliceCanvas.height = sliceHeight;
+
+    const context = sliceCanvas.getContext("2d");
+    if (!context) {
+      throw new Error("Could not initialize PDF canvas context.");
+    }
+
+    context.drawImage(
+      canvas,
+      0,
+      renderedHeight,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight,
+    );
+
+    const imgData = sliceCanvas.toDataURL("image/jpeg", 0.82);
+    const renderHeight = (sliceHeight * pageWidth) / canvas.width;
+
+    if (pageIndex > 0) {
       pdf.addPage();
     }
+
+    pdf.addImage(
+      imgData,
+      "JPEG",
+      margin,
+      margin,
+      pageWidth,
+      renderHeight,
+      undefined,
+      "FAST",
+    );
+
+    renderedHeight += sliceHeight;
+    pageIndex += 1;
   }
 
   const safeName = title.replace(/\s+/g, "-").toLowerCase();
