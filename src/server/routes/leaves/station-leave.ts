@@ -88,39 +88,20 @@ const parseDateInput = (raw?: string | null) => {
 };
 
 const toWorkflowActor = (role: RoleKey): WorkflowActor => {
-  if (role === RoleKey.HOD) return WorkflowActor.HOD;
-  if (role === RoleKey.ASSOCIATE_HOD) return WorkflowActor.ASSOCIATE_HOD;
-  if (role === RoleKey.DEAN) return WorkflowActor.DEAN;
-  if (role === RoleKey.REGISTRAR) return WorkflowActor.REGISTRAR;
-  return WorkflowActor.DIRECTOR;
-};
-
-const looksLikeDepartmentHod = (input: {
-  name?: string | null;
-  designation?: string | null;
-}) => {
-  const haystack = `${input.name ?? ""} ${input.designation ?? ""}`
-    .trim()
-    .toLowerCase();
-
-  return haystack.includes("hod") || haystack.includes("head of department");
-};
-
-const findFirstActiveUserByRole = async (role: RoleKey) => {
-  const user = await prisma.user.findFirst({
-    where: { isActive: true, role: { key: role } },
-    include: { role: true },
-  });
-
-  if (!user || !user.role) {
-    throw new Error(`${role} account not found for station leave approval.`);
+  switch (role) {
+    case RoleKey.HOD:
+      return WorkflowActor.HOD;
+    case RoleKey.ASSOCIATE_HOD:
+      return WorkflowActor.ASSOCIATE_HOD;
+    case RoleKey.DEAN:
+      return WorkflowActor.DEAN;
+    case RoleKey.REGISTRAR:
+      return WorkflowActor.REGISTRAR;
+    case RoleKey.DIRECTOR:
+      return WorkflowActor.DIRECTOR;
+    default:
+      return WorkflowActor.HOD;
   }
-
-  return {
-    id: user.id,
-    name: user.name,
-    roleKey: user.role.key,
-  };
 };
 
 const stationLeaveReference = () => {
@@ -174,126 +155,6 @@ const getStationLeaveType = async () => {
   }
 
   return leaveType;
-};
-
-const resolveApproverForApplicant = async (input: {
-  applicantId: string;
-  applicantRole: RoleKey;
-  departmentId: string | null;
-  reportsToId: string | null;
-}) => {
-  if (input.applicantRole === RoleKey.FACULTY) {
-    const departmentApprovers = input.departmentId
-      ? await prisma.user.findMany({
-          where: {
-            isActive: true,
-            departmentId: input.departmentId,
-            role: {
-              key: {
-                in: [RoleKey.HOD, RoleKey.ASSOCIATE_HOD],
-              },
-            },
-          },
-          include: { role: true },
-        })
-      : [];
-
-    const departmentApprover =
-      departmentApprovers.find(
-        (candidate) => candidate.role?.key === RoleKey.HOD,
-      ) ??
-      departmentApprovers.find(
-        (candidate) => candidate.role?.key === RoleKey.ASSOCIATE_HOD,
-      ) ??
-      null;
-
-    const reportingManager = input.reportsToId
-      ? await prisma.user.findFirst({
-          where: {
-            id: input.reportsToId,
-            isActive: true,
-          },
-          include: { role: true },
-        })
-      : null;
-
-    const inferredDepartmentHod =
-      !departmentApprover && input.departmentId
-        ? await prisma.user.findFirst({
-            where: {
-              isActive: true,
-              departmentId: input.departmentId,
-              OR: [
-                { name: { contains: "hod", mode: "insensitive" } },
-                {
-                  designation: {
-                    contains: "hod",
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  designation: {
-                    contains: "head of department",
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            },
-            include: { role: true },
-          })
-        : null;
-
-    const fallbackApprover =
-      departmentApprover ??
-      (reportingManager &&
-      (!input.departmentId ||
-        reportingManager.departmentId === input.departmentId) &&
-      (reportingManager.role?.key === RoleKey.HOD ||
-        reportingManager.role?.key === RoleKey.ASSOCIATE_HOD ||
-        looksLikeDepartmentHod(reportingManager))
-        ? reportingManager
-        : null) ??
-      inferredDepartmentHod;
-
-    if (!fallbackApprover) {
-      throw new Error(
-        "No HoD found for this faculty member's department. Please contact admin.",
-      );
-    }
-
-    return {
-      approverId: fallbackApprover.id,
-      approverName: fallbackApprover.name,
-      approverRole:
-        fallbackApprover.role?.key === RoleKey.ASSOCIATE_HOD
-          ? RoleKey.ASSOCIATE_HOD
-          : RoleKey.HOD,
-    };
-  }
-
-  if (input.applicantRole === RoleKey.STAFF) {
-    const registrar = await findFirstActiveUserByRole(RoleKey.REGISTRAR);
-
-    return {
-      approverId: registrar.id,
-      approverName: registrar.name,
-      approverRole: registrar.roleKey,
-    };
-  }
-
-  if (input.applicantRole === RoleKey.HOD) {
-    const dean = await findFirstActiveUserByRole(RoleKey.DEAN);
-
-    return {
-      approverId: dean.id,
-      approverName: dean.name,
-      approverRole: dean.roleKey,
-    };
-  }
-
-  throw new Error(
-    "Station leave workflow is only configured for Faculty, Staff, and HoD applicants.",
-  );
 };
 
 export const getStationLeaveBootstrap = async (actor: SessionActor) => {
@@ -408,6 +269,9 @@ export const submitStationLeave = async (
     include: {
       role: true,
       department: true,
+      reportsTo: {
+        include: { role: true },
+      },
     },
   });
 
@@ -415,13 +279,74 @@ export const submitStationLeave = async (
     throw new Error("Unable to resolve applicant role.");
   }
 
+  let approverId: string | null = null;
+  let approverName: string | null = null;
+  let approverRole: RoleKey | null = null;
+
+  // STRATEGY 1: Use strictly assigned reportsTo manager from database
+  if (
+    profile.reportsTo &&
+    profile.reportsTo.isActive &&
+    profile.reportsTo.role
+  ) {
+    approverId = profile.reportsTo.id;
+    approverName = profile.reportsTo.name;
+    approverRole = profile.reportsTo.role.key;
+  }
+  // STRATEGY 2: Smart fallback routing based on actor's role
+  else {
+    if (profile.role.key === RoleKey.FACULTY) {
+      const hod = await prisma.user.findFirst({
+        where: {
+          departmentId: profile.departmentId,
+          role: { key: RoleKey.HOD },
+          isActive: true,
+        },
+        include: { role: true },
+      });
+      if (hod && hod.role) {
+        approverId = hod.id;
+        approverName = hod.name;
+        approverRole = hod.role.key;
+      }
+    } else if (
+      profile.role.key === RoleKey.HOD ||
+      profile.role.key === RoleKey.ASSOCIATE_HOD
+    ) {
+      const dean = await prisma.user.findFirst({
+        where: { role: { key: RoleKey.DEAN }, isActive: true },
+        include: { role: true },
+      });
+      if (dean && dean.role) {
+        approverId = dean.id;
+        approverName = dean.name;
+        approverRole = dean.role.key;
+      }
+    } else if (profile.role.key === RoleKey.STAFF) {
+      const reg = await prisma.user.findFirst({
+        where: { role: { key: RoleKey.REGISTRAR }, isActive: true },
+        include: { role: true },
+      });
+      if (reg && reg.role) {
+        approverId = reg.id;
+        approverName = reg.name;
+        approverRole = reg.role.key;
+      }
+    }
+  }
+
+  // Final check to ensure we have a valid route
+  if (!approverId || !approverName || !approverRole) {
+    throw new Error(
+      "Routing failed. No manager is directly assigned to you, and fallback department routing could not locate a manager.",
+    );
+  }
+
   const leaveType = await getStationLeaveType();
-  const director = await findFirstActiveUserByRole(RoleKey.DIRECTOR);
-  const approver = await resolveApproverForApplicant({
-    applicantId: actor.userId,
-    applicantRole: profile.role.key,
-    departmentId: profile.departmentId,
-    reportsToId: profile.reportsToId,
+
+  const director = await prisma.user.findFirst({
+    where: { isActive: true, role: { key: RoleKey.DIRECTOR } },
+    include: { role: true },
   });
 
   const startDate =
@@ -439,17 +364,17 @@ export const submitStationLeave = async (
   const contactDuringLeave = `${parsed.form.contactPrefix} ${parsed.form.contactNumber} | ${parsed.form.contactAddress}`;
   const needsDirectorEscalation =
     totalDays > DIRECTOR_ESCALATION_THRESHOLD_DAYS &&
-    approver.approverRole !== RoleKey.DIRECTOR;
+    approverRole !== RoleKey.DIRECTOR;
 
   const stepsToCreate: Prisma.ApprovalStepCreateWithoutLeaveApplicationInput[] =
     [
       {
         sequence: 1,
-        actor: toWorkflowActor(approver.approverRole),
+        actor: toWorkflowActor(approverRole),
         status: ApprovalStatus.PENDING,
         assignedTo: {
           connect: {
-            id: approver.approverId,
+            id: approverId,
           },
         },
         metadata: {
@@ -458,7 +383,7 @@ export const submitStationLeave = async (
       },
     ];
 
-  if (needsDirectorEscalation) {
+  if (needsDirectorEscalation && director) {
     stepsToCreate.push({
       sequence: 2,
       actor: WorkflowActor.DIRECTOR,
@@ -498,8 +423,8 @@ export const submitStationLeave = async (
         },
         routing: {
           applicantRole: profile.role.key,
-          approverRole: approver.approverRole,
-          approverName: approver.approverName,
+          approverRole: approverRole,
+          approverName: approverName,
           directorEscalation: needsDirectorEscalation,
         },
       },
@@ -515,13 +440,13 @@ export const submitStationLeave = async (
 
   return {
     ok: true,
-    message: `Request submitted to ${approver.approverName} (${approver.approverRole}).${finalApprovalNote}`,
+    message: `Request submitted to ${approverName} (${approverRole}).${finalApprovalNote}`,
     data: {
       id: application.id,
       referenceCode: application.referenceCode,
       status: application.status,
-      approverName: approver.approverName,
-      approverRole: approver.approverRole,
+      approverName: approverName,
+      approverRole: approverRole,
       directorEscalation: needsDirectorEscalation,
     },
   };
@@ -532,8 +457,7 @@ export const getStationLeaveApprovals = async (actor: SessionActor) => {
     where: {
       assignedToId: actor.userId,
       leaveApplication: {
-        stationLeave: true,
-        leaveType: { code: "SL" },
+        status: { not: LeaveStatus.DRAFT },
       },
     },
     include: {
@@ -633,15 +557,12 @@ export const decideStationLeaveApproval = async (
 ) => {
   const parsed = approvalActionSchema.parse(payload);
 
+  // Relaxed query: If there is a pending step assigned to this user, grab it.
   const step = await prisma.approvalStep.findFirst({
     where: {
       leaveApplicationId: applicationId,
       assignedToId: actor.userId,
       status: { in: [ApprovalStatus.PENDING, ApprovalStatus.IN_REVIEW] },
-      leaveApplication: {
-        stationLeave: true,
-        leaveType: { code: "SL" },
-      },
     },
     include: {
       leaveApplication: {
@@ -654,7 +575,7 @@ export const decideStationLeaveApproval = async (
 
   if (!step) {
     throw withStatus(
-      "No pending station leave approval found for this request.",
+      "No pending approval found for this request. It may have already been approved.",
       404,
     );
   }

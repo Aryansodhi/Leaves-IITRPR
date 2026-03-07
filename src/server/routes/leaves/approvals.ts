@@ -141,14 +141,12 @@ export const decideLeaveApproval = async (
 ) => {
   const parsed = approvalActionSchema.parse(payload);
 
+  // Relaxed query: If there is a pending step assigned to this user, grab it.
   const step = await prisma.approvalStep.findFirst({
     where: {
       leaveApplicationId: applicationId,
       assignedToId: actor.userId,
       status: { in: [ApprovalStatus.PENDING, ApprovalStatus.IN_REVIEW] },
-      leaveApplication: {
-        status: { not: LeaveStatus.DRAFT },
-      },
     },
     include: {
       leaveApplication: {
@@ -161,7 +159,10 @@ export const decideLeaveApproval = async (
   });
 
   if (!step) {
-    throw withStatus("No pending approval found for this request.", 404);
+    throw withStatus(
+      "No pending approval found for this request. It may have already been approved.",
+      404,
+    );
   }
 
   const stepMetadata = step.metadata as Prisma.JsonObject | null;
@@ -196,6 +197,7 @@ export const decideLeaveApproval = async (
     parsed.decision === "APPROVE"
       ? ApprovalStatus.APPROVED
       : ApprovalStatus.REJECTED;
+
   const remainingPendingSteps = step.leaveApplication.approvalSteps.some(
     (candidate) =>
       candidate.sequence > step.sequence &&

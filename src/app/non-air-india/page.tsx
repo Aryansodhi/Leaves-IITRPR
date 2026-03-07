@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
@@ -11,29 +11,43 @@ import jsPDF from "jspdf";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
+import {
+  applyAutofillToForm,
+  saveFormDraft,
+  clearFormDraft,
+} from "@/lib/form-autofill";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+
+interface UnderlineInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type"
+> {
+  id: string;
+  width?: string;
+  type?: "text" | "number" | "date" | "email";
+}
 
 const UnderlineInput = ({
   id,
   width = "w-60",
   className,
-}: {
-  id: string;
-  width?: string;
-  className?: string;
-}) => (
+  type = "text",
+  required = true,
+  ...props
+}: UnderlineInputProps) => (
   <input
     id={id}
     name={id}
-    type="text"
+    type={type}
+    required={required}
     className={cn(
       "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none",
       width,
       className,
     )}
+    {...props}
   />
 );
 
@@ -47,10 +61,12 @@ export default function NonAirIndiaPage() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
     inputs.forEach((input) => {
+      if (!input.required) return;
       const key = input.name || input.id;
       const hasError = key ? missing.has(key) : false;
       input.classList.toggle("border-red-500", hasError);
@@ -83,14 +99,19 @@ export default function NonAirIndiaPage() {
       string
     >;
     saveFormDraft("non-air-india", data);
+
+    // Check missing for only required fields
     const required = Array.from(
-      form.querySelectorAll<HTMLInputElement>("input"),
+      form.querySelectorAll<HTMLInputElement>("input[required]"),
     )
       .map((input) => input.name || input.id)
       .filter(Boolean);
+
     const missing = required.filter((key) => !data[key]?.trim());
     const missingSet = new Set(missing);
+
     markMissingInputs(form, missingSet);
+
     if (missingSet.size > 0) {
       setMissingFields(Array.from(missingSet));
       return;
@@ -108,10 +129,36 @@ export default function NonAirIndiaPage() {
     void applyAutofillToForm(form, "non-air-india");
   }, []);
 
-  const handleConfirmSubmit = () => {
-    setConfirmed(true);
-    setDialogState("success");
-    console.log("Non-Air-India form submitted", pendingDataRef.current);
+  const handleConfirmSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/non-air-india", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ form: pendingDataRef.current }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Submission failed");
+      }
+
+      setConfirmed(true);
+      setDialogState("success");
+
+      // CLEAR DRAFT AFTER SUCCESS
+      clearFormDraft("non-air-india");
+      if (formRef.current) {
+        formRef.current.reset(); // Empty the form visually
+        // Re-apply basic profile info (Name, Designation, Dept) so it's ready for next time
+        void applyAutofillToForm(formRef.current, "non-air-india");
+      }
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCloseDialog = () => {
@@ -189,7 +236,7 @@ export default function NonAirIndiaPage() {
             <LabeledLine number="6" label="Purpose" inputId="purpose" />
             <LabeledLine
               number="7"
-              label="Sectors for which permission is sought."
+              label="Sectors for which permission is sought"
               inputId="sectors"
             />
             <LabeledLine
@@ -216,6 +263,7 @@ export default function NonAirIndiaPage() {
               id="applicantSignature"
               width="w-64"
               className="ml-2"
+              placeholder="Full Name as Signature"
             />
           </div>
 
@@ -235,8 +283,12 @@ export default function NonAirIndiaPage() {
                 : "Fill all fields, then submit."}
           </div>
           <div className="flex items-center gap-2">
-            <Button type="submit" className="px-4 text-sm">
-              Submit
+            <Button
+              type="submit"
+              className="px-4 text-sm"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Submitting..." : "Submit"}
             </Button>
           </div>
         </div>
@@ -248,6 +300,7 @@ export default function NonAirIndiaPage() {
           onConfirm={handleConfirmSubmit}
           onDownload={handleDownloadPdf}
           isDownloading={isDownloading}
+          isSubmitting={isSubmitting}
         />
       </form>
     </DashboardShell>
@@ -360,6 +413,7 @@ const ConfirmationModal = ({
   onConfirm,
   onDownload,
   isDownloading,
+  isSubmitting,
 }: {
   state: DialogState;
   title: string;
@@ -367,6 +421,7 @@ const ConfirmationModal = ({
   onConfirm: () => void;
   onDownload: () => void;
   isDownloading: boolean;
+  isSubmitting: boolean;
 }) => {
   if (!state) return null;
   const isSuccess = state === "success";
@@ -422,6 +477,7 @@ const ConfirmationModal = ({
                 onClick={onCancel}
                 className="px-3 text-sm"
                 type="button"
+                disabled={isSubmitting}
               >
                 Go back
               </Button>
@@ -429,8 +485,9 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
+                disabled={isSubmitting}
               >
-                Yes, submit
+                {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>
             </>
           )}
@@ -444,33 +501,35 @@ const LabeledLine = ({
   number,
   label,
   inputId,
+  type = "text",
 }: {
   number: string;
   label: string;
   inputId: string;
+  type?: "text" | "number" | "date";
 }) => (
   <div className="flex flex-wrap items-center gap-2">
     <span className="w-4 text-right font-semibold">{number}</span>
     <span className="flex-1 font-semibold">{label}</span>
     <span>:</span>
-    <UnderlineInput id={inputId} className="flex-1" />
+    <UnderlineInput id={inputId} type={type} className="flex-1" />
   </div>
 );
 
 const VisitDates = () => (
-  <div className="space-y-1">
+  <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-4 text-right font-semibold">4</span>
       <span className="flex-1 font-semibold">Visit Dates</span>
       <span>:</span>
-      <span className="font-semibold">Onward Journey:</span>
-      <UnderlineInput id="onwardJourney" width="w-32" />
-      <span className="font-semibold">Return Journey:</span>
-      <UnderlineInput id="returnJourney" width="w-32" />
-    </div>
-    <div className="flex flex-wrap items-center gap-2 pl-8">
-      <UnderlineInput id="visitDateLine1" width="w-48" />
-      <UnderlineInput id="visitDateLine2" width="w-48" />
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-xs">Onward Journey:</span>
+        <UnderlineInput id="onwardJourney" type="date" width="w-36" />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-xs">Return Journey:</span>
+        <UnderlineInput id="returnJourney" type="date" width="w-36" />
+      </div>
     </div>
   </div>
 );
@@ -480,7 +539,7 @@ const PermissionMhrd = () => (
     <span className="w-4 text-right font-semibold">9</span>
     <span className="flex-1 font-semibold">Permission sought from MHRD.</span>
     <span>:</span>
-    <span>Yes/No(If yes mail attached):</span>
+    <span>Yes/No (If yes mail attached):</span>
     <UnderlineInput id="permissionMhrd" width="w-28" />
   </div>
 );

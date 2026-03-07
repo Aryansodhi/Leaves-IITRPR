@@ -87,6 +87,12 @@ export const saveFormDraft = (
   );
 };
 
+// NEW FUNCTION: Clears the saved draft from local storage
+export const clearFormDraft = (formKey: string) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(`${FORM_DRAFT_PREFIX}${formKey}`);
+};
+
 const getCachedProfile = () => {
   if (typeof window === "undefined") return null;
   const raw = window.sessionStorage.getItem(PROFILE_CACHE_KEY);
