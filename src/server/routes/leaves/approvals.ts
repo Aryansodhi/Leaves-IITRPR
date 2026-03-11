@@ -20,6 +20,17 @@ type SessionActor = {
   userId: string;
 };
 
+const bulkApprovalActionSchema = z.object({
+  applicationIds: z.array(z.string().trim().min(1)).min(1).max(100),
+  decision: z.enum(["APPROVE", "REJECT"]),
+  remarks: z.string().trim().max(500).optional(),
+  recommended: z.enum(["RECOMMENDED", "NOT_RECOMMENDED"]).optional(),
+  hodSignature: z.string().trim().optional(),
+  accountsSignature: z.string().trim().optional(),
+  balance: z.string().trim().optional(),
+  decisionDate: z.string().trim().optional(),
+});
+
 const toBoolean = (value: Prisma.JsonValue | undefined, fallback: boolean) =>
   typeof value === "boolean" ? value : fallback;
 
@@ -256,7 +267,9 @@ export const decideLeaveApproval = async (
           ...(step.metadata as Prisma.JsonObject),
           ...(parsed.recommended && { recommended: parsed.recommended }),
           ...(parsed.hodSignature && { hodSignature: parsed.hodSignature }),
-          ...(parsed.accountsSignature && { accountsSignature: parsed.accountsSignature }),
+          ...(parsed.accountsSignature && {
+            accountsSignature: parsed.accountsSignature,
+          }),
           ...(parsed.balance && { balance: parsed.balance }),
           ...(parsed.decisionDate && { decisionDate: parsed.decisionDate }),
         },
@@ -297,5 +310,57 @@ export const decideLeaveApproval = async (
     ok: true,
     message:
       parsed.decision === "APPROVE" ? "Request approved." : "Request rejected.",
+  };
+};
+
+export const bulkDecideLeaveApprovals = async (
+  payload: unknown,
+  actor: SessionActor,
+) => {
+  const parsed = bulkApprovalActionSchema.parse(payload);
+  const uniqueIds = Array.from(new Set(parsed.applicationIds));
+
+  const successes: string[] = [];
+  const failures: Array<{ applicationId: string; message: string }> = [];
+
+  for (const applicationId of uniqueIds) {
+    try {
+      await decideLeaveApproval(
+        applicationId,
+        {
+          decision: parsed.decision,
+          remarks: parsed.remarks,
+          recommended: parsed.recommended,
+          hodSignature: parsed.hodSignature,
+          accountsSignature: parsed.accountsSignature,
+          balance: parsed.balance,
+          decisionDate: parsed.decisionDate,
+        },
+        actor,
+      );
+      successes.push(applicationId);
+    } catch (error) {
+      failures.push({
+        applicationId,
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  const status = failures.length ? 207 : 200;
+  const summary = `${successes.length} request(s) ${parsed.decision === "APPROVE" ? "approved" : "rejected"}`;
+
+  return {
+    ok: failures.length === 0,
+    status,
+    message: failures.length
+      ? `${summary}; ${failures.length} failed.`
+      : `${summary} successfully.`,
+    data: {
+      successCount: successes.length,
+      failureCount: failures.length,
+      successes,
+      failures,
+    },
   };
 };

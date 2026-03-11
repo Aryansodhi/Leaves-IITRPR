@@ -79,13 +79,17 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<ApprovalRecord | null>(null);
-  const [selectedEarnedLeave, setSelectedEarnedLeave] = useState<EarnedLeaveApprovalData | null>(null);
+  const [selectedEarnedLeave, setSelectedEarnedLeave] =
+    useState<EarnedLeaveApprovalData | null>(null);
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [showPending, setShowPending] = useState(true);
   const [showHandled, setShowHandled] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const canBulkAct = role.toLowerCase() === "hod";
 
   const loadItems = async () => {
     setLoading(true);
@@ -166,6 +170,14 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     [filteredItems],
   );
 
+  const bulkSelectableItems = useMemo(
+    () =>
+      pendingItems.filter(
+        (item) => item.decisionRequired && !isEarnedLeaveRecord(item),
+      ),
+    [pendingItems],
+  );
+
   const handledItems = useMemo(
     () =>
       filteredItems.filter(
@@ -211,6 +223,75 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     }
   };
 
+  const toggleSelectedId = (applicationId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(applicationId)
+        ? prev.filter((id) => id !== applicationId)
+        : [...prev, applicationId],
+    );
+  };
+
+  const selectAllVisible = () => {
+    const allIds = bulkSelectableItems.map((item) => item.applicationId);
+    setSelectedIds(allIds);
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const runBulkDecision = async (decision: "APPROVE" | "REJECT") => {
+    if (!selectedIds.length) return;
+
+    setBusyId("__bulk__");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/leaves/approvals/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          applicationIds: selectedIds,
+          decision,
+          remarks: "NA",
+          recommended:
+            decision === "APPROVE" ? "RECOMMENDED" : "NOT_RECOMMENDED",
+          hodSignature: "HOD",
+          decisionDate: new Date().toISOString().slice(0, 10),
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(result.message ?? "Unable to process bulk approval.");
+      }
+
+      setSelectedIds([]);
+      await loadItems();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to process bulk approval.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const allowed = new Set(
+        bulkSelectableItems.map((item) => item.applicationId),
+      );
+      return prev.filter((id) => allowed.has(id));
+    });
+  }, [bulkSelectableItems]);
+
   const openEarnedLeaveApproval = (item: ApprovalRecord) => {
     const handled = item.status !== "PENDING" && item.status !== "IN_REVIEW";
     const approvalData: EarnedLeaveApprovalData = {
@@ -233,21 +314,24 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         setBusyId(item.applicationId);
         setError(null);
         try {
-          const response = await fetch(`/api/leaves/approvals/${item.applicationId}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
+          const response = await fetch(
+            `/api/leaves/approvals/${item.applicationId}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                decision: "APPROVE",
+                remarks: data.remarks,
+                recommended: data.recommended,
+                hodSignature: data.hodSignature,
+                accountsSignature: data.accountsSignature,
+                balance: data.balance,
+                decisionDate: data.decisionDate,
+              }),
             },
-            body: JSON.stringify({
-              decision: "APPROVE",
-              remarks: data.remarks,
-              recommended: data.recommended,
-              hodSignature: data.hodSignature,
-              accountsSignature: data.accountsSignature,
-              balance: data.balance,
-              decisionDate: data.decisionDate,
-            }),
-          });
+          );
 
           const result = (await response.json()) as {
             ok?: boolean;
@@ -267,17 +351,20 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         setBusyId(item.applicationId);
         setError(null);
         try {
-          const response = await fetch(`/api/leaves/approvals/${item.applicationId}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
+          const response = await fetch(
+            `/api/leaves/approvals/${item.applicationId}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                decision: "REJECT",
+                remarks,
+                hodSignature,
+              }),
             },
-            body: JSON.stringify({
-              decision: "REJECT",
-              remarks,
-              hodSignature,
-            }),
-          });
+          );
 
           const result = (await response.json()) as {
             ok?: boolean;
@@ -411,116 +498,186 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
               No pending leave records mapped to you.
             </SurfaceCard>
           ) : (
-            pendingItems.map((item) => (
-              <SurfaceCard
-                key={item.applicationId}
-                className="space-y-3 border-slate-200/80 p-5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-base font-semibold text-slate-900">
-                      {item.referenceCode}
+            <>
+              {canBulkAct && bulkSelectableItems.length > 0 ? (
+                <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Bulk action (HoD)
                     </p>
-                    <p className="text-xs text-slate-500">
-                      Applied by {item.applicant.name} ({item.applicant.role}) -{" "}
-                      {item.applicant.department}
+                    <p className="text-xs text-slate-600">
+                      Selected {selectedIds.length} of{" "}
+                      {bulkSelectableItems.length}
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
-                  >
-                    {item.status}
-                  </span>
-                </div>
-
-                <div className="space-y-1 text-sm text-slate-700">
-                  <p>
-                    <span className="font-semibold">Leave window:</span>{" "}
-                    {new Date(item.startDate).toLocaleDateString("en-GB")} to{" "}
-                    {new Date(item.endDate).toLocaleDateString("en-GB")} (
-                    {item.totalDays} days)
-                  </p>
-                  <p>
-                    <span className="font-semibold">Leave type:</span>{" "}
-                    {item.leaveType}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Processing mode:</span>{" "}
-                    {item.decisionRequired ? "Approval required" : "View only"}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Purpose:</span>{" "}
-                    {item.purpose}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Contact:</span>{" "}
-                    {item.contactDuringLeave || "Not provided"}
-                  </p>
-                </div>
-
-                {item.decisionRequired ? (
-                  <textarea
-                    value={remarksById[item.applicationId] ?? ""}
-                    onChange={(event) =>
-                      setRemarksById((prev) => ({
-                        ...prev,
-                        [item.applicationId]: event.target.value,
-                      }))
-                    }
-                    placeholder="Remarks (optional)"
-                    className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-                  />
-                ) : (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                    This record has been routed to you for viewing only. No
-                    approval action is required.
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      if (isEarnedLeaveRecord(item)) {
-                        openEarnedLeaveApproval(item);
-                      } else {
-                        setSelected(item);
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={selectAllVisible}
+                      disabled={busyId === "__bulk__"}
+                    >
+                      Select all
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={clearSelection}
+                      disabled={
+                        busyId === "__bulk__" || selectedIds.length === 0
                       }
-                    }}
-                    disabled={busyId === item.applicationId}
-                  >
-                    View
-                  </Button>
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      onClick={() => runBulkDecision("APPROVE")}
+                      disabled={
+                        busyId === "__bulk__" || selectedIds.length === 0
+                      }
+                    >
+                      {busyId === "__bulk__" ? "Processing..." : "Bulk approve"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => runBulkDecision("REJECT")}
+                      disabled={
+                        busyId === "__bulk__" || selectedIds.length === 0
+                      }
+                    >
+                      Bulk reject
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Defaults used: Recommended, remarks = NA, HoD signature =
+                    HOD.
+                  </p>
+                </SurfaceCard>
+              ) : null}
+
+              {pendingItems.map((item) => (
+                <SurfaceCard
+                  key={item.applicationId}
+                  className="space-y-3 border-slate-200/80 p-5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      {canBulkAct &&
+                      item.decisionRequired &&
+                      !isEarnedLeaveRecord(item) ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(item.applicationId)}
+                          onChange={() => toggleSelectedId(item.applicationId)}
+                          className="mt-1 h-4 w-4 rounded border-slate-300"
+                        />
+                      ) : null}
+                      <div>
+                        <p className="text-base font-semibold text-slate-900">
+                          {item.referenceCode}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Applied by {item.applicant.name} (
+                          {item.applicant.role}) - {item.applicant.department}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
+                    >
+                      {item.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold">Leave window:</span>{" "}
+                      {new Date(item.startDate).toLocaleDateString("en-GB")} to{" "}
+                      {new Date(item.endDate).toLocaleDateString("en-GB")} (
+                      {item.totalDays} days)
+                    </p>
+                    <p>
+                      <span className="font-semibold">Leave type:</span>{" "}
+                      {item.leaveType}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Processing mode:</span>{" "}
+                      {item.decisionRequired
+                        ? "Approval required"
+                        : "View only"}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Purpose:</span>{" "}
+                      {item.purpose}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Contact:</span>{" "}
+                      {item.contactDuringLeave || "Not provided"}
+                    </p>
+                  </div>
+
                   {item.decisionRequired ? (
-                    <>
-                      {!isJoiningReportRecord(item) && !isEarnedLeaveRecord(item) ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() =>
-                            runDecision(item.applicationId, "REJECT")
-                          }
-                          disabled={busyId === item.applicationId}
-                        >
-                          Reject
-                        </Button>
-                      ) : null}
-                      {!isEarnedLeaveRecord(item) ? (
-                        <Button
-                          onClick={() =>
-                            runDecision(item.applicationId, "APPROVE")
-                          }
-                          disabled={busyId === item.applicationId}
-                        >
-                          {busyId === item.applicationId
-                            ? "Saving..."
-                            : "Approve"}
-                        </Button>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              </SurfaceCard>
-            ))
+                    <textarea
+                      value={remarksById[item.applicationId] ?? ""}
+                      onChange={(event) =>
+                        setRemarksById((prev) => ({
+                          ...prev,
+                          [item.applicationId]: event.target.value,
+                        }))
+                      }
+                      placeholder="Remarks (optional)"
+                      className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                      This record has been routed to you for viewing only. No
+                      approval action is required.
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        if (isEarnedLeaveRecord(item)) {
+                          openEarnedLeaveApproval(item);
+                        } else {
+                          setSelected(item);
+                        }
+                      }}
+                      disabled={busyId === item.applicationId}
+                    >
+                      View
+                    </Button>
+                    {item.decisionRequired ? (
+                      <>
+                        {!isJoiningReportRecord(item) &&
+                        !isEarnedLeaveRecord(item) ? (
+                          <Button
+                            variant="secondary"
+                            onClick={() =>
+                              runDecision(item.applicationId, "REJECT")
+                            }
+                            disabled={busyId === item.applicationId}
+                          >
+                            Reject
+                          </Button>
+                        ) : null}
+                        {!isEarnedLeaveRecord(item) ? (
+                          <Button
+                            onClick={() =>
+                              runDecision(item.applicationId, "APPROVE")
+                            }
+                            disabled={busyId === item.applicationId}
+                          >
+                            {busyId === item.applicationId
+                              ? "Saving..."
+                              : "Approve"}
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </SurfaceCard>
+              ))}
+            </>
           )}
         </section>
       ) : null}
