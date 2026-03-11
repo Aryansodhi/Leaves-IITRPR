@@ -88,6 +88,14 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [showPending, setShowPending] = useState(true);
   const [showHandled, setShowHandled] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkRemarks, setBulkRemarks] = useState("NA");
+  const [bulkHodSignature, setBulkHodSignature] = useState("HOD");
+  const [bulkRecommended, setBulkRecommended] = useState<
+    "AUTO" | "RECOMMENDED" | "NOT_RECOMMENDED"
+  >("AUTO");
+  const [bulkDecisionDate, setBulkDecisionDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
 
   const canBulkAct = role.toLowerCase() === "hod";
 
@@ -171,10 +179,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   );
 
   const bulkSelectableItems = useMemo(
-    () =>
-      pendingItems.filter(
-        (item) => item.decisionRequired && !isEarnedLeaveRecord(item),
-      ),
+    () => pendingItems.filter((item) => item.decisionRequired),
     [pendingItems],
   );
 
@@ -255,11 +260,15 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         body: JSON.stringify({
           applicationIds: selectedIds,
           decision,
-          remarks: "NA",
+          remarks: bulkRemarks.trim() || "NA",
           recommended:
-            decision === "APPROVE" ? "RECOMMENDED" : "NOT_RECOMMENDED",
-          hodSignature: "HOD",
-          decisionDate: new Date().toISOString().slice(0, 10),
+            bulkRecommended === "AUTO"
+              ? decision === "APPROVE"
+                ? "RECOMMENDED"
+                : "NOT_RECOMMENDED"
+              : bulkRecommended,
+          hodSignature: bulkHodSignature.trim() || "HOD",
+          decisionDate: bulkDecisionDate || undefined,
         }),
       });
 
@@ -510,6 +519,76 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                       {bulkSelectableItems.length}
                     </p>
                   </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-xs text-slate-600">
+                      <span className="font-medium text-slate-800">
+                        Bulk remarks
+                      </span>
+                      <textarea
+                        value={bulkRemarks}
+                        onChange={(event) => setBulkRemarks(event.target.value)}
+                        className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                        placeholder="NA"
+                        disabled={busyId === "__bulk__"}
+                      />
+                    </label>
+                    <div className="space-y-3">
+                      <label className="space-y-1 text-xs text-slate-600">
+                        <span className="font-medium text-slate-800">
+                          HoD signature
+                        </span>
+                        <input
+                          value={bulkHodSignature}
+                          onChange={(event) =>
+                            setBulkHodSignature(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                          placeholder="HOD"
+                          disabled={busyId === "__bulk__"}
+                        />
+                      </label>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="space-y-1 text-xs text-slate-600">
+                          <span className="font-medium text-slate-800">
+                            Recommended
+                          </span>
+                          <select
+                            value={bulkRecommended}
+                            onChange={(event) =>
+                              setBulkRecommended(
+                                event.target.value as
+                                  | "AUTO"
+                                  | "RECOMMENDED"
+                                  | "NOT_RECOMMENDED",
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                            disabled={busyId === "__bulk__"}
+                          >
+                            <option value="AUTO">Auto by decision</option>
+                            <option value="RECOMMENDED">Recommended</option>
+                            <option value="NOT_RECOMMENDED">
+                              Not recommended
+                            </option>
+                          </select>
+                        </label>
+                        <label className="space-y-1 text-xs text-slate-600">
+                          <span className="font-medium text-slate-800">
+                            Decision date
+                          </span>
+                          <input
+                            type="date"
+                            value={bulkDecisionDate}
+                            onChange={(event) =>
+                              setBulkDecisionDate(event.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                            disabled={busyId === "__bulk__"}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="secondary"
@@ -546,8 +625,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Defaults used: Recommended, remarks = NA, HoD signature =
-                    HOD.
+                    These values will be applied to all selected requests.
                   </p>
                 </SurfaceCard>
               ) : null}
@@ -559,9 +637,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      {canBulkAct &&
-                      item.decisionRequired &&
-                      !isEarnedLeaveRecord(item) ? (
+                      {canBulkAct && item.decisionRequired ? (
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(item.applicationId)}
@@ -636,7 +712,10 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     <Button
                       variant="secondary"
                       onClick={() => {
-                        if (isEarnedLeaveRecord(item)) {
+                        if (
+                          isEarnedLeaveRecord(item) &&
+                          item.decisionRequired
+                        ) {
                           openEarnedLeaveApproval(item);
                         } else {
                           setSelected(item);
@@ -648,6 +727,16 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     </Button>
                     {item.decisionRequired ? (
                       <>
+                        {isEarnedLeaveRecord(item) ? (
+                          <Button
+                            onClick={() => openEarnedLeaveApproval(item)}
+                            disabled={busyId === item.applicationId}
+                          >
+                            {busyId === item.applicationId
+                              ? "Opening..."
+                              : "Approve"}
+                          </Button>
+                        ) : null}
                         {!isJoiningReportRecord(item) &&
                         !isEarnedLeaveRecord(item) ? (
                           <Button
@@ -705,14 +794,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     <Button
                       variant="secondary"
                       onClick={() => {
-                        if (isEarnedLeaveRecord(item)) {
-                          // handled items shown in read‑only mode
-                          openEarnedLeaveApproval({
-                            ...item,
-                          } as ApprovalRecord);
-                        } else {
-                          setSelected(item);
-                        }
+                        setSelected(item);
                       }}
                     >
                       View
