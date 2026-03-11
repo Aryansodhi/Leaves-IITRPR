@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
     const actor = await requireSessionActor(token, {
-      roles: [RoleKey.HOD],
+      roles: [RoleKey.HOD, RoleKey.ACCOUNTS, RoleKey.DEAN],
     });
     const payload = await request.json();
 

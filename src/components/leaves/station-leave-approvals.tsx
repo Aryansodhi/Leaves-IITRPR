@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
 type ApprovalRecord = LeaveRequestDetails & {
+  approvalStepId?: string;
   applicationId: string;
   currentApprovalActor?: string | null;
   status: string;
@@ -88,8 +89,22 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [showPending, setShowPending] = useState(true);
   const [showHandled, setShowHandled] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const roleKey = role.toLowerCase();
+  const canBulkAct = ["hod", "accounts", "dean"].includes(roleKey);
+  const isBulkAccounts = roleKey === "accounts";
+  const signatureLabel = isBulkAccounts
+    ? "Accounts signature"
+    : roleKey === "dean"
+      ? "Dean signature"
+      : "HoD signature";
+  const signatureDefault = isBulkAccounts
+    ? "ACCOUNTS"
+    : roleKey === "dean"
+      ? "DEAN"
+      : "HOD";
   const [bulkRemarks, setBulkRemarks] = useState("NA");
-  const [bulkHodSignature, setBulkHodSignature] = useState("HOD");
+  const [bulkSignature, setBulkSignature] = useState(signatureDefault);
+  const [bulkBalance, setBulkBalance] = useState("");
   const [bulkRecommended, setBulkRecommended] = useState<
     "AUTO" | "RECOMMENDED" | "NOT_RECOMMENDED"
   >("AUTO");
@@ -97,7 +112,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     new Date().toISOString().slice(0, 10),
   );
 
-  const canBulkAct = role.toLowerCase() === "hod";
+  useEffect(() => {
+    setBulkSignature(signatureDefault);
+  }, [signatureDefault]);
 
   const loadItems = async () => {
     setLoading(true);
@@ -247,29 +264,45 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
 
   const runBulkDecision = async (decision: "APPROVE" | "REJECT") => {
     if (!selectedIds.length) return;
+    if (isBulkAccounts && decision === "REJECT") {
+      setError("Accounts section can only process bulk approvals.");
+      return;
+    }
+    if (isBulkAccounts && !bulkBalance.trim()) {
+      setError("Please enter balance as on date for bulk accounts approval.");
+      return;
+    }
 
     setBusyId("__bulk__");
     setError(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        applicationIds: selectedIds,
+        decision,
+        remarks: bulkRemarks.trim() || "NA",
+      };
+
+      if (isBulkAccounts) {
+        payload.accountsSignature = bulkSignature.trim() || "ACCOUNTS";
+        payload.balance = bulkBalance.trim();
+      } else {
+        payload.recommended =
+          bulkRecommended === "AUTO"
+            ? decision === "APPROVE"
+              ? "RECOMMENDED"
+              : "NOT_RECOMMENDED"
+            : bulkRecommended;
+        payload.hodSignature = bulkSignature.trim() || signatureDefault;
+        payload.decisionDate = bulkDecisionDate || undefined;
+      }
+
       const response = await fetch("/api/leaves/approvals/bulk", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          applicationIds: selectedIds,
-          decision,
-          remarks: bulkRemarks.trim() || "NA",
-          recommended:
-            bulkRecommended === "AUTO"
-              ? decision === "APPROVE"
-                ? "RECOMMENDED"
-                : "NOT_RECOMMENDED"
-              : bulkRecommended,
-          hodSignature: bulkHodSignature.trim() || "HOD",
-          decisionDate: bulkDecisionDate || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const result = (await response.json()) as {
@@ -512,7 +545,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-900">
-                      Bulk action (HoD)
+                      Bulk action ({role.toUpperCase()})
                     </p>
                     <p className="text-xs text-slate-600">
                       Selected {selectedIds.length} of{" "}
@@ -535,58 +568,75 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     <div className="space-y-3">
                       <label className="space-y-1 text-xs text-slate-600">
                         <span className="font-medium text-slate-800">
-                          HoD signature
+                          {signatureLabel}
                         </span>
                         <input
-                          value={bulkHodSignature}
+                          value={bulkSignature}
                           onChange={(event) =>
-                            setBulkHodSignature(event.target.value)
+                            setBulkSignature(event.target.value)
                           }
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-                          placeholder="HOD"
+                          placeholder={signatureDefault}
                           disabled={busyId === "__bulk__"}
                         />
                       </label>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      {isBulkAccounts ? (
                         <label className="space-y-1 text-xs text-slate-600">
                           <span className="font-medium text-slate-800">
-                            Recommended
-                          </span>
-                          <select
-                            value={bulkRecommended}
-                            onChange={(event) =>
-                              setBulkRecommended(
-                                event.target.value as
-                                  | "AUTO"
-                                  | "RECOMMENDED"
-                                  | "NOT_RECOMMENDED",
-                              )
-                            }
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
-                            disabled={busyId === "__bulk__"}
-                          >
-                            <option value="AUTO">Auto by decision</option>
-                            <option value="RECOMMENDED">Recommended</option>
-                            <option value="NOT_RECOMMENDED">
-                              Not recommended
-                            </option>
-                          </select>
-                        </label>
-                        <label className="space-y-1 text-xs text-slate-600">
-                          <span className="font-medium text-slate-800">
-                            Decision date
+                            Balance as on date
                           </span>
                           <input
-                            type="date"
-                            value={bulkDecisionDate}
+                            value={bulkBalance}
                             onChange={(event) =>
-                              setBulkDecisionDate(event.target.value)
+                              setBulkBalance(event.target.value)
                             }
                             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                            placeholder="Enter balance"
                             disabled={busyId === "__bulk__"}
                           />
                         </label>
-                      </div>
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="space-y-1 text-xs text-slate-600">
+                            <span className="font-medium text-slate-800">
+                              Recommended
+                            </span>
+                            <select
+                              value={bulkRecommended}
+                              onChange={(event) =>
+                                setBulkRecommended(
+                                  event.target.value as
+                                    | "AUTO"
+                                    | "RECOMMENDED"
+                                    | "NOT_RECOMMENDED",
+                                )
+                              }
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                              disabled={busyId === "__bulk__"}
+                            >
+                              <option value="AUTO">Auto by decision</option>
+                              <option value="RECOMMENDED">Recommended</option>
+                              <option value="NOT_RECOMMENDED">
+                                Not recommended
+                              </option>
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-xs text-slate-600">
+                            <span className="font-medium text-slate-800">
+                              Decision date
+                            </span>
+                            <input
+                              type="date"
+                              value={bulkDecisionDate}
+                              onChange={(event) =>
+                                setBulkDecisionDate(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                              disabled={busyId === "__bulk__"}
+                            />
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -609,30 +659,39 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     <Button
                       onClick={() => runBulkDecision("APPROVE")}
                       disabled={
-                        busyId === "__bulk__" || selectedIds.length === 0
+                        busyId === "__bulk__" ||
+                        selectedIds.length === 0 ||
+                        (isBulkAccounts && !bulkBalance.trim())
                       }
                     >
                       {busyId === "__bulk__" ? "Processing..." : "Bulk approve"}
                     </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => runBulkDecision("REJECT")}
-                      disabled={
-                        busyId === "__bulk__" || selectedIds.length === 0
-                      }
-                    >
-                      Bulk reject
-                    </Button>
+                    {!isBulkAccounts ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => runBulkDecision("REJECT")}
+                        disabled={
+                          busyId === "__bulk__" || selectedIds.length === 0
+                        }
+                      >
+                        Bulk reject
+                      </Button>
+                    ) : null}
                   </div>
                   <p className="text-xs text-slate-500">
-                    These values will be applied to all selected requests.
+                    {isBulkAccounts
+                      ? "These values will be applied to all selected requests. Balance is mandatory for accounts approval."
+                      : "These values will be applied to all selected requests."}
                   </p>
                 </SurfaceCard>
               ) : null}
 
               {pendingItems.map((item) => (
                 <SurfaceCard
-                  key={item.applicationId}
+                  key={
+                    item.approvalStepId ??
+                    `${item.applicationId}-${item.currentApprovalActor ?? "step"}`
+                  }
                   className="space-y-3 border-slate-200/80 p-5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -783,7 +842,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
           ) : (
             handledItems.slice(0, 8).map((item) => (
               <SurfaceCard
-                key={item.applicationId}
+                key={
+                  item.approvalStepId ?? `${item.applicationId}-${item.status}`
+                }
                 className="border-slate-200/80 p-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
