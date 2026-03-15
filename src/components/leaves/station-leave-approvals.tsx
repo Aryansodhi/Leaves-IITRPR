@@ -366,6 +366,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 accountsSignature: data.accountsSignature,
                 balance: data.balance,
                 decisionDate: data.decisionDate,
+                approverSignatureProof: data.approverSignatureProof,
               }),
             },
           );
@@ -384,7 +385,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
           setBusyId(null);
         }
       },
-      onReject: async ({ remarks, hodSignature }) => {
+      onReject: async ({ remarks, hodSignature, approverSignatureProof }) => {
         setBusyId(item.applicationId);
         setError(null);
         try {
@@ -399,6 +400,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 decision: "REJECT",
                 remarks,
                 hodSignature,
+                approverSignatureProof,
               }),
             },
           );

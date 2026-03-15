@@ -145,11 +145,14 @@ export default function ExIndiaLeavePage() {
       return;
     }
 
+    if (!isOtpVerified || !signatureCapture) {
+      window.alert(
+        "Please complete Digital Signature and OTP verification on the form before submitting.",
+      );
+      return;
+    }
+
     setMissingFields([]);
-    setOtpCode("");
-    setOtpStatusMessage(null);
-    setIsOtpVerified(false);
-    setSignatureCapture(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
@@ -307,6 +310,32 @@ export default function ExIndiaLeavePage() {
         {page === 2 && <UndertakingFormOne />}
         {page === 3 && <UndertakingFormTwo />}
 
+        <SignatureOtpVerificationCard
+          otpEmail={otpEmail}
+          otpCode={otpCode}
+          onOtpCodeChange={setOtpCode}
+          otpStatusMessage={otpStatusMessage}
+          isSendingOtp={isSendingOtp}
+          isVerifyingOtp={isVerifyingOtp}
+          isSubmitting={false}
+          onSendOtp={handleSendOtp}
+          onVerifyOtp={handleVerifyOtp}
+          onSignatureChange={(capture) => {
+            setSignatureCapture(capture);
+            setIsOtpVerified(false);
+            setOtpStatusMessage(null);
+          }}
+          isOtpVerified={isOtpVerified}
+        />
+
+        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+          {confirmed
+            ? "Submission confirmed. You can still edit and resubmit if needed."
+            : missingFields.length > 0
+              ? "Please fill the highlighted fields."
+              : "Fill all fields, then submit."}
+        </div>
+
         <div className="flex items-center justify-between border-t border-slate-200 pt-3">
           <Button
             type="button"
@@ -329,34 +358,12 @@ export default function ExIndiaLeavePage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-          {confirmed
-            ? "Submission confirmed. You can still edit and resubmit if needed."
-            : missingFields.length > 0
-              ? "Please fill the highlighted fields."
-              : "Fill all fields, then submit."}
-        </div>
-
         <ConfirmationModal
           state={dialogState}
           title="Ex-India Leave"
           onCancel={handleCloseDialog}
           onConfirm={handleConfirmSubmit}
-          onSendOtp={handleSendOtp}
-          onVerifyOtp={handleVerifyOtp}
-          onSignatureChange={(capture) => {
-            setSignatureCapture(capture);
-            setIsOtpVerified(false);
-            setOtpStatusMessage(null);
-          }}
           onDownload={handleDownloadPdf}
-          otpCode={otpCode}
-          onOtpCodeChange={setOtpCode}
-          otpEmail={otpEmail}
-          otpStatusMessage={otpStatusMessage}
-          isSendingOtp={isSendingOtp}
-          isVerifyingOtp={isVerifyingOtp}
-          isOtpVerified={isOtpVerified}
           isDownloading={isDownloading}
         />
       </form>
@@ -369,34 +376,14 @@ const ConfirmationModal = ({
   title,
   onCancel,
   onConfirm,
-  onSendOtp,
-  onVerifyOtp,
-  onSignatureChange,
   onDownload,
-  otpCode,
-  onOtpCodeChange,
-  otpEmail,
-  otpStatusMessage,
-  isSendingOtp,
-  isVerifyingOtp,
-  isOtpVerified,
   isDownloading,
 }: {
   state: DialogState;
   title: string;
   onCancel: () => void;
   onConfirm: () => void;
-  onSendOtp: () => Promise<void>;
-  onVerifyOtp: () => Promise<void>;
-  onSignatureChange: (capture: SignatureCapture | null) => void;
   onDownload: () => void;
-  otpCode: string;
-  onOtpCodeChange: (value: string) => void;
-  otpEmail: string;
-  otpStatusMessage: string | null;
-  isSendingOtp: boolean;
-  isVerifyingOtp: boolean;
-  isOtpVerified: boolean;
   isDownloading: boolean;
 }) => {
   if (!state) return null;
@@ -429,19 +416,6 @@ const ConfirmationModal = ({
                 <li>I acknowledge the submission will be routed for review.</li>
                 <li>I understand I may be contacted for clarifications.</li>
               </ul>
-              <SignatureOtpVerificationCard
-                otpEmail={otpEmail}
-                otpCode={otpCode}
-                onOtpCodeChange={onOtpCodeChange}
-                otpStatusMessage={otpStatusMessage}
-                isSendingOtp={isSendingOtp}
-                isVerifyingOtp={isVerifyingOtp}
-                isSubmitting={false}
-                onSendOtp={onSendOtp}
-                onVerifyOtp={onVerifyOtp}
-                onSignatureChange={onSignatureChange}
-                isOtpVerified={isOtpVerified}
-              />
             </div>
           )}
         </div>
@@ -475,7 +449,6 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
-                disabled={!isOtpVerified}
               >
                 Yes, submit
               </Button>

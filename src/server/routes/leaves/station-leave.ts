@@ -296,9 +296,11 @@ export const submitStationLeave = async (
     },
   });
 
-  if (!profile || !profile.role) {
+  if (!profile) {
     throw new Error("Unable to resolve applicant role.");
   }
+
+  const applicantRole = profile.role?.key ?? actor.roleKey;
 
   let approverId: string | null = null;
   let approverName: string | null = null;
@@ -316,7 +318,7 @@ export const submitStationLeave = async (
   }
   // STRATEGY 2: Smart fallback routing based on actor's role
   else {
-    if (profile.role.key === RoleKey.FACULTY) {
+    if (applicantRole === RoleKey.FACULTY) {
       const hod = await prisma.user.findFirst({
         where: {
           departmentId: profile.departmentId,
@@ -331,8 +333,8 @@ export const submitStationLeave = async (
         approverRole = hod.role.key;
       }
     } else if (
-      profile.role.key === RoleKey.HOD ||
-      profile.role.key === RoleKey.ASSOCIATE_HOD
+      applicantRole === RoleKey.HOD ||
+      applicantRole === RoleKey.ASSOCIATE_HOD
     ) {
       const dean = await prisma.user.findFirst({
         where: { role: { key: RoleKey.DEAN }, isActive: true },
@@ -343,7 +345,7 @@ export const submitStationLeave = async (
         approverName = dean.name;
         approverRole = dean.role.key;
       }
-    } else if (profile.role.key === RoleKey.STAFF) {
+    } else if (applicantRole === RoleKey.STAFF) {
       const reg = await prisma.user.findFirst({
         where: { role: { key: RoleKey.REGISTRAR }, isActive: true },
         include: { role: true },
@@ -448,7 +450,7 @@ export const submitStationLeave = async (
           contact: contactDuringLeave,
         },
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approverRole,
           approverName: approverName,
           directorEscalation: needsDirectorEscalation,
@@ -483,7 +485,7 @@ export const submitStationLeave = async (
           otpVerified: true,
         },
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approverRole,
           approverName: approverName,
           directorEscalation: needsDirectorEscalation,

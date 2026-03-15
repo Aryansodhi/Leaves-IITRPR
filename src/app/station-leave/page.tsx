@@ -209,12 +209,15 @@ export default function StationLeavePage() {
       return;
     }
 
+    if (!isOtpVerified || !signatureCapture) {
+      setSubmitError(
+        "Please complete Digital Signature and OTP verification on the form before submitting.",
+      );
+      return;
+    }
+
     setMissingFields([]);
     setSubmitError(null);
-    setOtpCode("");
-    setOtpStatusMessage(null);
-    setIsOtpVerified(false);
-    setSignatureCapture(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
@@ -626,6 +629,24 @@ export default function StationLeavePage() {
             </SurfaceCard>
           ) : null}
 
+          <SignatureOtpVerificationCard
+            otpEmail={otpEmail}
+            otpCode={otpCode}
+            onOtpCodeChange={setOtpCode}
+            otpStatusMessage={otpStatusMessage}
+            isSendingOtp={isSendingOtp}
+            isVerifyingOtp={isVerifyingOtp}
+            isSubmitting={isSubmitting}
+            onSendOtp={handleSendOtp}
+            onVerifyOtp={handleVerifyOtp}
+            onSignatureChange={(capture) => {
+              setSignatureCapture(capture);
+              setIsOtpVerified(false);
+              setOtpStatusMessage(null);
+            }}
+            isOtpVerified={isOtpVerified}
+          />
+
           <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-3">
             <div className="text-xs text-slate-600">
               {submitError
@@ -655,21 +676,7 @@ export default function StationLeavePage() {
           title="Station Leave"
           onCancel={handleCloseDialog}
           onConfirm={handleConfirmSubmit}
-          onSendOtp={handleSendOtp}
-          onVerifyOtp={handleVerifyOtp}
-          onSignatureChange={(capture) => {
-            setSignatureCapture(capture);
-            setIsOtpVerified(false);
-            setOtpStatusMessage(null);
-          }}
           onDownload={handleDownloadPdf}
-          otpCode={otpCode}
-          onOtpCodeChange={setOtpCode}
-          otpEmail={otpEmail}
-          otpStatusMessage={otpStatusMessage}
-          isSendingOtp={isSendingOtp}
-          isVerifyingOtp={isVerifyingOtp}
-          isOtpVerified={isOtpVerified}
           isDownloading={isDownloading}
           isSubmitting={isSubmitting}
         />
@@ -683,17 +690,7 @@ const ConfirmationModal = ({
   title,
   onCancel,
   onConfirm,
-  onSendOtp,
-  onVerifyOtp,
-  onSignatureChange,
   onDownload,
-  otpCode,
-  onOtpCodeChange,
-  otpEmail,
-  otpStatusMessage,
-  isSendingOtp,
-  isVerifyingOtp,
-  isOtpVerified,
   isDownloading,
   isSubmitting,
 }: {
@@ -701,17 +698,7 @@ const ConfirmationModal = ({
   title: string;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
-  onSendOtp: () => Promise<void>;
-  onVerifyOtp: () => Promise<void>;
-  onSignatureChange: (capture: SignatureCapture | null) => void;
   onDownload: () => void;
-  otpCode: string;
-  onOtpCodeChange: (value: string) => void;
-  otpEmail: string;
-  otpStatusMessage: string | null;
-  isSendingOtp: boolean;
-  isVerifyingOtp: boolean;
-  isOtpVerified: boolean;
   isDownloading: boolean;
   isSubmitting: boolean;
 }) => {
@@ -745,19 +732,6 @@ const ConfirmationModal = ({
                 <li>I acknowledge the submission will be routed for review.</li>
                 <li>I understand I may be contacted for clarifications.</li>
               </ul>
-              <SignatureOtpVerificationCard
-                otpEmail={otpEmail}
-                otpCode={otpCode}
-                onOtpCodeChange={onOtpCodeChange}
-                otpStatusMessage={otpStatusMessage}
-                isSendingOtp={isSendingOtp}
-                isVerifyingOtp={isVerifyingOtp}
-                isSubmitting={isSubmitting}
-                onSendOtp={onSendOtp}
-                onVerifyOtp={onVerifyOtp}
-                onSignatureChange={onSignatureChange}
-                isOtpVerified={isOtpVerified}
-              />
             </div>
           )}
         </div>
@@ -791,7 +765,7 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
-                disabled={isSubmitting || !isOtpVerified}
+                disabled={isSubmitting}
               >
                 {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>

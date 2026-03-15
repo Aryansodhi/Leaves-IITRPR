@@ -227,7 +227,7 @@ export const LeaveRequestDetailsModal = ({
       request.leaveTypeCode === "JR");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
       <SurfaceCard className="w-full max-w-4xl space-y-6 border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
@@ -478,44 +478,8 @@ const SignatureReplayCard = ({
 }: {
   proof: NonNullable<LeaveRequestDetails["signatureProof"]>;
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [showReplay, setShowReplay] = useState(false);
   const hasAnimation = Boolean(proof.animation && proof.animation.length > 0);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const replay = async () => {
-      if (!hasAnimation) return;
-      const canvas = canvasRef.current;
-      if (!canvas || !mounted) return;
-
-      const ratio = Math.max(window.devicePixelRatio || 1, 1);
-      const bounds = canvas.getBoundingClientRect();
-      canvas.width = Math.floor(bounds.width * ratio);
-      canvas.height = Math.floor(180 * ratio);
-
-      const context = canvas.getContext("2d");
-      if (!context) return;
-      context.scale(ratio, ratio);
-
-      const { default: SignaturePadCtor } = await import("signature_pad");
-      if (!mounted) return;
-
-      const pad = new SignaturePadCtor(canvas, {
-        backgroundColor: "rgb(255, 255, 255)",
-        penColor: "rgb(15, 23, 42)",
-      });
-
-      pad.clear();
-      pad.fromData((proof.animation ?? []) as never);
-    };
-
-    void replay();
-
-    return () => {
-      mounted = false;
-    };
-  }, [hasAnimation, proof.animation]);
 
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4">
@@ -533,34 +497,171 @@ const SignatureReplayCard = ({
       </div>
       <DetailTile label="SHA256 hash" value={proof.hash ?? "-"} compact />
 
-      {hasAnimation ? (
+      {proof.image ? (
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Replayed stroke animation
-          </p>
-          <canvas
-            ref={canvasRef}
-            className="h-45 w-full rounded-md border border-dashed border-slate-400 bg-white"
-          />
-        </div>
-      ) : null}
-
-      {!hasAnimation && proof.image ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Stored signature image
+            Applicant signature (read-only)
           </p>
           <Image
             src={proof.image}
             alt="Stored signature"
-            width={500}
-            height={180}
-            className="h-auto w-full max-w-xl rounded-md border border-slate-200"
+            width={520}
+            height={170}
+            className="h-40 w-full max-w-2xl rounded-md border border-slate-200 bg-white object-contain"
             unoptimized
           />
         </div>
       ) : null}
+
+      {hasAnimation ? (
+        <div className="flex justify-start">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowReplay(true)}
+            className="text-xs"
+          >
+            View stroke preview
+          </Button>
+        </div>
+      ) : null}
+
+      {showReplay && hasAnimation ? (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                Signature stroke preview
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                className="px-2 text-xs"
+                onClick={() => setShowReplay(false)}
+              >
+                Close
+              </Button>
+            </div>
+            <SignatureReplayCanvas animation={proof.animation ?? []} />
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+};
+
+const SignatureReplayCanvas = ({
+  animation,
+}: {
+  animation: NonNullable<LeaveRequestDetails["signatureProof"]>["animation"];
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !animation || animation.length === 0) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const bounds = canvas.getBoundingClientRect();
+    const width = Math.max(Math.floor(bounds.width), 280);
+    const height = 220;
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    context.scale(ratio, ratio);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.lineWidth = 2;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+
+    const segments: Array<{
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      t: number;
+      color: string;
+    }> = [];
+    const points: Array<{ x: number; y: number }> = [];
+
+    animation.forEach((stroke) => {
+      stroke.points.forEach((point) => {
+        points.push({ x: point.x, y: point.y });
+      });
+      for (let index = 1; index < stroke.points.length; index += 1) {
+        const prev = stroke.points[index - 1];
+        const next = stroke.points[index];
+        segments.push({
+          x1: prev.x,
+          y1: prev.y,
+          x2: next.x,
+          y2: next.y,
+          t: next.time,
+          color: stroke.color ?? "rgb(15, 23, 42)",
+        });
+      }
+    });
+
+    if (segments.length === 0 || points.length === 0) return;
+
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const sourceWidth = Math.max(maxX - minX, 1);
+    const sourceHeight = Math.max(maxY - minY, 1);
+    const padding = 16;
+    const scale = Math.min(
+      (width - padding * 2) / sourceWidth,
+      (height - padding * 2) / sourceHeight,
+    );
+    const offsetX = (width - sourceWidth * scale) / 2;
+    const offsetY = (height - sourceHeight * scale) / 2;
+    const mapX = (value: number) => (value - minX) * scale + offsetX;
+    const mapY = (value: number) => (value - minY) * scale + offsetY;
+
+    const firstTime = segments[0]?.t ?? 0;
+    const lastTime = segments[segments.length - 1]?.t ?? firstTime;
+    const totalDuration = Math.max(lastTime - firstTime, 500);
+
+    let index = 0;
+    let frameId = 0;
+    const startedAt = performance.now();
+
+    const draw = (now: number) => {
+      const elapsed = (now - startedAt) * 1.8;
+      const currentTime = firstTime + Math.min(elapsed, totalDuration);
+
+      while (index < segments.length && segments[index].t <= currentTime) {
+        const segment = segments[index];
+        context.strokeStyle = segment.color;
+        context.beginPath();
+        context.moveTo(mapX(segment.x1), mapY(segment.y1));
+        context.lineTo(mapX(segment.x2), mapY(segment.y2));
+        context.stroke();
+        index += 1;
+      }
+
+      if (index < segments.length) {
+        frameId = window.requestAnimationFrame(draw);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(draw);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [animation]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="h-56 w-full rounded-md border border-dashed border-slate-300 bg-white"
+    />
   );
 };
 

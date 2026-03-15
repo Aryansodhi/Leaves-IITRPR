@@ -221,7 +221,7 @@ export const submitEarnedLeave = async (
     },
   });
 
-  if (!profile || !profile.role) {
+  if (!profile) {
     throw new Error("Unable to resolve applicant role.");
   }
 
@@ -229,7 +229,7 @@ export const submitEarnedLeave = async (
   let approverName: string | null = null;
   let approverRole: RoleKey | null = null;
 
-  const applicantRole = profile.role.key;
+  const applicantRole = profile.role?.key ?? actor.roleKey;
   const reportsToRole =
     profile.reportsTo?.role?.key && profile.reportsTo.isActive
       ? profile.reportsTo.role.key
@@ -373,7 +373,7 @@ export const submitEarnedLeave = async (
   const metadata: Record<string, unknown> = {
     formData: parsed.form,
     routing: {
-      applicantRole: profile.role.key,
+      applicantRole,
       approverRole: approverRole,
       approverName: approverName,
       directorEscalation: needsDirectorEscalation,

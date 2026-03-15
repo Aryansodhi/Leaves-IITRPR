@@ -11,6 +11,12 @@ const approvalActionSchema = z.object({
   accountsSignature: z.string().trim().optional(),
   balance: z.string().trim().optional(), // for accounts to fill
   decisionDate: z.string().trim().optional(),
+  approverSignatureProof: z
+    .object({
+      animation: z.array(z.unknown()).optional(),
+      image: z.string().trim().optional(),
+    })
+    .optional(),
 });
 
 const withStatus = (message: string, status: number) =>
@@ -278,6 +284,9 @@ export const decideLeaveApproval = async (
           }),
           ...(parsed.balance && { balance: parsed.balance }),
           ...(parsed.decisionDate && { decisionDate: parsed.decisionDate }),
+          ...(parsed.approverSignatureProof && {
+            approverSignatureProof: parsed.approverSignatureProof,
+          }),
         },
       },
     }),

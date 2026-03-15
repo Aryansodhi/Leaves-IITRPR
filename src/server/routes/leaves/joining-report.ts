@@ -436,13 +436,15 @@ export const submitJoiningReport = async (
     },
   });
 
-  if (!profile || !profile.role) {
+  if (!profile) {
     throw new Error("Unable to resolve applicant role.");
   }
 
+  const applicantRole = profile.role?.key ?? actor.roleKey;
+
   const leaveType = await getJoiningReportType();
   const approver = await resolveApproverForJoiningReport({
-    applicantRole: profile.role.key,
+    applicantRole,
     departmentId: profile.departmentId,
     reportsToId: profile.reportsToId,
   });
@@ -489,7 +491,7 @@ export const submitJoiningReport = async (
       metadata: {
         formData: persistedForm,
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approver.approverRole,
           approverName: approver.approverName,
           viewerOnly: approver.viewerOnly,
@@ -536,7 +538,7 @@ export const submitJoiningReport = async (
           otpVerified: true,
         },
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approver.approverRole,
           approverName: approver.approverName,
           viewerOnly: approver.viewerOnly,

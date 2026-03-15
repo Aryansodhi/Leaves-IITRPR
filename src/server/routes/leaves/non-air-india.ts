@@ -116,9 +116,11 @@ export const submitNonAirIndia = async (
     },
   });
 
-  if (!profile || !profile.role) {
+  if (!profile) {
     throw new Error("Unable to resolve applicant role.");
   }
+
+  const applicantRole = profile.role?.key ?? actor.roleKey;
 
   // STRICT ROUTING: Fetch the assigned manager directly from the database
   if (!profile.reportsToId || !profile.reportsTo) {
@@ -192,7 +194,7 @@ export const submitNonAirIndia = async (
           otpVerified: true,
         },
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approverRole,
           approverName: approverName,
         },
@@ -223,7 +225,7 @@ export const submitNonAirIndia = async (
           otpVerified: true,
         },
         routing: {
-          applicantRole: profile.role.key,
+          applicantRole,
           approverRole: approverRole,
           approverName: approverName,
         },

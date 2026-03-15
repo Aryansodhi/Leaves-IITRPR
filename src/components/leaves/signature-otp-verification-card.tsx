@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BadgeCheck, CirclePlay, PenLine, ShieldCheck } from "lucide-react";
+import Image from "next/image";
 import type SignaturePad from "signature_pad";
 
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,9 @@ export const SignatureOtpVerificationCard = ({
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [signatureReady, setSignatureReady] = useState(false);
   const [showOtpEntry, setShowOtpEntry] = useState(false);
+  const [signatureCapture, setSignatureCapture] =
+    useState<SignatureCapture | null>(null);
+  const [showReplay, setShowReplay] = useState(false);
 
   const canSubmitOtp = otpCode.trim().length === 6;
   const disablePrimaryActions = isSubmitting || isSendingOtp || isVerifyingOtp;
@@ -67,23 +72,33 @@ export const SignatureOtpVerificationCard = ({
   }, [otpStatusMessage]);
 
   const handleSignatureChange = (capture: SignatureCapture | null) => {
+    setSignatureCapture(capture);
     setSignatureReady(Boolean(capture));
     setShowOtpEntry(false);
+    setShowReplay(false);
     onOtpCodeChange("");
     onSignatureChange(capture);
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-linear-to-b from-white to-slate-50 p-4 shadow-sm">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
-            Digital Signature
-          </p>
-          <p className="text-xs text-slate-500">
-            Click Digital Signature to open the pad. Sign first, then verify via
-            OTP.
-          </p>
+    <div className="space-y-4 rounded-2xl border border-cyan-200/70 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_45%),radial-gradient(circle_at_top_right,rgba(34,197,94,0.14),transparent_38%),linear-gradient(145deg,#f8fbff_0%,#eff8ff_48%,#f9fffb_100%)] p-4 shadow-[0_16px_45px_-34px_rgba(14,116,144,0.75)] sm:p-5">
+      <div className="space-y-3 rounded-xl border border-cyan-200/80 bg-white/80 p-4 backdrop-blur-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-800">
+              <span className="inline-flex items-center gap-1.5">
+                <PenLine className="h-3.5 w-3.5" />
+                Digital Signature
+              </span>
+            </p>
+            <p className="text-xs text-slate-600">
+              Sign below, send OTP, and verify. Once verified, your signature is
+              locked for submission.
+            </p>
+          </div>
+          <div className="rounded-full border border-cyan-300/80 bg-cyan-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-700">
+            Secure step
+          </div>
         </div>
 
         {!showSignaturePad ? (
@@ -91,43 +106,86 @@ export const SignatureOtpVerificationCard = ({
             type="button"
             variant="secondary"
             onClick={() => setShowSignaturePad(true)}
-            className="px-3 text-xs"
+            className="h-9 px-4 text-xs font-semibold text-cyan-900"
             disabled={isSubmitting}
           >
-            Digital Signature
+            Open Digital Signature Pad
           </Button>
         ) : (
           <div className="space-y-3">
             <SignaturePadField onSignatureChange={handleSignatureChange} />
+
             {signatureReady ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setShowOtpEntry(true);
-                  void onSendOtp();
-                }}
-                disabled={disablePrimaryActions || isOtpVerified}
-                className="px-3 text-xs"
-              >
-                {isOtpVerified
-                  ? "Verified"
-                  : isSendingOtp
-                    ? "Sending OTP..."
-                    : "Verify"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setShowOtpEntry(true);
+                    void onSendOtp();
+                  }}
+                  disabled={disablePrimaryActions || isOtpVerified}
+                  className="h-9 px-4 text-xs font-semibold"
+                >
+                  {isOtpVerified
+                    ? "Verified"
+                    : isSendingOtp
+                      ? "Sending OTP..."
+                      : "Verify via OTP"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowReplay(true)}
+                  className="h-9 px-2 text-xs text-slate-700"
+                  disabled={!signatureCapture}
+                >
+                  <CirclePlay className="mr-1.5 h-3.5 w-3.5" />
+                  Playback
+                </Button>
+                {isOtpVerified ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-green-700">
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                    Signature Verified
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showReplay && signatureCapture ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="relative w-full max-w-md rounded-xl border border-cyan-200 bg-white p-6 shadow-2xl">
+                  <button
+                    type="button"
+                    aria-label="Close playback"
+                    className="absolute right-3 top-3 text-slate-500 hover:text-slate-800"
+                    onClick={() => setShowReplay(false)}
+                  >
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                  <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-cyan-800">
+                    Signature Playback
+                  </p>
+                  <SignaturePlaybackCanvas
+                    animation={signatureCapture.animation}
+                  />
+                </div>
+              </div>
             ) : null}
           </div>
         )}
       </div>
 
       {showOtpEntry ? (
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-linear-to-b from-white to-slate-50 p-4 shadow-sm">
+        <div className="space-y-3 rounded-xl border border-emerald-200 bg-white/85 p-4 backdrop-blur-sm">
           <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
-              OTP Verification
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                OTP Verification
+              </span>
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               OTP sent to {otpEmail || "your institute email"}. Enter code and
               submit to verify.
             </p>
@@ -139,11 +197,14 @@ export const SignatureOtpVerificationCard = ({
               inputMode="numeric"
               maxLength={6}
               value={otpCode}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.preventDefault();
+              }}
               onChange={(event) =>
                 onOtpCodeChange(event.target.value.replace(/\D/g, ""))
               }
               placeholder="Enter 6-digit OTP"
-              className="w-44 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-600 focus:outline-none"
+              className="w-44 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none"
               disabled={disablePrimaryActions || isOtpVerified}
             />
             <Button
@@ -153,7 +214,7 @@ export const SignatureOtpVerificationCard = ({
                 void onSendOtp();
               }}
               disabled={disablePrimaryActions || isOtpVerified}
-              className="px-3 text-xs"
+              className="h-9 px-3 text-xs"
             >
               {isSendingOtp ? "Sending OTP..." : "Resend OTP"}
             </Button>
@@ -162,23 +223,164 @@ export const SignatureOtpVerificationCard = ({
               onClick={() => {
                 void onVerifyOtp();
               }}
-              className="px-3 text-xs"
+              className="h-9 px-3 text-xs"
               disabled={!canSubmitOtp || disablePrimaryActions || isOtpVerified}
             >
               {isOtpVerified
                 ? "OTP Verified"
                 : isVerifyingOtp
                   ? "Verifying..."
-                  : "Submit"}
+                  : "Submit OTP"}
             </Button>
           </div>
 
           {otpStatusMessage ? (
             <p className={`text-xs ${otpStatusClass}`}>{otpStatusMessage}</p>
           ) : null}
+
+          {signatureCapture ? (
+            <div className="space-y-2 rounded-lg border border-emerald-200/80 bg-emerald-50/50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-800">
+                Captured signature preview
+              </p>
+              <Image
+                src={signatureCapture.image}
+                alt="Captured digital signature"
+                width={560}
+                height={96}
+                unoptimized
+                className="h-24 w-full rounded-md border border-emerald-200 bg-white object-contain"
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
+  );
+};
+
+const SignaturePlaybackCanvas = ({
+  animation,
+}: {
+  animation: SignatureStroke[];
+}) => {
+  const replayCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = replayCanvasRef.current;
+    if (!canvas) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const bounds = canvas.getBoundingClientRect();
+    const width = Math.max(Math.floor(bounds.width), 200);
+    const height = 120;
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    context.scale(ratio, ratio);
+
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.lineWidth = 2;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+
+    const segments: Array<{
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      t: number;
+      color: string;
+    }> = [];
+    const allPoints: Array<{ x: number; y: number }> = [];
+
+    animation.forEach((stroke) => {
+      const color = stroke.color ?? "rgb(15, 23, 42)";
+      stroke.points.forEach((point) => {
+        allPoints.push({ x: point.x, y: point.y });
+      });
+      for (let index = 1; index < stroke.points.length; index += 1) {
+        const prev = stroke.points[index - 1];
+        const next = stroke.points[index];
+        segments.push({
+          x1: prev.x,
+          y1: prev.y,
+          x2: next.x,
+          y2: next.y,
+          t: next.time,
+          color,
+        });
+      }
+    });
+
+    if (segments.length === 0) return;
+
+    const minX = Math.min(...allPoints.map((point) => point.x));
+    const maxX = Math.max(...allPoints.map((point) => point.x));
+    const minY = Math.min(...allPoints.map((point) => point.y));
+    const maxY = Math.max(...allPoints.map((point) => point.y));
+    const sourceWidth = Math.max(maxX - minX, 1);
+    const sourceHeight = Math.max(maxY - minY, 1);
+    const padding = 10;
+    const targetWidth = Math.max(width - padding * 2, 1);
+    const targetHeight = Math.max(height - padding * 2, 1);
+    const scale = Math.min(
+      targetWidth / sourceWidth,
+      targetHeight / sourceHeight,
+    );
+    const offsetX = (width - sourceWidth * scale) / 2;
+    const offsetY = (height - sourceHeight * scale) / 2;
+
+    const projectX = (value: number) => (value - minX) * scale + offsetX;
+    const projectY = (value: number) => (value - minY) * scale + offsetY;
+
+    const minTime = segments[0]?.t ?? 0;
+    const maxTime = segments[segments.length - 1]?.t ?? minTime;
+    const totalDuration = Math.max(maxTime - minTime, 480);
+
+    let segmentIndex = 0;
+    let rafId = 0;
+    const startedAt = performance.now();
+
+    const draw = (now: number) => {
+      const elapsed = (now - startedAt) * 1.8;
+      const replayTime = minTime + Math.min(elapsed, totalDuration);
+
+      while (
+        segmentIndex < segments.length &&
+        segments[segmentIndex] &&
+        segments[segmentIndex].t <= replayTime
+      ) {
+        const segment = segments[segmentIndex];
+        context.strokeStyle = segment.color;
+        context.beginPath();
+        context.moveTo(projectX(segment.x1), projectY(segment.y1));
+        context.lineTo(projectX(segment.x2), projectY(segment.y2));
+        context.stroke();
+        segmentIndex += 1;
+      }
+
+      if (segmentIndex < segments.length) {
+        rafId = window.requestAnimationFrame(draw);
+      }
+    };
+
+    rafId = window.requestAnimationFrame(draw);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [animation]);
+
+  return (
+    <canvas
+      ref={replayCanvasRef}
+      className="h-30 w-full rounded-md border border-dashed border-cyan-300 bg-white"
+    />
   );
 };
 
@@ -189,6 +391,11 @@ const SignaturePadField = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const signaturePadRef = useRef<SignaturePad | null>(null);
+  const onSignatureChangeRef = useRef(onSignatureChange);
+
+  useEffect(() => {
+    onSignatureChangeRef.current = onSignatureChange;
+  }, [onSignatureChange]);
 
   useEffect(() => {
     let mounted = true;
@@ -216,13 +423,13 @@ const SignaturePadField = ({
 
       const emitCapture = () => {
         if (pad.isEmpty()) {
-          onSignatureChange(null);
+          onSignatureChangeRef.current(null);
           return;
         }
 
         const animation = pad.toData() as SignatureStroke[];
         const image = pad.toDataURL("image/png");
-        onSignatureChange({ animation, image });
+        onSignatureChangeRef.current({ animation, image });
       };
 
       pad.addEventListener("endStroke", emitCapture);
@@ -235,9 +442,9 @@ const SignaturePadField = ({
       mounted = false;
       signaturePadRef.current?.off();
       signaturePadRef.current = null;
-      onSignatureChange(null);
+      onSignatureChangeRef.current(null);
     };
-  }, [onSignatureChange]);
+  }, []);
 
   return (
     <div className="space-y-2">
@@ -252,7 +459,7 @@ const SignaturePadField = ({
           className="px-2 text-xs"
           onClick={() => {
             signaturePadRef.current?.clear();
-            onSignatureChange(null);
+            onSignatureChangeRef.current(null);
           }}
         >
           Clear signature
