@@ -9,6 +9,10 @@ import {
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
+import {
+  sendLeaveStatusUpdateEmail,
+  sendLeaveSubmissionEmail,
+} from "@/server/email/mailer";
 
 const joiningReportPayloadSchema = z.object({
   form: z.object({
@@ -546,6 +550,40 @@ export const submitJoiningReport = async (
       } as Prisma.InputJsonValue,
     },
   });
+
+  try {
+    await sendLeaveSubmissionEmail({
+      to: profile.email,
+      applicantName: profile.name,
+      referenceCode: application.referenceCode,
+      leaveType: leaveType.name,
+      status: application.status,
+      startDate,
+      endDate,
+      totalDays,
+      actionLabel: approver.viewerOnly
+        ? "Your joining report has been recorded and forwarded for information."
+        : "Your joining report has been submitted for approval.",
+      actionBy: approver.approverName,
+    });
+
+    if (application.status === LeaveStatus.APPROVED) {
+      await sendLeaveStatusUpdateEmail({
+        to: profile.email,
+        applicantName: profile.name,
+        referenceCode: application.referenceCode,
+        leaveType: leaveType.name,
+        status: application.status,
+        startDate,
+        endDate,
+        totalDays,
+        actionLabel: "Your joining report has been approved.",
+        actionBy: "System",
+      });
+    }
+  } catch (error) {
+    console.error("Failed to send joining report email", error);
+  }
 
   return {
     ok: true,

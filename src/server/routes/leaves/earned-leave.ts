@@ -3,6 +3,10 @@ import { z } from "zod";
 import { type Prisma } from "@prisma/client";
 
 import { prisma } from "@/server/db/prisma";
+import {
+  sendLeaveStatusUpdateEmail,
+  sendLeaveSubmissionEmail,
+} from "@/server/email/mailer";
 
 // NOTE: We intentionally model Prisma enums as string unions here to avoid
 // editor/lint issues when Prisma types are out of sync. Prisma Client accepts
@@ -546,6 +550,24 @@ export const submitEarnedLeave = async (
     },
   });
 
+  try {
+    await sendLeaveSubmissionEmail({
+      to: profile.email,
+      applicantName: profile.name,
+      referenceCode: application.referenceCode,
+      leaveType: leaveType.name,
+      status: application.status,
+      startDate,
+      endDate,
+      totalDays,
+      actionLabel:
+        "Your earned leave request has been submitted and routed for approval.",
+      actionBy: approverName,
+    });
+  } catch (error) {
+    console.error("Failed to send earned leave submission email", error);
+  }
+
   const finalApprovalNote = needsDirectorEscalation
     ? ` The workflow will additionally route to Director due to duration > ${DIRECTOR_ESCALATION_THRESHOLD_DAYS} days.`
     : "";
@@ -583,6 +605,7 @@ export const approveEarnedLeave = async (
         },
         orderBy: { sequence: "asc" },
       },
+      leaveType: true,
       applicant: {
         include: { role: true },
       },
@@ -602,6 +625,8 @@ export const approveEarnedLeave = async (
     parsed.decision === "APPROVE"
       ? ApprovalStatus.APPROVED
       : ApprovalStatus.REJECTED;
+
+  let nextStatus: LeaveStatus = LeaveStatus.UNDER_REVIEW;
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Update the approval step
@@ -623,6 +648,7 @@ export const approveEarnedLeave = async (
 
     // Update application status
     if (decision === ApprovalStatus.REJECTED) {
+      nextStatus = LeaveStatus.REJECTED;
       await tx.leaveApplication.update({
         where: { id: applicationId },
         data: {
@@ -639,6 +665,7 @@ export const approveEarnedLeave = async (
       });
 
       if (remainingSteps.length === 0) {
+        nextStatus = LeaveStatus.APPROVED;
         // All steps approved
         await tx.leaveApplication.update({
           where: { id: applicationId },
@@ -648,6 +675,7 @@ export const approveEarnedLeave = async (
           },
         });
       } else {
+        nextStatus = LeaveStatus.UNDER_REVIEW;
         // Still pending other approvals
         await tx.leaveApplication.update({
           where: { id: applicationId },
@@ -658,6 +686,32 @@ export const approveEarnedLeave = async (
       }
     }
   });
+
+  try {
+    const actorUser = await prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { name: true },
+    });
+
+    await sendLeaveStatusUpdateEmail({
+      to: application.applicant.email,
+      applicantName: application.applicant.name,
+      referenceCode: application.referenceCode,
+      leaveType: application.leaveType.name,
+      status: nextStatus,
+      startDate: application.startDate,
+      endDate: application.endDate,
+      totalDays: application.totalDays,
+      actionLabel:
+        parsed.decision === "APPROVE"
+          ? "Your earned leave request has been updated to Approved."
+          : "Your earned leave request has been updated to Rejected.",
+      actionBy: actorUser?.name ?? null,
+      remarks: parsed.remarks ?? null,
+    });
+  } catch (error) {
+    console.error("Failed to send earned leave status email", error);
+  }
 
   return {
     ok: true,

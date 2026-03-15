@@ -2,6 +2,7 @@ import { ApprovalStatus, LeaveStatus, type Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
+import { sendLeaveStatusUpdateEmail } from "@/server/email/mailer";
 
 const approvalActionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
@@ -195,6 +196,7 @@ export const decideLeaveApproval = async (
       leaveApplication: {
         include: {
           leaveType: true,
+          applicant: true,
           approvalSteps: true,
         },
       },
@@ -320,6 +322,32 @@ export const decideLeaveApproval = async (
   );
 
   await prisma.$transaction(transactionQueries);
+
+  try {
+    const actorUser = await prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { name: true },
+    });
+
+    await sendLeaveStatusUpdateEmail({
+      to: step.leaveApplication.applicant.email,
+      applicantName: step.leaveApplication.applicant.name,
+      referenceCode: step.leaveApplication.referenceCode,
+      leaveType: step.leaveApplication.leaveType.name,
+      status: applicationStatus,
+      startDate: step.leaveApplication.startDate,
+      endDate: step.leaveApplication.endDate,
+      totalDays: step.leaveApplication.totalDays,
+      actionLabel:
+        parsed.decision === "APPROVE"
+          ? "Your leave request status has been updated to Approved."
+          : "Your leave request status has been updated to Rejected.",
+      actionBy: actorUser?.name ?? null,
+      remarks: parsed.remarks ?? null,
+    });
+  } catch (error) {
+    console.error("Failed to send leave status update email", error);
+  }
 
   return {
     ok: true,

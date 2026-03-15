@@ -9,6 +9,8 @@ import {
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
+import { sendLeaveStatusUpdateEmail } from "@/server/email/mailer";
+import { sendLeaveSubmissionEmail } from "@/server/email/mailer";
 
 const stationLeavePayloadSchema = z.object({
   form: z.object({
@@ -494,6 +496,24 @@ export const submitStationLeave = async (
     },
   });
 
+  try {
+    await sendLeaveSubmissionEmail({
+      to: profile.email,
+      applicantName: profile.name,
+      referenceCode: application.referenceCode,
+      leaveType: leaveType.name,
+      status: application.status,
+      startDate,
+      endDate,
+      totalDays,
+      actionLabel:
+        "Your station leave request has been submitted and routed for approval.",
+      actionBy: approverName,
+    });
+  } catch (error) {
+    console.error("Failed to send station leave submission email", error);
+  }
+
   const finalApprovalNote = needsDirectorEscalation
     ? ` Final approval will additionally route to Director because the request exceeds ${DIRECTOR_ESCALATION_THRESHOLD_DAYS} days.`
     : "";
@@ -629,6 +649,8 @@ export const decideStationLeaveApproval = async (
     include: {
       leaveApplication: {
         include: {
+          leaveType: true,
+          applicant: true,
           approvalSteps: true,
         },
       },
@@ -712,6 +734,32 @@ export const decideStationLeaveApproval = async (
   );
 
   await prisma.$transaction(transactionQueries);
+
+  try {
+    const actorUser = await prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { name: true },
+    });
+
+    await sendLeaveStatusUpdateEmail({
+      to: step.leaveApplication.applicant.email,
+      applicantName: step.leaveApplication.applicant.name,
+      referenceCode: step.leaveApplication.referenceCode,
+      leaveType: step.leaveApplication.leaveType.name,
+      status: appStatus,
+      startDate: step.leaveApplication.startDate,
+      endDate: step.leaveApplication.endDate,
+      totalDays: step.leaveApplication.totalDays,
+      actionLabel:
+        parsed.decision === "APPROVE"
+          ? "Your station leave request has been updated to Approved."
+          : "Your station leave request has been updated to Rejected.",
+      actionBy: actorUser?.name ?? null,
+      remarks: parsed.remarks ?? null,
+    });
+  } catch (error) {
+    console.error("Failed to send station leave status email", error);
+  }
 
   return {
     ok: true,

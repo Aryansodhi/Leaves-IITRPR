@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
+import { sendLeaveSubmissionEmail } from "@/server/email/mailer";
 
 const nonAirIndiaPayloadSchema = z.object({
   form: z.object({
@@ -232,6 +233,24 @@ export const submitNonAirIndia = async (
       } as Prisma.InputJsonValue,
     },
   });
+
+  try {
+    await sendLeaveSubmissionEmail({
+      to: profile.email,
+      applicantName: profile.name,
+      referenceCode: application.referenceCode,
+      leaveType: leaveType.name,
+      status: application.status,
+      startDate,
+      endDate,
+      totalDays,
+      actionLabel:
+        "Your non-air-india travel request has been submitted and routed for approval.",
+      actionBy: approverName,
+    });
+  } catch (error) {
+    console.error("Failed to send non-air-india submission email", error);
+  }
 
   return {
     ok: true,
