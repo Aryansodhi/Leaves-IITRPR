@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Image from "next/image";
 
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -40,6 +41,17 @@ export type LeaveRequestDetails = {
     designation?: string;
   };
   formData?: Record<string, string> | null;
+  signatureProof?: {
+    formId?: string;
+    animation?: Array<{
+      points: Array<{ x: number; y: number; time: number }>;
+      color?: string;
+    }>;
+    image?: string;
+    timestamp?: string;
+    hash?: string;
+    otpVerified?: boolean;
+  } | null;
   approvalTrail?: LeaveApprovalTrailItem[];
   decisionRequired?: boolean;
   viewerOnly?: boolean;
@@ -303,6 +315,15 @@ export const LeaveRequestDetailsModal = ({
           </div>
         </section>
 
+        {request.signatureProof ? (
+          <section className="space-y-3">
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Digital signature verification
+            </p>
+            <SignatureReplayCard proof={request.signatureProof} />
+          </section>
+        ) : null}
+
         {!hasFormPreview && formEntries.length > 0 ? (
           <section className="space-y-3">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -352,13 +373,11 @@ export const LeaveRequestDetailsModal = ({
                       compact
                     />
                   </div>
-                  {(
-                    step.recommended ||
+                  {(step.recommended ||
                     step.hodSignature ||
                     step.accountsSignature ||
                     step.balance ||
-                    step.decisionDate
-                  ) && (
+                    step.decisionDate) && (
                     <div className="mt-2 space-y-2">
                       {step.recommended && (
                         <p className="text-sm">
@@ -377,7 +396,8 @@ export const LeaveRequestDetailsModal = ({
                       )}
                       {step.accountsSignature && !step.hodSignature && (
                         <p className="text-sm">
-                          <strong>Certified by:</strong> {step.accountsSignature}
+                          <strong>Certified by:</strong>{" "}
+                          {step.accountsSignature}
                         </p>
                       )}
                       {step.decisionDate && (
@@ -417,6 +437,97 @@ const DetailTile = ({
     </p>
   </div>
 );
+
+const SignatureReplayCard = ({
+  proof,
+}: {
+  proof: NonNullable<LeaveRequestDetails["signatureProof"]>;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hasAnimation = Boolean(proof.animation && proof.animation.length > 0);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const replay = async () => {
+      if (!hasAnimation) return;
+      const canvas = canvasRef.current;
+      if (!canvas || !mounted) return;
+
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const bounds = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(bounds.width * ratio);
+      canvas.height = Math.floor(180 * ratio);
+
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.scale(ratio, ratio);
+
+      const { default: SignaturePadCtor } = await import("signature_pad");
+      if (!mounted) return;
+
+      const pad = new SignaturePadCtor(canvas, {
+        backgroundColor: "rgb(255, 255, 255)",
+        penColor: "rgb(15, 23, 42)",
+      });
+
+      pad.clear();
+      pad.fromData((proof.animation ?? []) as never);
+    };
+
+    void replay();
+
+    return () => {
+      mounted = false;
+    };
+  }, [hasAnimation, proof.animation]);
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4">
+      <div className="grid gap-3 md:grid-cols-2">
+        <DetailTile
+          label="OTP verified"
+          value={proof.otpVerified ? "Yes" : "No"}
+          compact
+        />
+        <DetailTile
+          label="Signed at"
+          value={formatDateTime(proof.timestamp ?? null)}
+          compact
+        />
+      </div>
+      <DetailTile label="SHA256 hash" value={proof.hash ?? "-"} compact />
+
+      {hasAnimation ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Replayed stroke animation
+          </p>
+          <canvas
+            ref={canvasRef}
+            className="h-45 w-full rounded-md border border-dashed border-slate-400 bg-white"
+          />
+        </div>
+      ) : null}
+
+      {!hasAnimation && proof.image ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Stored signature image
+          </p>
+          <Image
+            src={proof.image}
+            alt="Stored signature"
+            width={500}
+            height={180}
+            className="h-auto w-full max-w-xl rounded-md border border-slate-200"
+            unoptimized
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 const FormPreview = ({ request }: { request: LeaveRequestDetails }) => {
   if (request.leaveTypeCode === "SL") {

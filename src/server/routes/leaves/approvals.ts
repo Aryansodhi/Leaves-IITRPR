@@ -88,6 +88,10 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         metadata && typeof metadata.formData === "object"
           ? (metadata.formData as Record<string, string>)
           : null;
+      const signatureProof =
+        metadata && typeof metadata.signatureProof === "object"
+          ? (metadata.signatureProof as Record<string, unknown>)
+          : null;
       const stepMetadata = step.metadata as Prisma.JsonObject | null;
       const isJoiningReport = isJoiningReportType({
         code: step.leaveApplication.leaveType.code,
@@ -133,6 +137,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         currentApprover:
           step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
         formData,
+        signatureProof,
         remarks: step.remarks,
         actedAt: step.actedAt?.toISOString() ?? null,
         decisionRequired,

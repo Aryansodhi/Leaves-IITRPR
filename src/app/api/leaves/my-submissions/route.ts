@@ -44,6 +44,10 @@ export async function GET() {
         metadata && typeof metadata.formData === "object"
           ? (metadata.formData as Record<string, string>)
           : null;
+      const signatureProof =
+        metadata && typeof metadata.signatureProof === "object"
+          ? (metadata.signatureProof as Record<string, unknown>)
+          : null;
 
       return {
         id: entry.id,
@@ -61,6 +65,7 @@ export async function GET() {
         contactDuringLeave: entry.contactDuringLeave,
         notes: entry.notes,
         formData,
+        signatureProof,
         currentApprover:
           currentStep?.assignedTo?.name ??
           currentStep?.assignedTo?.role?.name ??
@@ -88,7 +93,6 @@ export async function GET() {
               typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
           };
         }),
-
       };
     });
 

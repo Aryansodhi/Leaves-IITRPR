@@ -5,15 +5,36 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
+import type SignaturePad from "signature_pad";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
+import {
+  applyAutofillToForm,
+  clearFormDraft,
+  saveFormDraft,
+} from "@/lib/form-autofill";
 import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+
+type SignaturePoint = {
+  x: number;
+  y: number;
+  time: number;
+};
+
+type SignatureStroke = {
+  points: SignaturePoint[];
+  color?: string;
+};
+
+type SignatureCapture = {
+  animation: SignatureStroke[];
+  image: string;
+};
 
 const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
   if (!fromValue || !toValue) return "";
@@ -97,6 +118,12 @@ export default function EarnedLeavePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [ltcChoice, setLtcChoice] = useState<string>("");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [signatureCapture, setSignatureCapture] =
+    useState<SignatureCapture | null>(null);
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -143,6 +170,7 @@ export default function EarnedLeavePage() {
       "suffixFromDate",
       "suffixToDate",
       "suffixDays",
+      "applicantSignature",
     ]);
 
     // Exclude station leave dates if "No" is selected
@@ -213,6 +241,9 @@ export default function EarnedLeavePage() {
 
     setMissingFields([]);
     setSubmitError(null);
+    setOtpCode("");
+    setOtpStatusMessage(null);
+    setSignatureCapture(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
@@ -268,7 +299,8 @@ export default function EarnedLeavePage() {
       signatureDateInput.value = new Date().toISOString().split("T")[0];
     }
 
-    void applyAutofillToForm(form, "earned-leave").then(() => {
+    void applyAutofillToForm(form, "earned-leave").then((profile) => {
+      setOtpEmail(profile.email ?? "");
       const ltcInput = form.querySelector<HTMLInputElement>("#ltc");
       if (!ltcInput) return;
       const rawValue = (ltcInput.value ?? "").trim().toLowerCase();
@@ -311,6 +343,23 @@ export default function EarnedLeavePage() {
   }, [handlePeriodDateChange, handlePrefixDateChange, handleSuffixDateChange]);
 
   const handleConfirmSubmit = async () => {
+    if (!signatureCapture) {
+      setSubmitError("Please draw your signature before final submission.");
+      return;
+    }
+
+    if (!otpCode.trim()) {
+      setSubmitError("Enter the OTP sent to your email before submitting.");
+      return;
+    }
+
+    if (!otpEmail.trim()) {
+      setSubmitError(
+        "Unable to resolve your account email for OTP verification.",
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitMessage(null);
@@ -319,7 +368,14 @@ export default function EarnedLeavePage() {
       const response = await fetch("/api/earned-leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ form: pendingDataRef.current }),
+        body: JSON.stringify({
+          form: pendingDataRef.current,
+          signature: signatureCapture,
+          otp: {
+            email: otpEmail,
+            code: otpCode.trim(),
+          },
+        }),
       });
 
       const result = await response.json();
@@ -334,6 +390,10 @@ export default function EarnedLeavePage() {
       setSubmitMessage(
         result.message || "Earned leave application submitted successfully.",
       );
+      clearFormDraft("earned-leave");
+      setOtpCode("");
+      setOtpStatusMessage(null);
+      setSignatureCapture(null);
       setDialogState("success");
     } catch (err) {
       const errorMessage =
@@ -349,6 +409,41 @@ export default function EarnedLeavePage() {
 
   const handleCloseDialog = () => {
     setDialogState(null);
+    setOtpStatusMessage(null);
+  };
+
+  const handleSendOtp = async () => {
+    if (!otpEmail.trim()) {
+      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+    setOtpStatusMessage(null);
+    try {
+      const response = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otpEmail }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to send OTP.");
+      }
+
+      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
+    } catch (err) {
+      setOtpStatusMessage(
+        err instanceof Error ? err.message : "Unable to send OTP.",
+      );
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -581,7 +676,14 @@ export default function EarnedLeavePage() {
           title="Earned Leave"
           onCancel={handleCloseDialog}
           onConfirm={handleConfirmSubmit}
+          onSendOtp={handleSendOtp}
+          onSignatureChange={setSignatureCapture}
           onDownload={handleDownloadPdf}
+          otpCode={otpCode}
+          onOtpCodeChange={setOtpCode}
+          otpEmail={otpEmail}
+          otpStatusMessage={otpStatusMessage}
+          isSendingOtp={isSendingOtp}
           isDownloading={isDownloading}
           isSubmitting={isSubmitting}
         />
@@ -595,7 +697,14 @@ const ConfirmationModal = ({
   title,
   onCancel,
   onConfirm,
+  onSendOtp,
+  onSignatureChange,
   onDownload,
+  otpCode,
+  onOtpCodeChange,
+  otpEmail,
+  otpStatusMessage,
+  isSendingOtp,
   isDownloading,
   isSubmitting,
 }: {
@@ -603,7 +712,14 @@ const ConfirmationModal = ({
   title: string;
   onCancel: () => void;
   onConfirm: () => void;
+  onSendOtp: () => Promise<void>;
+  onSignatureChange: (capture: SignatureCapture | null) => void;
   onDownload: () => void;
+  otpCode: string;
+  onOtpCodeChange: (value: string) => void;
+  otpEmail: string;
+  otpStatusMessage: string | null;
+  isSendingOtp: boolean;
   isDownloading: boolean;
   isSubmitting: boolean;
 }) => {
@@ -631,11 +747,67 @@ const ConfirmationModal = ({
               <li>You may keep a copy for your records.</li>
             </ul>
           ) : (
-            <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
-              <li>I confirm the information provided is accurate.</li>
-              <li>I acknowledge the submission will be routed for review.</li>
-              <li>I understand I may be contacted for clarifications.</li>
-            </ul>
+            <div className="space-y-4">
+              <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
+                <li>I confirm the information provided is accurate.</li>
+                <li>I acknowledge the submission will be routed for review.</li>
+                <li>I understand I may be contacted for clarifications.</li>
+              </ul>
+
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Digital signature
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Draw your signature using mouse/touchpad. We store stroke
+                    animation for replay and verification.
+                  </p>
+                </div>
+                <SignaturePadField onSignatureChange={onSignatureChange} />
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    OTP verification
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Send OTP to {otpEmail || "your institute email"} and enter
+                    the 6-digit code before final submit.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void onSendOtp();
+                    }}
+                    disabled={isSendingOtp || isSubmitting}
+                    className="px-3 text-xs"
+                  >
+                    {isSendingOtp ? "Sending OTP..." : "Send OTP"}
+                  </Button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(event) =>
+                      onOtpCodeChange(event.target.value.replace(/\D/g, ""))
+                    }
+                    placeholder="Enter 6-digit OTP"
+                    className="w-44 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-slate-600 focus:outline-none"
+                    disabled={isSubmitting}
+                  />
+                </div>
+                {otpStatusMessage ? (
+                  <p className="text-xs text-slate-600">{otpStatusMessage}</p>
+                ) : null}
+              </div>
+            </div>
           )}
         </div>
 
@@ -668,13 +840,93 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
-                disabled={isSubmitting}
+                disabled={isSubmitting || otpCode.trim().length !== 6}
               >
                 {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+const SignaturePadField = ({
+  onSignatureChange,
+}: {
+  onSignatureChange: (capture: SignatureCapture | null) => void;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const signaturePadRef = useRef<SignaturePad | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const setupPad = async () => {
+      const canvas = canvasRef.current;
+      if (!canvas || !mounted) return;
+
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const bounds = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(bounds.width * ratio);
+      canvas.height = Math.floor(180 * ratio);
+
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.scale(ratio, ratio);
+
+      const { default: SignaturePadCtor } = await import("signature_pad");
+      if (!mounted) return;
+
+      const pad = new SignaturePadCtor(canvas, {
+        backgroundColor: "rgb(255, 255, 255)",
+        penColor: "rgb(15, 23, 42)",
+      });
+
+      const emitCapture = () => {
+        if (pad.isEmpty()) {
+          onSignatureChange(null);
+          return;
+        }
+
+        const animation = pad.toData() as SignatureStroke[];
+        const image = pad.toDataURL("image/png");
+        onSignatureChange({ animation, image });
+      };
+
+      pad.addEventListener("endStroke", emitCapture);
+      signaturePadRef.current = pad;
+    };
+
+    void setupPad();
+
+    return () => {
+      mounted = false;
+      signaturePadRef.current?.off();
+      signaturePadRef.current = null;
+      onSignatureChange(null);
+    };
+  }, [onSignatureChange]);
+
+  return (
+    <div className="space-y-2">
+      <canvas
+        ref={canvasRef}
+        className="h-45 w-full touch-none rounded-md border border-dashed border-slate-400 bg-white"
+      />
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          className="px-2 text-xs"
+          onClick={() => {
+            signaturePadRef.current?.clear();
+            onSignatureChange(null);
+          }}
+        >
+          Clear signature
+        </Button>
       </div>
     </div>
   );
