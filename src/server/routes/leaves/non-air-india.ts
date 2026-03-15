@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   ApprovalStatus,
   LeaveStatus,
@@ -25,6 +25,27 @@ const nonAirIndiaPayloadSchema = z.object({
     budgetHead: z.string().trim().min(1),
     applicantSignature: z.string().trim().min(1),
   }),
+  signature: z.object({
+    animation: z
+      .array(
+        z
+          .object({
+            points: z
+              .array(
+                z.object({
+                  x: z.number(),
+                  y: z.number(),
+                  time: z.number(),
+                }),
+              )
+              .min(1),
+          })
+          .passthrough(),
+      )
+      .min(1),
+    image: z.string().trim().startsWith("data:image/png;base64,"),
+  }),
+  otpVerified: z.literal(true),
 });
 
 type SessionActor = {
@@ -144,6 +165,11 @@ export const submitNonAirIndia = async (
       },
     ];
 
+  const signatureTimestamp = new Date().toISOString();
+  const signatureAnimationSerialized = JSON.stringify(
+    parsed.signature.animation,
+  );
+
   const application = await prisma.leaveApplication.create({
     data: {
       referenceCode: nonAirIndiaReference(),
@@ -158,15 +184,50 @@ export const submitNonAirIndia = async (
       submittedAt: new Date(),
       metadata: {
         formData: parsed.form,
+        signatureProof: {
+          animation: parsed.signature.animation,
+          image: parsed.signature.image,
+          timestamp: signatureTimestamp,
+          hash: "",
+          otpVerified: true,
+        },
         routing: {
           applicantRole: profile.role.key,
           approverRole: approverRole,
           approverName: approverName,
         },
-      },
+      } as Prisma.InputJsonValue,
       approvalSteps: {
         create: stepsToCreate,
       },
+    },
+  });
+
+  const signatureHash = createHash("sha256")
+    .update(
+      `${signatureAnimationSerialized}${application.id}${signatureTimestamp}`,
+    )
+    .digest("hex");
+
+  await prisma.leaveApplication.update({
+    where: { id: application.id },
+    data: {
+      metadata: {
+        formData: parsed.form,
+        signatureProof: {
+          formId: application.id,
+          animation: parsed.signature.animation,
+          image: parsed.signature.image,
+          timestamp: signatureTimestamp,
+          hash: signatureHash,
+          otpVerified: true,
+        },
+        routing: {
+          applicantRole: profile.role.key,
+          approverRole: approverRole,
+          approverName: approverName,
+        },
+      } as Prisma.InputJsonValue,
     },
   });
 
@@ -179,6 +240,8 @@ export const submitNonAirIndia = async (
       status: application.status,
       approverName: approverName,
       approverRole: approverRole,
+      signatureTimestamp,
+      signatureHash,
     },
   };
 };

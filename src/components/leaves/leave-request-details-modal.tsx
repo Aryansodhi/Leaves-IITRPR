@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
+import { downloadFormAsPdf } from "@/lib/pdf-export";
 
 export type LeaveApprovalTrailItem = {
   sequence: number;
@@ -87,6 +88,10 @@ const formatDate = (value: string) => {
     year: "numeric",
   });
 };
+
+const isEarnedLeaveType = (request: LeaveRequestDetails) =>
+  (request.leaveTypeCode ?? "").toUpperCase() === "EL" ||
+  request.leaveType.toLowerCase().includes("earned");
 
 const formatFormDate = (value?: string | null) => {
   if (!value) return "";
@@ -187,7 +192,25 @@ export const LeaveRequestDetailsModal = ({
   onClose: () => void;
   request: LeaveRequestDetails | null;
 }) => {
+  const printableRef = useRef<HTMLDivElement | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
   if (!isOpen || !request) return null;
+
+  const handleDownloadPdf = async () => {
+    if (!printableRef.current) return;
+
+    setIsDownloading(true);
+    try {
+      await downloadFormAsPdf(
+        printableRef.current,
+        `${request.referenceCode}-details`,
+        { sanitizeFormFields: false },
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const formEntries = Object.entries(request.formData ?? {}).filter(
     ([, value]) => value != null && `${value}`.trim() !== "",
@@ -199,6 +222,7 @@ export const LeaveRequestDetailsModal = ({
     // later by applicants or controllers so the original data should be visible.
     Boolean(request.formData && Object.keys(request.formData).length > 0) &&
     (request.status === "APPROVED" ||
+      isEarnedLeaveType(request) ||
       request.leaveTypeCode === "SL" ||
       request.leaveTypeCode === "JR");
 
@@ -217,201 +241,212 @@ export const LeaveRequestDetailsModal = ({
               {request.leaveType} | {request.status}
             </p>
           </div>
-          <Button variant="secondary" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200/80 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Submitted
-            </p>
-            <p className="mt-1 text-sm text-slate-800">
-              {formatDateTime(request.submittedAt)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Leave window
-            </p>
-            <p className="mt-1 text-sm text-slate-800">
-              {formatDate(request.startDate)} to {formatDate(request.endDate)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200/80 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Duration
-            </p>
-            <p className="mt-1 text-sm text-slate-800">
-              {request.totalDays} day{request.totalDays === 1 ? "" : "s"}
-            </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={handleDownloadPdf}
+              disabled={isDownloading}
+            >
+              {isDownloading ? "Preparing..." : "Download PDF"}
+            </Button>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
           </div>
         </div>
 
-        {hasFormPreview ? (
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Submitted form
-            </p>
-            <FormPreview request={request} />
-          </section>
-        ) : (
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Professional summary
-            </p>
-            <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4 text-sm leading-7 text-slate-800">
-              {professionalSummary.map((paragraph, index) => (
-                <p key={index}>{paragraph}</p>
-              ))}
+        <div ref={printableRef} className="space-y-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200/80 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Submitted
+              </p>
+              <p className="mt-1 text-sm text-slate-800">
+                {formatDateTime(request.submittedAt)}
+              </p>
             </div>
-          </section>
-        )}
-
-        {request.applicant ? (
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Applicant
-            </p>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <DetailTile label="Name" value={request.applicant.name} />
-              <DetailTile label="Role" value={request.applicant.role} />
-              <DetailTile
-                label="Department"
-                value={request.applicant.department}
-              />
-              <DetailTile
-                label="Designation"
-                value={request.applicant.designation || "-"}
-              />
+            <div className="rounded-2xl border border-slate-200/80 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Leave window
+              </p>
+              <p className="mt-1 text-sm text-slate-800">
+                {formatDate(request.startDate)} to {formatDate(request.endDate)}
+              </p>
             </div>
-          </section>
-        ) : null}
-
-        <section className="space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Summary
-          </p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <DetailTile label="Purpose" value={request.purpose || "-"} />
-            <DetailTile
-              label="Current approver"
-              value={request.currentApprover || "-"}
-            />
-            <DetailTile
-              label="Destination"
-              value={request.destination || "-"}
-            />
-            <DetailTile
-              label="Contact during leave"
-              value={request.contactDuringLeave || "-"}
-            />
-            <DetailTile label="Notes" value={request.notes || "-"} />
-            <DetailTile
-              label="Leave type code"
-              value={request.leaveTypeCode || "-"}
-            />
+            <div className="rounded-2xl border border-slate-200/80 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Duration
+              </p>
+              <p className="mt-1 text-sm text-slate-800">
+                {request.totalDays} day{request.totalDays === 1 ? "" : "s"}
+              </p>
+            </div>
           </div>
-        </section>
 
-        {request.signatureProof ? (
+          {hasFormPreview ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Submitted form
+              </p>
+              <FormPreview request={request} />
+            </section>
+          ) : (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Professional summary
+              </p>
+              <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4 text-sm leading-7 text-slate-800">
+                {professionalSummary.map((paragraph, index) => (
+                  <p key={index}>{paragraph}</p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {request.applicant ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Applicant
+              </p>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <DetailTile label="Name" value={request.applicant.name} />
+                <DetailTile label="Role" value={request.applicant.role} />
+                <DetailTile
+                  label="Department"
+                  value={request.applicant.department}
+                />
+                <DetailTile
+                  label="Designation"
+                  value={request.applicant.designation || "-"}
+                />
+              </div>
+            </section>
+          ) : null}
+
           <section className="space-y-3">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Digital signature verification
+              Summary
             </p>
-            <SignatureReplayCard proof={request.signatureProof} />
-          </section>
-        ) : null}
-
-        {!hasFormPreview && formEntries.length > 0 ? (
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Submitted form narrative
-            </p>
-            <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4 text-sm leading-7 text-slate-800">
-              {formEntries.map(([key, value]) => (
-                <p key={key}>{humanizeFormEntry(key, value)}</p>
-              ))}
+            <div className="grid gap-3 md:grid-cols-2">
+              <DetailTile label="Purpose" value={request.purpose || "-"} />
+              <DetailTile
+                label="Current approver"
+                value={request.currentApprover || "-"}
+              />
+              <DetailTile
+                label="Destination"
+                value={request.destination || "-"}
+              />
+              <DetailTile
+                label="Contact during leave"
+                value={request.contactDuringLeave || "-"}
+              />
+              <DetailTile label="Notes" value={request.notes || "-"} />
+              <DetailTile
+                label="Leave type code"
+                value={request.leaveTypeCode || "-"}
+              />
             </div>
           </section>
-        ) : null}
 
-        {request.approvalTrail && request.approvalTrail.length > 0 ? (
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Approval trail
-            </p>
-            <div className="space-y-3">
-              {request.approvalTrail.map((step) => (
-                <div
-                  key={`${step.sequence}-${step.actor}`}
-                  className="rounded-2xl border border-slate-200/80 p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900">
-                      Step {step.sequence}: {formatFieldLabel(step.actor)}
-                    </p>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                      {step.status}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <DetailTile
-                      label="Assigned to"
-                      value={step.assignedTo || "-"}
-                      compact
-                    />
-                    <DetailTile
-                      label="Acted at"
-                      value={formatDateTime(step.actedAt)}
-                      compact
-                    />
-                    <DetailTile
-                      label="Remarks"
-                      value={step.remarks || "-"}
-                      compact
-                    />
-                  </div>
-                  {(step.recommended ||
-                    step.hodSignature ||
-                    step.accountsSignature ||
-                    step.balance ||
-                    step.decisionDate) && (
-                    <div className="mt-2 space-y-2">
-                      {step.recommended && (
-                        <p className="text-sm">
-                          <strong>Recommendation:</strong> {step.recommended}
-                        </p>
-                      )}
-                      {step.balance && (
-                        <p className="text-sm">
-                          <strong>Balance as on date:</strong> {step.balance}
-                        </p>
-                      )}
-                      {step.hodSignature && (
-                        <p className="text-sm">
-                          <strong>Signature:</strong> {step.hodSignature}
-                        </p>
-                      )}
-                      {step.accountsSignature && !step.hodSignature && (
-                        <p className="text-sm">
-                          <strong>Certified by:</strong>{" "}
-                          {step.accountsSignature}
-                        </p>
-                      )}
-                      {step.decisionDate && (
-                        <p className="text-sm">
-                          <strong>Decision date:</strong> {step.decisionDate}
-                        </p>
-                      )}
+          {!hasFormPreview && formEntries.length > 0 ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Submitted form narrative
+              </p>
+              <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4 text-sm leading-7 text-slate-800">
+                {formEntries.map(([key, value]) => (
+                  <p key={key}>{humanizeFormEntry(key, value)}</p>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {request.signatureProof ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Digital signature verification
+              </p>
+              <SignatureReplayCard proof={request.signatureProof} />
+            </section>
+          ) : null}
+
+          {request.approvalTrail && request.approvalTrail.length > 0 ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Approval trail
+              </p>
+              <div className="space-y-3">
+                {request.approvalTrail.map((step) => (
+                  <div
+                    key={`${step.sequence}-${step.actor}`}
+                    className="rounded-2xl border border-slate-200/80 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Step {step.sequence}: {formatFieldLabel(step.actor)}
+                      </p>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                        {step.status}
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <DetailTile
+                        label="Assigned to"
+                        value={step.assignedTo || "-"}
+                        compact
+                      />
+                      <DetailTile
+                        label="Acted at"
+                        value={formatDateTime(step.actedAt)}
+                        compact
+                      />
+                      <DetailTile
+                        label="Remarks"
+                        value={step.remarks || "-"}
+                        compact
+                      />
+                    </div>
+                    {(step.recommended ||
+                      step.hodSignature ||
+                      step.accountsSignature ||
+                      step.balance ||
+                      step.decisionDate) && (
+                      <div className="mt-2 space-y-2">
+                        {step.recommended && (
+                          <p className="text-sm">
+                            <strong>Recommendation:</strong> {step.recommended}
+                          </p>
+                        )}
+                        {step.balance && (
+                          <p className="text-sm">
+                            <strong>Balance as on date:</strong> {step.balance}
+                          </p>
+                        )}
+                        {step.hodSignature && (
+                          <p className="text-sm">
+                            <strong>Signature:</strong> {step.hodSignature}
+                          </p>
+                        )}
+                        {step.accountsSignature && !step.hodSignature && (
+                          <p className="text-sm">
+                            <strong>Certified by:</strong>{" "}
+                            {step.accountsSignature}
+                          </p>
+                        )}
+                        {step.decisionDate && (
+                          <p className="text-sm">
+                            <strong>Decision date:</strong> {step.decisionDate}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
       </SurfaceCard>
     </div>
   );
@@ -538,7 +573,256 @@ const FormPreview = ({ request }: { request: LeaveRequestDetails }) => {
     return <JoiningReportPreview request={request} />;
   }
 
+  if (isEarnedLeaveType(request)) {
+    return <EarnedLeavePreview request={request} />;
+  }
+
   return null;
+};
+
+const EarnedLeavePreview = ({ request }: { request: LeaveRequestDetails }) => {
+  const form = request.formData ?? {};
+  const ltcValue = (form.ltc ?? "").toUpperCase();
+  const stationRequired = (form.stationYesNo ?? "").toLowerCase() === "yes";
+
+  return (
+    <SurfaceCard className="mx-auto max-w-4xl space-y-5 border border-slate-300 bg-white p-4 md:p-6">
+      <PreviewHeader />
+      <p className="text-center text-[12px] font-semibold text-slate-900">
+        छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन / Application for Leave or
+        Extension of Leave
+      </p>
+      <p className="text-center text-[11px] text-slate-700">
+        (अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम
+        की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)
+      </p>
+      <p className="text-center text-[11px] text-slate-700">
+        (Earned Leave/Half Pay Leave/Extra Ordinary Leave/Commuted
+        Leave/Vacation/Maternity Leave/Paternity Leave/Child Care Leave)
+      </p>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border border-slate-400 text-[12px] text-slate-900">
+          <tbody>
+            <PreviewRow
+              label="1. आवेदक का नाम / Name of the applicant"
+              value={form.name}
+            />
+            <PreviewRow label="2. पद नाम / Post held" value={form.post} />
+            <PreviewRow
+              label="3. विभाग/केन्द्रीय कार्यालय/अनुभाग / Department/Office/Section"
+              value={form.department}
+            />
+            <PreviewRow
+              label="4. अवकाश का प्रकार / Nature of Leave applied for"
+              value={form.leaveType}
+            />
+            <tr className="border-t border-slate-400">
+              <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                5. छुट्टी की अवधि/ Period of Leave
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>से / From:</span>
+                  <FilledUnderline
+                    value={formatFormDate(form.fromDate) || form.fromDate}
+                    width="w-32"
+                  />
+                  <span>तक/To:</span>
+                  <FilledUnderline
+                    value={formatFormDate(form.toDate) || form.toDate}
+                    width="w-32"
+                  />
+                  <span>दिनों की संख्या/No. of days:</span>
+                  <FilledUnderline value={form.days} width="w-20" />
+                </div>
+              </td>
+            </tr>
+            <tr className="border-t border-slate-400">
+              <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                6. यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए
+                जा रहे हैं
+                <div className="text-[11px] font-normal">
+                  Sunday and holiday, if any, proposed to be prefixed/suffixed
+                  to leave
+                </div>
+              </td>
+              <td className="space-y-2 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>के पूर्व Prefix</span>
+                  <span>से/From:</span>
+                  <FilledUnderline
+                    value={
+                      formatFormDate(form.prefixFromDate) || form.prefixFromDate
+                    }
+                    width="w-28"
+                  />
+                  <span>तक/To:</span>
+                  <FilledUnderline
+                    value={
+                      formatFormDate(form.prefixToDate) || form.prefixToDate
+                    }
+                    width="w-28"
+                  />
+                  <span>दिनों की संख्या:</span>
+                  <FilledUnderline value={form.prefixDays} width="w-20" />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>के पश्चात Suffix</span>
+                  <span>से/From:</span>
+                  <FilledUnderline
+                    value={
+                      formatFormDate(form.suffixFromDate) || form.suffixFromDate
+                    }
+                    width="w-28"
+                  />
+                  <span>तक/To:</span>
+                  <FilledUnderline
+                    value={
+                      formatFormDate(form.suffixToDate) || form.suffixToDate
+                    }
+                    width="w-28"
+                  />
+                  <span>दिनों की संख्या:</span>
+                  <FilledUnderline value={form.suffixDays} width="w-20" />
+                </div>
+              </td>
+            </tr>
+            <PreviewRow label="7. उद्देश्य / Purpose" value={form.purpose} />
+            <PreviewRow
+              label="8. कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था / Alternative arrangements"
+              value={form.arrangements}
+            />
+            <PreviewRow
+              label="9. I propose/do not propose to avail Leave Travel Concession during the leave."
+              value={
+                ltcValue === "PROPOSE"
+                  ? "Propose"
+                  : ltcValue === "NOT_PROPOSE"
+                    ? "Do not propose"
+                    : form.ltc
+              }
+            />
+            <tr className="border-t border-slate-400">
+              <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                10. अवकाश के दौरान पता / Address during the leave
+              </td>
+              <td className="space-y-2 px-3 py-2">
+                <div>
+                  <FilledUnderline value={form.address} width="w-full" />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>संपर्क नं. / Contact No.</span>
+                  <FilledUnderline value={form.contactNo} width="w-40" />
+                  <span>पिन / PIN:</span>
+                  <FilledUnderline value={form.pin} width="w-24" />
+                </div>
+              </td>
+            </tr>
+            <tr className="border-t border-slate-400">
+              <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                11. क्या स्टेशन अवकाश की आवश्यकता है / Whether Station leave is
+                required
+              </td>
+              <td className="space-y-2 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>हाँ / Yes / No:</span>
+                  <FilledUnderline value={form.stationYesNo} width="w-24" />
+                </div>
+                {stationRequired ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>यदि हाँ / If yes : From</span>
+                    <FilledUnderline
+                      value={
+                        formatFormDate(form.stationFrom) || form.stationFrom
+                      }
+                      width="w-28"
+                    />
+                    <span>To</span>
+                    <FilledUnderline
+                      value={formatFormDate(form.stationTo) || form.stationTo}
+                      width="w-28"
+                    />
+                  </div>
+                ) : null}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-right text-[12px] text-slate-900">
+        आवेदक के हस्ताक्षर दिनांक सहित / Signature of the applicant with date:
+        <span className="ml-2 inline-flex items-center gap-2">
+          <FilledUnderline value={form.applicantSignature} width="w-40" />
+          <FilledUnderline
+            value={
+              formatFormDate(form.applicantSignatureDate) ||
+              form.applicantSignatureDate
+            }
+            width="w-32"
+          />
+        </span>
+      </p>
+
+      <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+        <p className="text-center font-semibold">
+          नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें / Remarks and
+          Recommendations of the controlling officer
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>
+            सिफारिश की गई / Recommended या नहीं की गई / not recommended:
+          </span>
+          <FilledUnderline value={form.recommended} width="w-44" />
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>
+            विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature
+            with date Head of Department/Section In-charge:
+          </span>
+          <FilledUnderline value={form.hodSignature} width="w-60" />
+        </p>
+      </div>
+
+      <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+        <p className="text-center font-semibold">
+          प्रशासनिक अनुभाग द्वारा प्रयोग हेतु / For use by the Administration
+          Section
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>Certified that (nature of leave) for period, from</span>
+          <FilledUnderline value={form.adminFrom} width="w-32" />
+          <span>to</span>
+          <FilledUnderline value={form.adminTo} width="w-32" />
+          <span>is available as per following details.</span>
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>Nature of leave applied for</span>
+          <FilledUnderline value={form.adminLeaveType} width="w-44" />
+          <span>Balance as on date</span>
+          <FilledUnderline value={form.balance} width="w-28" />
+          <span>Leave applied for (No. of days)</span>
+          <FilledUnderline value={form.adminDays} width="w-24" />
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>Dealing Assistant</span>
+          <FilledUnderline value={form.assistant} width="w-44" />
+          <span>AR/DR</span>
+          <FilledUnderline value={form.arDr} width="w-44" />
+          <span>Registrar</span>
+          <FilledUnderline value={form.registrar} width="w-44" />
+        </p>
+        <p className="flex flex-wrap items-center gap-2">
+          <span>
+            Signature of Registrar / Dean (Faculty Affairs & Administration) /
+            Director:
+          </span>
+          <FilledUnderline value={form.authoritySign} width="w-60" />
+        </p>
+      </div>
+    </SurfaceCard>
+  );
 };
 
 const PreviewHeader = () => (
@@ -848,4 +1132,19 @@ const PreviewLine = ({
     <span>:</span>
     <FilledUnderline value={value} width="flex-1 min-w-[12rem]" />
   </div>
+);
+
+const PreviewRow = ({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) => (
+  <tr className="border-t border-slate-400">
+    <td className="bg-slate-50 px-3 py-2 align-top font-semibold">{label}</td>
+    <td className="px-3 py-2">
+      <FilledUnderline value={value} width="w-full" />
+    </td>
+  </tr>
 );

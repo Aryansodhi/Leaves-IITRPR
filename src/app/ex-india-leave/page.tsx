@@ -1,11 +1,15 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import {
+  SignatureOtpVerificationCard,
+  type SignatureCapture,
+} from "@/components/leaves/signature-otp-verification-card";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
@@ -14,26 +18,44 @@ import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
 
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+
+const isSignatureFieldId = (fieldId: string) =>
+  /signature/i.test(fieldId) || /Sign$/.test(fieldId);
+
 const UnderlineInput = ({
   id,
   width = "w-48",
   className,
+  readOnly,
+  defaultValue,
+  ...props
 }: {
   id: string;
   width?: string;
   className?: string;
-}) => (
-  <input
-    id={id}
-    name={id}
-    type="text"
-    className={cn(
-      "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none",
-      width,
-      className,
-    )}
-  />
-);
+} & InputHTMLAttributes<HTMLInputElement>) => {
+  const autoSigned = isSignatureFieldId(id);
+
+  return (
+    <input
+      id={id}
+      name={id}
+      type="text"
+      readOnly={readOnly ?? autoSigned}
+      defaultValue={
+        defaultValue ?? (autoSigned ? DIGITAL_SIGNATURE_VALUE : undefined)
+      }
+      className={cn(
+        "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none",
+        (readOnly ?? autoSigned) && "cursor-not-allowed bg-slate-50 opacity-75",
+        width,
+        className,
+      )}
+      {...props}
+    />
+  );
+};
 
 const pages = [
   "Form page",
@@ -54,6 +76,14 @@ export default function ExIndiaLeavePage() {
   const [confirmed, setConfirmed] = useState(false);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [signatureCapture, setSignatureCapture] =
+    useState<SignatureCapture | null>(null);
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -96,6 +126,11 @@ export default function ExIndiaLeavePage() {
       string,
       string
     >;
+    Object.keys(data).forEach((key) => {
+      if (isSignatureFieldId(key)) {
+        data[key] = DIGITAL_SIGNATURE_VALUE;
+      }
+    });
     saveFormDraft("ex-india-leave", data);
     const required = Array.from(
       form.querySelectorAll<HTMLInputElement>("input"),
@@ -111,6 +146,10 @@ export default function ExIndiaLeavePage() {
     }
 
     setMissingFields([]);
+    setOtpCode("");
+    setOtpStatusMessage(null);
+    setIsOtpVerified(false);
+    setSignatureCapture(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
@@ -119,17 +158,116 @@ export default function ExIndiaLeavePage() {
     const form = formRef.current;
     if (!form) return;
 
-    void applyAutofillToForm(form, "ex-india-leave");
+    void applyAutofillToForm(form, "ex-india-leave").then((profile) => {
+      setOtpEmail(profile.email ?? "");
+    });
   }, []);
 
   const handleConfirmSubmit = () => {
+    if (!isOtpVerified || !signatureCapture) {
+      window.alert(
+        "Complete digital signature and OTP verification before submitting.",
+      );
+      return;
+    }
     setConfirmed(true);
     setDialogState("success");
+    setOtpCode("");
+    setOtpStatusMessage(null);
+    setIsOtpVerified(false);
+    setSignatureCapture(null);
     console.log("Ex-India leave form submitted", pendingDataRef.current);
   };
 
   const handleCloseDialog = () => {
     setDialogState(null);
+    setOtpStatusMessage(null);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!signatureCapture) {
+      setOtpStatusMessage(
+        "Please add your digital signature before OTP verification.",
+      );
+      setIsOtpVerified(false);
+      return;
+    }
+
+    if (!otpEmail.trim()) {
+      setOtpStatusMessage(
+        "Unable to resolve your institute email for OTP verification.",
+      );
+      setIsOtpVerified(false);
+      return;
+    }
+
+    if (otpCode.trim().length !== 6) {
+      setOtpStatusMessage("Enter a valid 6-digit OTP.");
+      setIsOtpVerified(false);
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const response = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to verify OTP.");
+      }
+
+      setIsOtpVerified(true);
+      setOtpStatusMessage("OTP verified successfully.");
+    } catch (err) {
+      setIsOtpVerified(false);
+      setOtpStatusMessage(
+        err instanceof Error ? err.message : "Unable to verify OTP.",
+      );
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    if (!otpEmail.trim()) {
+      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+    setOtpStatusMessage(null);
+    try {
+      const response = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otpEmail }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to send OTP.");
+      }
+
+      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
+    } catch (err) {
+      setOtpStatusMessage(
+        err instanceof Error ? err.message : "Unable to send OTP.",
+      );
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -204,7 +342,21 @@ export default function ExIndiaLeavePage() {
           title="Ex-India Leave"
           onCancel={handleCloseDialog}
           onConfirm={handleConfirmSubmit}
+          onSendOtp={handleSendOtp}
+          onVerifyOtp={handleVerifyOtp}
+          onSignatureChange={(capture) => {
+            setSignatureCapture(capture);
+            setIsOtpVerified(false);
+            setOtpStatusMessage(null);
+          }}
           onDownload={handleDownloadPdf}
+          otpCode={otpCode}
+          onOtpCodeChange={setOtpCode}
+          otpEmail={otpEmail}
+          otpStatusMessage={otpStatusMessage}
+          isSendingOtp={isSendingOtp}
+          isVerifyingOtp={isVerifyingOtp}
+          isOtpVerified={isOtpVerified}
           isDownloading={isDownloading}
         />
       </form>
@@ -217,14 +369,34 @@ const ConfirmationModal = ({
   title,
   onCancel,
   onConfirm,
+  onSendOtp,
+  onVerifyOtp,
+  onSignatureChange,
   onDownload,
+  otpCode,
+  onOtpCodeChange,
+  otpEmail,
+  otpStatusMessage,
+  isSendingOtp,
+  isVerifyingOtp,
+  isOtpVerified,
   isDownloading,
 }: {
   state: DialogState;
   title: string;
   onCancel: () => void;
   onConfirm: () => void;
+  onSendOtp: () => Promise<void>;
+  onVerifyOtp: () => Promise<void>;
+  onSignatureChange: (capture: SignatureCapture | null) => void;
   onDownload: () => void;
+  otpCode: string;
+  onOtpCodeChange: (value: string) => void;
+  otpEmail: string;
+  otpStatusMessage: string | null;
+  isSendingOtp: boolean;
+  isVerifyingOtp: boolean;
+  isOtpVerified: boolean;
   isDownloading: boolean;
 }) => {
   if (!state) return null;
@@ -251,11 +423,26 @@ const ConfirmationModal = ({
               <li>You may keep a copy for your records.</li>
             </ul>
           ) : (
-            <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
-              <li>I confirm the information provided is accurate.</li>
-              <li>I acknowledge the submission will be routed for review.</li>
-              <li>I understand I may be contacted for clarifications.</li>
-            </ul>
+            <div className="space-y-4">
+              <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
+                <li>I confirm the information provided is accurate.</li>
+                <li>I acknowledge the submission will be routed for review.</li>
+                <li>I understand I may be contacted for clarifications.</li>
+              </ul>
+              <SignatureOtpVerificationCard
+                otpEmail={otpEmail}
+                otpCode={otpCode}
+                onOtpCodeChange={onOtpCodeChange}
+                otpStatusMessage={otpStatusMessage}
+                isSendingOtp={isSendingOtp}
+                isVerifyingOtp={isVerifyingOtp}
+                isSubmitting={false}
+                onSendOtp={onSendOtp}
+                onVerifyOtp={onVerifyOtp}
+                onSignatureChange={onSignatureChange}
+                isOtpVerified={isOtpVerified}
+              />
+            </div>
           )}
         </div>
 
@@ -288,6 +475,7 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
+                disabled={!isOtpVerified}
               >
                 Yes, submit
               </Button>

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   ApprovalStatus,
   LeaveStatus,
@@ -65,6 +65,27 @@ const joiningReportPayloadSchema = z.object({
       .trim()
       .refine((value) => parseDateInput(value) !== null),
   }),
+  signature: z.object({
+    animation: z
+      .array(
+        z
+          .object({
+            points: z
+              .array(
+                z.object({
+                  x: z.number(),
+                  y: z.number(),
+                  time: z.number(),
+                }),
+              )
+              .min(1),
+          })
+          .passthrough(),
+      )
+      .min(1),
+    image: z.string().trim().startsWith("data:image/png;base64,"),
+  }),
+  otpVerified: z.literal(true),
 });
 
 const toIsoDateString = (value?: Date | null) => {
@@ -446,6 +467,11 @@ export const submitJoiningReport = async (
     englishOrderDate: parsed.form.orderDate,
   };
 
+  const signatureTimestamp = new Date().toISOString();
+  const signatureAnimationSerialized = JSON.stringify(
+    parsed.signature.animation,
+  );
+
   const application = await prisma.leaveApplication.create({
     data: {
       referenceCode: joiningReportReference(),
@@ -468,7 +494,7 @@ export const submitJoiningReport = async (
           approverName: approver.approverName,
           viewerOnly: approver.viewerOnly,
         },
-      },
+      } as Prisma.InputJsonValue,
       approvalSteps: {
         create: [
           {
@@ -490,6 +516,35 @@ export const submitJoiningReport = async (
     },
   });
 
+  const signatureHash = createHash("sha256")
+    .update(
+      `${signatureAnimationSerialized}${application.id}${signatureTimestamp}`,
+    )
+    .digest("hex");
+
+  await prisma.leaveApplication.update({
+    where: { id: application.id },
+    data: {
+      metadata: {
+        formData: persistedForm,
+        signatureProof: {
+          formId: application.id,
+          animation: parsed.signature.animation,
+          image: parsed.signature.image,
+          timestamp: signatureTimestamp,
+          hash: signatureHash,
+          otpVerified: true,
+        },
+        routing: {
+          applicantRole: profile.role.key,
+          approverRole: approver.approverRole,
+          approverName: approver.approverName,
+          viewerOnly: approver.viewerOnly,
+        },
+      } as Prisma.InputJsonValue,
+    },
+  });
+
   return {
     ok: true,
     message: approver.viewerOnly
@@ -502,6 +557,8 @@ export const submitJoiningReport = async (
       approverName: approver.approverName,
       approverRole: approver.approverRole,
       viewerOnly: approver.viewerOnly,
+      signatureTimestamp,
+      signatureHash,
     },
   };
 };

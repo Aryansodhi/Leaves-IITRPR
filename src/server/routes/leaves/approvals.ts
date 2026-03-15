@@ -105,6 +105,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         : toBoolean(stepMetadata?.viewerOnly, false);
 
       return {
+        approvalStepId: step.id,
         applicationId: step.leaveApplicationId,
         currentApprovalActor: step.actor,
         referenceCode: step.leaveApplication.referenceCode,

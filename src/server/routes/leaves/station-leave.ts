@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   ApprovalStatus,
   LeaveStatus,
@@ -43,6 +43,27 @@ const stationLeavePayloadSchema = z.object({
     date: z.string().trim().min(1),
     applicantSign: z.string().trim().min(1),
   }),
+  signature: z.object({
+    animation: z
+      .array(
+        z
+          .object({
+            points: z
+              .array(
+                z.object({
+                  x: z.number(),
+                  y: z.number(),
+                  time: z.number(),
+                }),
+              )
+              .min(1),
+          })
+          .passthrough(),
+      )
+      .min(1),
+    image: z.string().trim().startsWith("data:image/png;base64,"),
+  }),
+  otpVerified: z.literal(true),
 });
 
 const approvalActionSchema = z.object({
@@ -401,6 +422,11 @@ export const submitStationLeave = async (
     });
   }
 
+  const signatureTimestamp = new Date().toISOString();
+  const signatureAnimationSerialized = JSON.stringify(
+    parsed.signature.animation,
+  );
+
   const application = await prisma.leaveApplication.create({
     data: {
       referenceCode: stationLeaveReference(),
@@ -427,10 +453,42 @@ export const submitStationLeave = async (
           approverName: approverName,
           directorEscalation: needsDirectorEscalation,
         },
-      },
+      } as Prisma.InputJsonValue,
       approvalSteps: {
         create: stepsToCreate,
       },
+    },
+  });
+
+  const signatureHash = createHash("sha256")
+    .update(
+      `${signatureAnimationSerialized}${application.id}${signatureTimestamp}`,
+    )
+    .digest("hex");
+
+  await prisma.leaveApplication.update({
+    where: { id: application.id },
+    data: {
+      metadata: {
+        formData: {
+          ...parsed.form,
+          contact: contactDuringLeave,
+        },
+        signatureProof: {
+          formId: application.id,
+          animation: parsed.signature.animation,
+          image: parsed.signature.image,
+          timestamp: signatureTimestamp,
+          hash: signatureHash,
+          otpVerified: true,
+        },
+        routing: {
+          applicantRole: profile.role.key,
+          approverRole: approverRole,
+          approverName: approverName,
+          directorEscalation: needsDirectorEscalation,
+        },
+      } as Prisma.InputJsonValue,
     },
   });
 
@@ -448,6 +506,8 @@ export const submitStationLeave = async (
       approverName: approverName,
       approverRole: approverRole,
       directorEscalation: needsDirectorEscalation,
+      signatureTimestamp,
+      signatureHash,
     },
   };
 };

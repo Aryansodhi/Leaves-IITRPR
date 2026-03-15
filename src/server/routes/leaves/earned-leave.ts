@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { type Prisma } from "@prisma/client";
 
-import { verifyOtp } from "@/server/auth/otp";
 import { prisma } from "@/server/db/prisma";
 
 // NOTE: We intentionally model Prisma enums as string unions here to avoid
@@ -118,13 +117,7 @@ const earnedLeavePayloadSchema = z.object({
       .min(1),
     image: z.string().trim().startsWith("data:image/png;base64,"),
   }),
-  otp: z.object({
-    email: z.string().trim().email(),
-    code: z
-      .string()
-      .trim()
-      .regex(/^\d{6}$/),
-  }),
+  otpVerified: z.literal(true),
 });
 
 const approvalActionSchema = z.object({
@@ -217,8 +210,6 @@ export const submitEarnedLeave = async (
 ) => {
   const parsed = earnedLeavePayloadSchema.parse(payload);
 
-  const normalizedOtpEmail = parsed.otp.email.trim().toLowerCase();
-
   const profile = await prisma.user.findUnique({
     where: { id: actor.userId },
     include: {
@@ -232,42 +223,6 @@ export const submitEarnedLeave = async (
 
   if (!profile || !profile.role) {
     throw new Error("Unable to resolve applicant role.");
-  }
-
-  if (profile.email.trim().toLowerCase() !== normalizedOtpEmail) {
-    throw withStatus(
-      "OTP email does not match the signed-in account email.",
-      403,
-    );
-  }
-
-  const otpToken = await prisma.otpToken.findFirst({
-    where: {
-      email: normalizedOtpEmail,
-      userId: actor.userId,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (!otpToken) {
-    throw withStatus("Please request a fresh OTP.", 404);
-  }
-
-  if (otpToken.consumedAt) {
-    throw withStatus("This OTP has already been used.", 410);
-  }
-
-  if (otpToken.expiresAt < new Date()) {
-    throw withStatus("The OTP has expired. Request a new one.", 410);
-  }
-
-  const otpMatched = await verifyOtp(parsed.otp.code, otpToken.tokenHash);
-  if (!otpMatched) {
-    await prisma.otpToken.update({
-      where: { id: otpToken.id },
-      data: { attempts: { increment: 1 } },
-    });
-    throw withStatus("Incorrect OTP code.", 401);
   }
 
   let approverId: string | null = null;
@@ -589,11 +544,6 @@ export const submitEarnedLeave = async (
     data: {
       metadata: metadataWithSignature as Prisma.InputJsonValue,
     },
-  });
-
-  await prisma.otpToken.update({
-    where: { id: otpToken.id },
-    data: { consumedAt: new Date() },
   });
 
   const finalApprovalNote = needsDirectorEscalation

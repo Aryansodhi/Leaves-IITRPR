@@ -30,7 +30,10 @@ export type EarnedLeaveApprovalData = {
     decisionDate?: string;
     remarks?: string;
   }) => Promise<void>;
-  onReject?: (data: { remarks: string; hodSignature?: string }) => Promise<void>;
+  onReject?: (data: {
+    remarks: string;
+    hodSignature?: string;
+  }) => Promise<void>;
   onClose: () => void;
 };
 
@@ -45,6 +48,12 @@ const formatDate = (value: string) => {
   });
 };
 
+const resolveDigitalSignature = (actor?: string | null) => {
+  if (!actor) return "DIGITALLY_SIGNED";
+  if (actor === "ACCOUNTS") return "ACCOUNTS";
+  return actor;
+};
+
 export const EarnedLeaveApprovalModal = ({
   isOpen,
   data,
@@ -53,15 +62,15 @@ export const EarnedLeaveApprovalModal = ({
   data: EarnedLeaveApprovalData | null;
 }) => {
   const [decision, setDecision] = useState<"PENDING" | "APPROVE" | "REJECT">(
-    "PENDING"
+    "PENDING",
   );
-  const disableActions = data?.viewerOnly === true || data?.decisionRequired === false; // need only view
-  const [recommended, setRecommended] = useState<"RECOMMENDED" | "NOT_RECOMMENDED" | "">(
-    ""
-  );
-  const [hodSignature, setHodSignature] = useState("");
+  const disableActions =
+    data?.viewerOnly === true || data?.decisionRequired === false; // need only view
+  const [recommended, setRecommended] = useState<
+    "RECOMMENDED" | "NOT_RECOMMENDED" | ""
+  >("");
   const [decisionDate, setDecisionDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [remarks, setRemarks] = useState("");
   const [balance, setBalance] = useState("");
@@ -74,6 +83,9 @@ export const EarnedLeaveApprovalModal = ({
     data.currentApprovalActor === "DEAN" ||
     data.currentApprovalActor === "REGISTRAR" ||
     data.currentApprovalActor === "DIRECTOR";
+  const actorDigitalSignature = resolveDigitalSignature(
+    data.currentApprovalActor,
+  );
 
   const handleApprove = async () => {
     if (!data.onApprove) {
@@ -88,10 +100,6 @@ export const EarnedLeaveApprovalModal = ({
     } else {
       if (!isFinalAuthorityActor && !recommended) {
         setError("Please select Recommended or Not Recommended");
-        return;
-      }
-      if (!hodSignature.trim()) {
-        setError("Please provide your signature");
         return;
       }
       if (!isFinalAuthorityActor && !decisionDate) {
@@ -112,7 +120,7 @@ export const EarnedLeaveApprovalModal = ({
         decision: "APPROVE",
         recommended:
           isAccountsActor || isFinalAuthorityActor ? undefined : recommended,
-        hodSignature: isAccountsActor ? undefined : hodSignature,
+        hodSignature: isAccountsActor ? undefined : actorDigitalSignature,
         accountsSignature: isAccountsActor ? "ACCOUNTS" : undefined,
         balance: isAccountsActor ? balance : undefined,
         decisionDate:
@@ -121,7 +129,7 @@ export const EarnedLeaveApprovalModal = ({
       });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to submit approval"
+        err instanceof Error ? err.message : "Failed to submit approval",
       );
     } finally {
       setIsSubmitting(false);
@@ -137,10 +145,6 @@ export const EarnedLeaveApprovalModal = ({
       setError("Please provide remarks for rejection");
       return;
     }
-    if (isFinalAuthorityActor && !hodSignature.trim()) {
-      setError("Please provide your signature");
-      return;
-    }
 
     setIsSubmitting(true);
     setError(null);
@@ -148,11 +152,11 @@ export const EarnedLeaveApprovalModal = ({
     try {
       await data.onReject({
         remarks,
-        hodSignature: isFinalAuthorityActor ? hodSignature : undefined,
+        hodSignature: isFinalAuthorityActor ? actorDigitalSignature : undefined,
       });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to submit rejection"
+        err instanceof Error ? err.message : "Failed to submit rejection",
       );
     } finally {
       setIsSubmitting(false);
@@ -160,7 +164,7 @@ export const EarnedLeaveApprovalModal = ({
   };
 
   const formEntries = Object.entries(data.formData ?? {}).filter(
-    ([, value]) => value != null && `${value}`.trim() !== ""
+    ([, value]) => value != null && `${value}`.trim() !== "",
   );
 
   return (
@@ -179,7 +183,11 @@ export const EarnedLeaveApprovalModal = ({
               Processing approval for {data.applicantName}
             </p>
           </div>
-          <Button variant="secondary" onClick={data.onClose} disabled={isSubmitting}>
+          <Button
+            variant="secondary"
+            onClick={data.onClose}
+            disabled={isSubmitting}
+          >
             Close
           </Button>
         </div>
@@ -209,10 +217,7 @@ export const EarnedLeaveApprovalModal = ({
             Leave Details
           </p>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <DetailTile
-              label="From Date"
-              value={formatDate(data.startDate)}
-            />
+            <DetailTile label="From Date" value={formatDate(data.startDate)} />
             <DetailTile label="To Date" value={formatDate(data.endDate)} />
             <DetailTile
               label="Total Days"
@@ -309,7 +314,9 @@ export const EarnedLeaveApprovalModal = ({
                   className="rounded-xl border-2 border-rose-200 bg-rose-50 px-4 py-3 text-left transition-colors hover:bg-rose-100"
                 >
                   <p className="font-semibold text-rose-900">Reject</p>
-                  <p className="text-xs text-rose-700">Provide rejection remarks</p>
+                  <p className="text-xs text-rose-700">
+                    Provide rejection remarks
+                  </p>
                 </button>
               </div>
             )}
@@ -333,7 +340,9 @@ export const EarnedLeaveApprovalModal = ({
                           }
                           className="h-4 w-4"
                         />
-                        <span className="text-sm text-slate-700">Recommended</span>
+                        <span className="text-sm text-slate-700">
+                          Recommended
+                        </span>
                       </label>
                       <label className="flex items-center gap-2">
                         <input
@@ -354,19 +363,10 @@ export const EarnedLeaveApprovalModal = ({
                   </div>
                 )}
 
-                {/* Signature */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-900">
-                    Signature
-                  </label>
-                  <input
-                    type="text"
-                    value={hodSignature}
-                    onChange={(e) => setHodSignature(e.target.value)}
-                    placeholder="Enter your signature"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                  />
-                </div>
+                <DetailTile
+                  label="Digital signature"
+                  value={actorDigitalSignature}
+                />
 
                 {!isFinalAuthorityActor && (
                   <div className="space-y-2">
@@ -430,18 +430,10 @@ export const EarnedLeaveApprovalModal = ({
                 {/* Rejection Remarks */}
                 <div className="space-y-2">
                   {isFinalAuthorityActor && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold text-slate-900">
-                        Signature
-                      </label>
-                      <input
-                        type="text"
-                        value={hodSignature}
-                        onChange={(e) => setHodSignature(e.target.value)}
-                        placeholder="Enter your signature"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                      />
-                    </div>
+                    <DetailTile
+                      label="Digital signature"
+                      value={actorDigitalSignature}
+                    />
                   )}
                   <label className="text-sm font-semibold text-slate-900">
                     Rejection Remarks

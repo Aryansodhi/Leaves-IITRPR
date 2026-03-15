@@ -7,6 +7,10 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import {
+  SignatureOtpVerificationCard,
+  type SignatureCapture,
+} from "@/components/leaves/signature-otp-verification-card";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -18,6 +22,8 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
 interface UnderlineInputProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -61,6 +67,14 @@ export default function NonAirIndiaPage() {
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [signatureCapture, setSignatureCapture] =
+    useState<SignatureCapture | null>(null);
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -97,6 +111,7 @@ export default function NonAirIndiaPage() {
       string,
       string
     >;
+    data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("non-air-india", data);
 
     // Check missing for only required fields
@@ -117,6 +132,10 @@ export default function NonAirIndiaPage() {
     }
 
     setMissingFields([]);
+    setOtpCode("");
+    setOtpStatusMessage(null);
+    setIsOtpVerified(false);
+    setSignatureCapture(null);
     pendingDataRef.current = data;
     setDialogState("confirm");
   };
@@ -125,16 +144,29 @@ export default function NonAirIndiaPage() {
     const form = formRef.current;
     if (!form) return;
 
-    void applyAutofillToForm(form, "non-air-india");
+    void applyAutofillToForm(form, "non-air-india").then((profile) => {
+      setOtpEmail(profile.email ?? "");
+    });
   }, []);
 
   const handleConfirmSubmit = async () => {
+    if (!isOtpVerified || !signatureCapture) {
+      alert(
+        "Complete digital signature and OTP verification before submitting.",
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/non-air-india", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ form: pendingDataRef.current }),
+        body: JSON.stringify({
+          form: pendingDataRef.current,
+          signature: signatureCapture,
+          otpVerified: true,
+        }),
       });
 
       if (!res.ok) {
@@ -144,6 +176,10 @@ export default function NonAirIndiaPage() {
 
       setConfirmed(true);
       setDialogState("success");
+      setOtpCode("");
+      setOtpStatusMessage(null);
+      setIsOtpVerified(false);
+      setSignatureCapture(null);
 
       // CLEAR DRAFT AFTER SUCCESS
       clearFormDraft("non-air-india");
@@ -162,6 +198,96 @@ export default function NonAirIndiaPage() {
 
   const handleCloseDialog = () => {
     setDialogState(null);
+    setOtpStatusMessage(null);
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!signatureCapture) {
+      setOtpStatusMessage(
+        "Please add your digital signature before OTP verification.",
+      );
+      setIsOtpVerified(false);
+      return;
+    }
+
+    if (!otpEmail.trim()) {
+      setOtpStatusMessage(
+        "Unable to resolve your institute email for OTP verification.",
+      );
+      setIsOtpVerified(false);
+      return;
+    }
+
+    if (otpCode.trim().length !== 6) {
+      setOtpStatusMessage("Enter a valid 6-digit OTP.");
+      setIsOtpVerified(false);
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const response = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: otpEmail,
+          code: otpCode.trim(),
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to verify OTP.");
+      }
+
+      setIsOtpVerified(true);
+      setOtpStatusMessage("OTP verified successfully.");
+    } catch (err) {
+      setIsOtpVerified(false);
+      setOtpStatusMessage(
+        err instanceof Error ? err.message : "Unable to verify OTP.",
+      );
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    if (!otpEmail.trim()) {
+      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+    setOtpStatusMessage(null);
+    try {
+      const response = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: otpEmail }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to send OTP.");
+      }
+
+      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
+    } catch (err) {
+      setOtpStatusMessage(
+        err instanceof Error ? err.message : "Unable to send OTP.",
+      );
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -262,7 +388,8 @@ export default function NonAirIndiaPage() {
               id="applicantSignature"
               width="w-64"
               className="ml-2"
-              placeholder="Full Name as Signature"
+              readOnly
+              defaultValue={DIGITAL_SIGNATURE_VALUE}
             />
           </div>
 
@@ -297,7 +424,21 @@ export default function NonAirIndiaPage() {
           title="Non-Air-India Travel"
           onCancel={handleCloseDialog}
           onConfirm={handleConfirmSubmit}
+          onSendOtp={handleSendOtp}
+          onVerifyOtp={handleVerifyOtp}
+          onSignatureChange={(capture) => {
+            setSignatureCapture(capture);
+            setIsOtpVerified(false);
+            setOtpStatusMessage(null);
+          }}
           onDownload={handleDownloadPdf}
+          otpCode={otpCode}
+          onOtpCodeChange={setOtpCode}
+          otpEmail={otpEmail}
+          otpStatusMessage={otpStatusMessage}
+          isSendingOtp={isSendingOtp}
+          isVerifyingOtp={isVerifyingOtp}
+          isOtpVerified={isOtpVerified}
           isDownloading={isDownloading}
           isSubmitting={isSubmitting}
         />
@@ -311,7 +452,17 @@ const ConfirmationModal = ({
   title,
   onCancel,
   onConfirm,
+  onSendOtp,
+  onVerifyOtp,
+  onSignatureChange,
   onDownload,
+  otpCode,
+  onOtpCodeChange,
+  otpEmail,
+  otpStatusMessage,
+  isSendingOtp,
+  isVerifyingOtp,
+  isOtpVerified,
   isDownloading,
   isSubmitting,
 }: {
@@ -319,7 +470,17 @@ const ConfirmationModal = ({
   title: string;
   onCancel: () => void;
   onConfirm: () => void;
+  onSendOtp: () => Promise<void>;
+  onVerifyOtp: () => Promise<void>;
+  onSignatureChange: (capture: SignatureCapture | null) => void;
   onDownload: () => void;
+  otpCode: string;
+  onOtpCodeChange: (value: string) => void;
+  otpEmail: string;
+  otpStatusMessage: string | null;
+  isSendingOtp: boolean;
+  isVerifyingOtp: boolean;
+  isOtpVerified: boolean;
   isDownloading: boolean;
   isSubmitting: boolean;
 }) => {
@@ -347,11 +508,26 @@ const ConfirmationModal = ({
               <li>You may keep a copy for your records.</li>
             </ul>
           ) : (
-            <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
-              <li>I confirm the information provided is accurate.</li>
-              <li>I acknowledge the submission will be routed for review.</li>
-              <li>I understand I may be contacted for clarifications.</li>
-            </ul>
+            <div className="space-y-4">
+              <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-700">
+                <li>I confirm the information provided is accurate.</li>
+                <li>I acknowledge the submission will be routed for review.</li>
+                <li>I understand I may be contacted for clarifications.</li>
+              </ul>
+              <SignatureOtpVerificationCard
+                otpEmail={otpEmail}
+                otpCode={otpCode}
+                onOtpCodeChange={onOtpCodeChange}
+                otpStatusMessage={otpStatusMessage}
+                isSendingOtp={isSendingOtp}
+                isVerifyingOtp={isVerifyingOtp}
+                isSubmitting={isSubmitting}
+                onSendOtp={onSendOtp}
+                onVerifyOtp={onVerifyOtp}
+                onSignatureChange={onSignatureChange}
+                isOtpVerified={isOtpVerified}
+              />
+            </div>
           )}
         </div>
 
@@ -385,7 +561,7 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !isOtpVerified}
               >
                 {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>
