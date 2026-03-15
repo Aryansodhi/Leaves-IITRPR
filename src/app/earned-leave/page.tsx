@@ -10,7 +10,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import {
   SignatureOtpVerificationCard,
   type SignatureCapture,
-} from "@/components/leaves/signature-otp-verification-card";
+} from "../../components/leaves/signature-otp-verification-card";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -704,7 +704,7 @@ export default function EarnedLeavePage() {
             isSubmitting={isSubmitting}
             onSendOtp={handleSendOtp}
             onVerifyOtp={handleVerifyOtp}
-            onSignatureChange={(capture) => {
+            onSignatureChange={(capture: SignatureCapture | null) => {
               setSignatureCapture(capture);
               setIsOtpVerified(false);
               setOtpStatusMessage(null);

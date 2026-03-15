@@ -568,7 +568,7 @@ const ApproverSignatureCard = ({
   const [showReplay, setShowReplay] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
+    <div className="relative space-y-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-cyan-800">
           Approver digital signature
@@ -633,7 +633,7 @@ const ApproverSignatureCard = ({
       )}
 
       {showReplay && capture ? (
-        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/45 p-4">
+        <div className="absolute inset-0 z-70 flex items-center justify-center rounded-xl bg-black/45 p-4">
           <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">

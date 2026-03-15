@@ -227,7 +227,7 @@ export const LeaveRequestDetailsModal = ({
       request.leaveTypeCode === "JR");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
       <SurfaceCard className="w-full max-w-4xl space-y-6 border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
@@ -482,7 +482,7 @@ const SignatureReplayCard = ({
   const hasAnimation = Boolean(proof.animation && proof.animation.length > 0);
 
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4">
+    <div className="relative space-y-3 rounded-2xl border border-slate-200/80 p-4">
       <div className="grid gap-3 md:grid-cols-2">
         <DetailTile
           label="OTP verified"
@@ -527,7 +527,7 @@ const SignatureReplayCard = ({
       ) : null}
 
       {showReplay && hasAnimation ? (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/45 p-4">
+        <div className="absolute inset-0 z-60 flex items-center justify-center rounded-2xl bg-black/45 p-4">
           <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">
