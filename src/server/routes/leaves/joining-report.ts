@@ -13,6 +13,13 @@ import {
   sendLeaveStatusUpdateEmail,
   sendLeaveSubmissionEmail,
 } from "@/server/email/mailer";
+import {
+  SESSION_OFFSET,
+  SESSION_VALUES,
+  computeSessionLeaveDays,
+  formatSessionDays,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
 
 const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
@@ -24,11 +31,16 @@ const joiningReportPayloadSchema = z
         .string()
         .trim()
         .refine((value) => parseDateInput(value) !== null),
+      fromSession: z.enum(SESSION_VALUES).optional().default("MORNING"),
       toDate: z
         .string()
         .trim()
         .refine((value) => parseDateInput(value) !== null),
-      totalDays: z.string().trim().regex(/^\d+$/),
+      toSession: z.enum(SESSION_VALUES).optional().default("EVENING"),
+      totalDays: z
+        .string()
+        .trim()
+        .regex(/^\d+(\.5)?$/),
       dutySession: z.enum(["Forenoon", "Afternoon"]),
       leaveCategory: z.enum([
         "Earned Leave",
@@ -50,7 +62,10 @@ const joiningReportPayloadSchema = z
         .string()
         .trim()
         .refine((value) => parseDateInput(value) !== null),
-      englishDays: z.string().trim().regex(/^\d+$/),
+      englishDays: z
+        .string()
+        .trim()
+        .regex(/^\d+(\.5)?$/),
       englishFrom: z
         .string()
         .trim()
@@ -125,9 +140,6 @@ const toIsoDateString = (value?: Date | null) => {
     .toISOString()
     .slice(0, 10);
 };
-
-const calculateInclusiveDays = (startDate: Date, endDate: Date) =>
-  Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
 
 const lockedApplicantRoles = new Set<RoleKey>([
   RoleKey.DEAN,
@@ -420,6 +432,20 @@ export const getJoiningReportBootstrap = async (actor: SessionActor) => {
                 (latestMetadata as Record<string, unknown>).totalDays ?? "",
               )
             : "",
+        fromSession:
+          typeof latestMetadata === "object" && latestMetadata
+            ? String(
+                (latestMetadata as Record<string, unknown>).fromSession ??
+                  "MORNING",
+              )
+            : "MORNING",
+        toSession:
+          typeof latestMetadata === "object" && latestMetadata
+            ? String(
+                (latestMetadata as Record<string, unknown>).toSession ??
+                  "EVENING",
+              )
+            : "EVENING",
         englishDays:
           typeof latestMetadata === "object" && latestMetadata
             ? String(
@@ -488,12 +514,37 @@ export const submitJoiningReport = async (
     );
   }
 
-  const totalDays = Math.max(calculateInclusiveDays(startDate, endDate), 1);
+  const computedDays = computeSessionLeaveDays(
+    startDate,
+    parsed.form.fromSession,
+    endDate,
+    parsed.form.toSession,
+  );
+  if (!computedDays) {
+    throw new Error(
+      "The selected date/session window is invalid. Please ensure To is after From.",
+    );
+  }
+
+  const today = new Date();
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const endMarker =
+    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.toSession];
+  const nowMarker =
+    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+  if (endMarker <= nowMarker) {
+    throw new Error(
+      "The leave end date/session must be after the current date/session.",
+    );
+  }
+
+  const totalDays = Math.max(Math.ceil(computedDays), 1);
+  const preciseDays = formatSessionDays(computedDays);
   const decisionRequired = !approver.viewerOnly;
   const persistedForm = {
     ...parsed.form,
-    totalDays: `${totalDays}`,
-    englishDays: `${totalDays}`,
+    totalDays: preciseDays,
+    englishDays: preciseDays,
     englishFrom: parsed.form.fromDate,
     englishTo: parsed.form.toDate,
     englishRejoin: parsed.form.rejoinDate,

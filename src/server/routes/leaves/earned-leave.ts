@@ -4,6 +4,13 @@ import { type Prisma } from "@prisma/client";
 
 import { prisma } from "@/server/db/prisma";
 import {
+  SESSION_OFFSET,
+  SESSION_VALUES,
+  computeSessionLeaveDays,
+  formatSessionDays,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
+import {
   sendLeaveStatusUpdateEmail,
   sendLeaveSubmissionEmail,
 } from "@/server/email/mailer";
@@ -66,7 +73,12 @@ const earnedLeavePayloadSchema = z.object({
     leaveType: z.string().trim().min(1),
     fromDate: z.string().trim().min(1),
     toDate: z.string().trim().min(1),
-    days: z.string().trim().regex(/^\d+$/),
+    fromSession: z.enum(SESSION_VALUES),
+    toSession: z.enum(SESSION_VALUES),
+    days: z
+      .string()
+      .trim()
+      .regex(/^\d+(\.5)?$/),
     purpose: z.string().trim().min(1),
     arrangements: z.string().trim().optional(),
     ltc: z.enum(["PROPOSE", "NOT_PROPOSE"]),
@@ -341,7 +353,32 @@ export const submitEarnedLeave = async (
     );
   }
 
-  const totalDays = Math.max(Number.parseInt(parsed.form.days, 10) || 1, 1);
+  const computedDays = computeSessionLeaveDays(
+    startDate,
+    parsed.form.fromSession,
+    endDate,
+    parsed.form.toSession,
+  );
+  if (!computedDays) {
+    throw new Error(
+      "The selected date/session window is invalid. Please ensure To is after From.",
+    );
+  }
+
+  const today = new Date();
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const endMarker =
+    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.toSession];
+  const nowMarker =
+    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+  if (endMarker <= nowMarker) {
+    throw new Error(
+      "The leave end date/session must be after the current date/session.",
+    );
+  }
+
+  const totalDays = Math.max(Math.ceil(computedDays), 1);
+  const preciseDays = formatSessionDays(computedDays);
 
   // Build contact during leave
   const contactParts: string[] = [];
@@ -375,7 +412,10 @@ export const submitEarnedLeave = async (
 
   // Build metadata with all form data and routing trace
   const metadata: Record<string, unknown> = {
-    formData: parsed.form,
+    formData: {
+      ...parsed.form,
+      days: preciseDays,
+    },
     routing: {
       applicantRole,
       approverRole: approverRole,

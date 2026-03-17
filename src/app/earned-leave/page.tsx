@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { FormEvent, InputHTMLAttributes } from "react";
+import type { ChangeEvent, FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
@@ -12,6 +12,14 @@ import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
+import {
+  type DaySession,
+  SESSION_OFFSET,
+  computeSessionLeaveDaysFromInput,
+  formatSessionDays,
+  getTodayIso,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -106,6 +114,11 @@ export default function EarnedLeavePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [ltcChoice, setLtcChoice] = useState<string>("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [fromSession, setFromSession] = useState<DaySession>("MORNING");
+  const [toSession, setToSession] = useState<DaySession>("EVENING");
+  const [computedLeaveDays, setComputedLeaveDays] = useState("");
   const {
     otpEmail,
     setOtpEmail,
@@ -128,7 +141,11 @@ export default function EarnedLeavePage() {
   } = useSignatureOtp({ enableTyped: false });
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
-    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
+    const inputs = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "input, select",
+      ),
+    );
     inputs.forEach((input) => {
       const key = input.name || input.id;
       const hasError = key ? missing.has(key) : false;
@@ -162,6 +179,9 @@ export default function EarnedLeavePage() {
       string,
       string
     >;
+    data.fromSession = fromSession;
+    data.toSession = toSession;
+    data.days = computedLeaveDays;
     data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("earned-leave", data);
 
@@ -198,7 +218,9 @@ export default function EarnedLeavePage() {
     ]);
 
     const required = Array.from(
-      form.querySelectorAll<HTMLInputElement>("input"),
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "input, select",
+      ),
     )
       .map((input) => {
         const key = input.name || input.id;
@@ -206,7 +228,7 @@ export default function EarnedLeavePage() {
         if (optionalFields.has(key)) return null;
         if (adminFields.has(key)) return null;
         if (input.type === "hidden" || input.type === "radio") return null;
-        if (input.readOnly) return null;
+        if ("readOnly" in input && input.readOnly) return null;
         return key;
       })
       .filter((key): key is string => key !== null);
@@ -233,12 +255,37 @@ export default function EarnedLeavePage() {
       invalidSet.add("ltc");
     }
 
+    if (!computedLeaveDays) {
+      invalidSet.add("fromDate");
+      invalidSet.add("toDate");
+      invalidSet.add("fromSession");
+      invalidSet.add("toSession");
+      invalidSet.add("days");
+    }
+
+    const toDateParsed = toDate ? new Date(`${toDate}T00:00:00`) : null;
+    const toMarker =
+      (toDateParsed?.getTime() ?? 0) / 86400000 + SESSION_OFFSET[toSession];
+    const today = new Date();
+    const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+    const nowMarker =
+      todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+    if (toDate && toMarker <= nowMarker) {
+      invalidSet.add("toDate");
+      invalidSet.add("toSession");
+    }
+
     if (invalidSet.size > 0) {
       markMissingInputs(form, invalidSet);
       setMissingFields(Array.from(invalidSet));
       setSubmitError(
         "Please select LTC option, enter a valid 10-digit contact number, and a valid 6-digit PIN.",
       );
+      if (invalidSet.has("toSession")) {
+        setSubmitError(
+          "End date/session must be after the current date session and after start date/session.",
+        );
+      }
       return;
     }
 
@@ -257,17 +304,14 @@ export default function EarnedLeavePage() {
     setDialogState("confirm");
   };
 
-  const handlePeriodDateChange = useCallback(() => {
-    const form = formRef.current;
-    if (!form) return;
-    const fromInput = form.querySelector<HTMLInputElement>("#fromDate");
-    const toInput = form.querySelector<HTMLInputElement>("#toDate");
-    const daysInput = form.querySelector<HTMLInputElement>("#days");
-
-    if (fromInput && toInput && daysInput) {
-      const days = calculateInclusiveDays(fromInput.value, toInput.value);
-      daysInput.value = days;
-    }
+  const handlePeriodDateChange = useCallback((field: "fromDate" | "toDate") => {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      if (field === "fromDate") {
+        setFromDate(event.target.value);
+        return;
+      }
+      setToDate(event.target.value);
+    };
   }, []);
 
   const handlePrefixDateChange = useCallback(() => {
@@ -297,6 +341,45 @@ export default function EarnedLeavePage() {
   }, []);
 
   useEffect(() => {
+    const value = computeSessionLeaveDaysFromInput(
+      fromDate,
+      fromSession,
+      toDate,
+      toSession,
+    );
+    setComputedLeaveDays(value ? formatSessionDays(value) : "");
+
+    const form = formRef.current;
+    const daysInput = form?.querySelector<HTMLInputElement>("#days");
+    if (daysInput) {
+      daysInput.value = value ? formatSessionDays(value) : "";
+    }
+  }, [fromDate, fromSession, toDate, toSession]);
+
+  useEffect(() => {
+    if (!fromDate || !toDate) return;
+
+    if (toDate < fromDate) {
+      setToDate(fromDate);
+      setToSession("EVENING");
+      return;
+    }
+
+    if (
+      toDate === fromDate &&
+      SESSION_OFFSET[toSession] <= SESSION_OFFSET[fromSession]
+    ) {
+      setToSession(
+        fromSession === "MORNING"
+          ? "AFTERNOON"
+          : fromSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING",
+      );
+    }
+  }, [fromDate, fromSession, toDate, toSession]);
+
+  useEffect(() => {
     const form = formRef.current;
     if (!form) return;
 
@@ -310,6 +393,24 @@ export default function EarnedLeavePage() {
 
     void applyAutofillToForm(form, "earned-leave").then((profile) => {
       setOtpEmail(profile.email ?? "");
+      const fromValue =
+        form.querySelector<HTMLInputElement>("#fromDate")?.value ?? "";
+      const toValue =
+        form.querySelector<HTMLInputElement>("#toDate")?.value ?? "";
+      const fromSessionValue =
+        (form.querySelector<HTMLSelectElement>("#fromSession")?.value as
+          | DaySession
+          | undefined) ?? "MORNING";
+      const toSessionValue =
+        (form.querySelector<HTMLSelectElement>("#toSession")?.value as
+          | DaySession
+          | undefined) ?? "EVENING";
+
+      setFromDate(fromValue);
+      setToDate(toValue);
+      setFromSession(fromSessionValue);
+      setToSession(toSessionValue);
+
       const ltcInput = form.querySelector<HTMLInputElement>("#ltc");
       if (!ltcInput) return;
       const rawValue = (ltcInput.value ?? "").trim().toLowerCase();
@@ -325,8 +426,6 @@ export default function EarnedLeavePage() {
     });
 
     // Set up date change listeners
-    const fromDateInput = form.querySelector<HTMLInputElement>("#fromDate");
-    const toDateInput = form.querySelector<HTMLInputElement>("#toDate");
     const prefixFromInput =
       form.querySelector<HTMLInputElement>("#prefixFromDate");
     const prefixToInput = form.querySelector<HTMLInputElement>("#prefixToDate");
@@ -334,27 +433,18 @@ export default function EarnedLeavePage() {
       form.querySelector<HTMLInputElement>("#suffixFromDate");
     const suffixToInput = form.querySelector<HTMLInputElement>("#suffixToDate");
 
-    fromDateInput?.addEventListener("change", handlePeriodDateChange);
-    toDateInput?.addEventListener("change", handlePeriodDateChange);
     prefixFromInput?.addEventListener("change", handlePrefixDateChange);
     prefixToInput?.addEventListener("change", handlePrefixDateChange);
     suffixFromInput?.addEventListener("change", handleSuffixDateChange);
     suffixToInput?.addEventListener("change", handleSuffixDateChange);
 
     return () => {
-      fromDateInput?.removeEventListener("change", handlePeriodDateChange);
-      toDateInput?.removeEventListener("change", handlePeriodDateChange);
       prefixFromInput?.removeEventListener("change", handlePrefixDateChange);
       prefixToInput?.removeEventListener("change", handlePrefixDateChange);
       suffixFromInput?.removeEventListener("change", handleSuffixDateChange);
       suffixToInput?.removeEventListener("change", handleSuffixDateChange);
     };
-  }, [
-    handlePeriodDateChange,
-    handlePrefixDateChange,
-    handleSuffixDateChange,
-    setOtpEmail,
-  ]);
+  }, [handlePrefixDateChange, handleSuffixDateChange, setOtpEmail]);
 
   const handleConfirmSubmit = async () => {
     const signatureError = ensureReadyForSubmit({
@@ -497,7 +587,17 @@ export default function EarnedLeavePage() {
                     label="4. अवकाश का प्रकार / Nature of Leave applied for"
                     inputId="leaveType"
                   />
-                  <RowPeriod />
+                  <RowPeriod
+                    fromDate={fromDate}
+                    toDate={toDate}
+                    fromSession={fromSession}
+                    toSession={toSession}
+                    computedLeaveDays={computedLeaveDays}
+                    onFromDateChange={handlePeriodDateChange("fromDate")}
+                    onToDateChange={handlePeriodDateChange("toDate")}
+                    onFromSessionChange={setFromSession}
+                    onToSessionChange={setToSession}
+                  />
                   <RowPrefixSuffix />
                   <Row label="7. उद्देश्य / Purpose" inputId="purpose" />
                   <Row
@@ -778,7 +878,27 @@ const Row = ({ label, inputId }: { label: string; inputId: string }) => (
   </tr>
 );
 
-const RowPeriod = () => (
+const RowPeriod = ({
+  fromDate,
+  toDate,
+  fromSession,
+  toSession,
+  computedLeaveDays,
+  onFromDateChange,
+  onToDateChange,
+  onFromSessionChange,
+  onToSessionChange,
+}: {
+  fromDate: string;
+  toDate: string;
+  fromSession: DaySession;
+  toSession: DaySession;
+  computedLeaveDays: string;
+  onFromDateChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onToDateChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onFromSessionChange: (value: DaySession) => void;
+  onToSessionChange: (value: DaySession) => void;
+}) => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
       5. छुट्टी की अवधि/ Period of Leave
@@ -786,14 +906,63 @@ const RowPeriod = () => (
     <td className="px-3 py-2 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
         <span>से / From:</span>
-        <DateUnderlineInput id="fromDate" width="w-32" />
+        <DateUnderlineInput
+          id="fromDate"
+          width="w-32"
+          min={getTodayIso()}
+          value={fromDate}
+          onChange={onFromDateChange}
+        />
+        <SessionSelect
+          id="fromSession"
+          value={fromSession}
+          onChange={(value) => onFromSessionChange(value)}
+        />
         <span>तक/To:</span>
-        <DateUnderlineInput id="toDate" width="w-32" />
+        <DateUnderlineInput
+          id="toDate"
+          width="w-32"
+          min={fromDate || getTodayIso()}
+          value={toDate}
+          onChange={onToDateChange}
+        />
+        <SessionSelect
+          id="toSession"
+          value={toSession}
+          onChange={(value) => onToSessionChange(value)}
+        />
         <span>दिनों की संख्या/No. of days:</span>
-        <UnderlineInput id="days" width="w-20" readOnly />
+        <UnderlineInput
+          id="days"
+          width="w-20"
+          readOnly
+          value={computedLeaveDays}
+        />
       </div>
     </td>
   </tr>
+);
+
+const SessionSelect = ({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: DaySession;
+  onChange: (value: DaySession) => void;
+}) => (
+  <select
+    id={id}
+    name={id}
+    value={value}
+    onChange={(event) => onChange(event.target.value as DaySession)}
+    className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+  >
+    <option value="MORNING">Morning</option>
+    <option value="AFTERNOON">Afternoon</option>
+    <option value="EVENING">Evening</option>
+  </select>
 );
 
 const RowPrefixSuffix = () => (

@@ -12,6 +12,14 @@ import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
+import {
+  type DaySession,
+  SESSION_OFFSET,
+  computeSessionLeaveDaysFromInput,
+  formatSessionDays,
+  getTodayIso,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -66,6 +74,11 @@ export default function NonAirIndiaPage() {
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [onwardJourney, setOnwardJourney] = useState("");
+  const [returnJourney, setReturnJourney] = useState("");
+  const [onwardSession, setOnwardSession] = useState<DaySession>("MORNING");
+  const [returnSession, setReturnSession] = useState<DaySession>("EVENING");
+  const [computedTravelDays, setComputedTravelDays] = useState("");
   const {
     otpEmail,
     setOtpEmail,
@@ -88,7 +101,11 @@ export default function NonAirIndiaPage() {
   } = useSignatureOtp({ enableTyped: false });
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
-    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
+    const inputs = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "input, select",
+      ),
+    );
     inputs.forEach((input) => {
       if (!input.required) return;
       const key = input.name || input.id;
@@ -122,12 +139,17 @@ export default function NonAirIndiaPage() {
       string,
       string
     >;
+    data.onwardSession = onwardSession;
+    data.returnSession = returnSession;
+    data.travelDays = computedTravelDays;
     data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("non-air-india", data);
 
     // Check missing for only required fields
     const required = Array.from(
-      form.querySelectorAll<HTMLInputElement>("input[required]"),
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+        "input[required], select[required]",
+      ),
     )
       .map((input) => input.name || input.id)
       .filter(Boolean);
@@ -139,6 +161,38 @@ export default function NonAirIndiaPage() {
 
     if (missingSet.size > 0) {
       setMissingFields(Array.from(missingSet));
+      return;
+    }
+
+    const invalidSet = new Set<string>();
+    if (!computedTravelDays) {
+      invalidSet.add("onwardJourney");
+      invalidSet.add("returnJourney");
+      invalidSet.add("onwardSession");
+      invalidSet.add("returnSession");
+    }
+
+    const returnDateParsed = returnJourney
+      ? new Date(`${returnJourney}T00:00:00`)
+      : null;
+    const returnMarker =
+      (returnDateParsed?.getTime() ?? 0) / 86400000 +
+      SESSION_OFFSET[returnSession];
+    const today = new Date();
+    const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+    const nowMarker =
+      todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+    if (returnJourney && returnMarker <= nowMarker) {
+      invalidSet.add("returnJourney");
+      invalidSet.add("returnSession");
+    }
+
+    if (invalidSet.size > 0) {
+      markMissingInputs(form, invalidSet);
+      setMissingFields(Array.from(invalidSet));
+      alert(
+        "Return date/session must be after the current date session and after onward date/session.",
+      );
       return;
     }
 
@@ -162,8 +216,57 @@ export default function NonAirIndiaPage() {
 
     void applyAutofillToForm(form, "non-air-india").then((profile) => {
       setOtpEmail(profile.email ?? "");
+      setOnwardJourney(
+        form.querySelector<HTMLInputElement>("#onwardJourney")?.value ?? "",
+      );
+      setReturnJourney(
+        form.querySelector<HTMLInputElement>("#returnJourney")?.value ?? "",
+      );
+      setOnwardSession(
+        (form.querySelector<HTMLSelectElement>("#onwardSession")?.value as
+          | DaySession
+          | undefined) ?? "MORNING",
+      );
+      setReturnSession(
+        (form.querySelector<HTMLSelectElement>("#returnSession")?.value as
+          | DaySession
+          | undefined) ?? "EVENING",
+      );
     });
   }, [setOtpEmail]);
+
+  useEffect(() => {
+    const value = computeSessionLeaveDaysFromInput(
+      onwardJourney,
+      onwardSession,
+      returnJourney,
+      returnSession,
+    );
+    setComputedTravelDays(value ? formatSessionDays(value) : "");
+  }, [onwardJourney, onwardSession, returnJourney, returnSession]);
+
+  useEffect(() => {
+    if (!onwardJourney || !returnJourney) return;
+
+    if (returnJourney < onwardJourney) {
+      setReturnJourney(onwardJourney);
+      setReturnSession("EVENING");
+      return;
+    }
+
+    if (
+      returnJourney === onwardJourney &&
+      SESSION_OFFSET[returnSession] <= SESSION_OFFSET[onwardSession]
+    ) {
+      setReturnSession(
+        onwardSession === "MORNING"
+          ? "AFTERNOON"
+          : onwardSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING",
+      );
+    }
+  }, [onwardJourney, onwardSession, returnJourney, returnSession]);
 
   const handleConfirmSubmit = async () => {
     const signatureError = ensureReadyForSubmit({
@@ -278,7 +381,17 @@ export default function NonAirIndiaPage() {
             <LabeledLine number="1" label="Name" inputId="name" />
             <LabeledLine number="2" label="Designation" inputId="designation" />
             <LabeledLine number="3" label="Department" inputId="department" />
-            <VisitDates />
+            <VisitDates
+              onwardJourney={onwardJourney}
+              returnJourney={returnJourney}
+              onwardSession={onwardSession}
+              returnSession={returnSession}
+              computedTravelDays={computedTravelDays}
+              onOnwardJourneyChange={setOnwardJourney}
+              onReturnJourneyChange={setReturnJourney}
+              onOnwardSessionChange={setOnwardSession}
+              onReturnSessionChange={setReturnSession}
+            />
             <LabeledLine
               number="5"
               label="Place to be Visited"
@@ -489,7 +602,27 @@ const LabeledLine = ({
   </div>
 );
 
-const VisitDates = () => (
+const VisitDates = ({
+  onwardJourney,
+  returnJourney,
+  onwardSession,
+  returnSession,
+  computedTravelDays,
+  onOnwardJourneyChange,
+  onReturnJourneyChange,
+  onOnwardSessionChange,
+  onReturnSessionChange,
+}: {
+  onwardJourney: string;
+  returnJourney: string;
+  onwardSession: DaySession;
+  returnSession: DaySession;
+  computedTravelDays: string;
+  onOnwardJourneyChange: (value: string) => void;
+  onReturnJourneyChange: (value: string) => void;
+  onOnwardSessionChange: (value: DaySession) => void;
+  onReturnSessionChange: (value: DaySession) => void;
+}) => (
   <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-4 text-right font-semibold">4</span>
@@ -497,11 +630,64 @@ const VisitDates = () => (
       <span>:</span>
       <div className="flex items-center gap-2">
         <span className="font-semibold text-xs">Onward Journey:</span>
-        <UnderlineInput id="onwardJourney" type="date" width="w-36" />
+        <UnderlineInput
+          id="onwardJourney"
+          type="date"
+          width="w-36"
+          min={getTodayIso()}
+          value={onwardJourney}
+          onChange={(event) => onOnwardJourneyChange(event.target.value)}
+        />
+        <select
+          id="onwardSession"
+          name="onwardSession"
+          required
+          value={onwardSession}
+          onChange={(event) =>
+            onOnwardSessionChange(event.target.value as DaySession)
+          }
+          className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+        >
+          <option value="MORNING">Morning</option>
+          <option value="AFTERNOON">Afternoon</option>
+          <option value="EVENING">Evening</option>
+        </select>
       </div>
       <div className="flex items-center gap-2">
         <span className="font-semibold text-xs">Return Journey:</span>
-        <UnderlineInput id="returnJourney" type="date" width="w-36" />
+        <UnderlineInput
+          id="returnJourney"
+          type="date"
+          width="w-36"
+          min={onwardJourney || getTodayIso()}
+          value={returnJourney}
+          onChange={(event) => onReturnJourneyChange(event.target.value)}
+        />
+        <select
+          id="returnSession"
+          name="returnSession"
+          required
+          value={returnSession}
+          onChange={(event) =>
+            onReturnSessionChange(event.target.value as DaySession)
+          }
+          className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+        >
+          <option value="MORNING">Morning</option>
+          <option value="AFTERNOON">Afternoon</option>
+          <option value="EVENING">Evening</option>
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-xs">Total Days:</span>
+        <UnderlineInput
+          id="travelDays"
+          type="text"
+          width="w-20"
+          required={false}
+          readOnly
+          value={computedTravelDays}
+        />
       </div>
     </div>
   </div>

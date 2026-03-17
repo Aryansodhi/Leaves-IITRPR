@@ -17,6 +17,14 @@ import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
+import {
+  type DaySession,
+  SESSION_OFFSET,
+  computeSessionLeaveDaysFromInput,
+  formatSessionDays,
+  getTodayIso,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
@@ -46,7 +54,9 @@ const ROLE_KEYS = {
 const requiredInputIds = [
   "name",
   "fromDate",
+  "fromSession",
   "toDate",
+  "toSession",
   "totalDays",
   "dutySession",
   "leaveCategory",
@@ -105,18 +115,11 @@ const LEAVE_CATEGORY_OPTIONS = [
   { value: "Vacation Leave", label: "Vacation Leave" },
 ] as const;
 
-const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
-  if (!fromValue || !toValue) return "";
-
-  const from = new Date(`${fromValue}T00:00:00`);
-  const to = new Date(`${toValue}T00:00:00`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
-    return "";
-  }
-
-  const difference = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
-  return `${difference}`;
-};
+const PERIOD_SESSION_OPTIONS = [
+  { value: "MORNING", label: "Morning" },
+  { value: "AFTERNOON", label: "Afternoon" },
+  { value: "EVENING", label: "Evening" },
+] as const;
 
 export default function JoiningReportPage() {
   const router = useRouter();
@@ -157,6 +160,11 @@ export default function JoiningReportPage() {
     dutySession: "",
     leaveCategory: "",
   });
+  const [fromSession, setFromSession] = useState<DaySession>("MORNING");
+  const [toSession, setToSession] = useState<DaySession>("EVENING");
+  const [fromDateValue, setFromDateValue] = useState("");
+  const [toDateValue, setToDateValue] = useState("");
+  const [computedDays, setComputedDays] = useState("");
   const [workflowMessage, setWorkflowMessage] = useState(
     "This joining report will be routed automatically after submission.",
   );
@@ -205,9 +213,10 @@ export default function JoiningReportPage() {
       string
     >;
 
-    const calculatedDays = calculateInclusiveDays(data.fromDate, data.toDate);
-    data.totalDays = calculatedDays;
-    data.englishDays = calculatedDays;
+    data.fromSession = fromSession;
+    data.toSession = toSession;
+    data.totalDays = computedDays;
+    data.englishDays = computedDays;
     data.englishFrom = data.fromDate;
     data.englishTo = data.toDate;
     data.englishRejoin = data.rejoinDate;
@@ -224,18 +233,38 @@ export default function JoiningReportPage() {
     const missing = requiredInputIds.filter((key) => !data[key]?.trim());
     const invalid = new Set<string>();
 
-    if (!calculatedDays) {
+    if (!computedDays) {
       invalid.add("fromDate");
       invalid.add("toDate");
+      invalid.add("fromSession");
+      invalid.add("toSession");
       invalid.add("totalDays");
       invalid.add("englishDays");
+    }
+
+    const toDateParsed = toDateValue
+      ? new Date(`${toDateValue}T00:00:00`)
+      : null;
+    const toMarker =
+      (toDateParsed?.getTime() ?? 0) / 86400000 + SESSION_OFFSET[toSession];
+    const today = new Date();
+    const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+    const nowMarker =
+      todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+    if (toDateValue && toMarker <= nowMarker) {
+      invalid.add("toDate");
+      invalid.add("toSession");
     }
 
     const flagged = new Set([...missing, ...invalid]);
     markMissingInputs(form, flagged);
     if (flagged.size > 0) {
       setMissingFields(Array.from(flagged));
-      if (invalid.size > 0) {
+      if (invalid.has("toSession")) {
+        setSubmitError(
+          "End date/session must be after the current date session and after start date/session.",
+        );
+      } else if (invalid.size > 0) {
         setSubmitError(
           "Please select a valid leave period. The To date must be the same as or later than the From date.",
         );
@@ -273,10 +302,22 @@ export default function JoiningReportPage() {
   }, []);
 
   const syncDurationFields = useCallback(
-    (fromValue: string, toValue: string) => {
-      const days = calculateInclusiveDays(fromValue, toValue);
+    (
+      fromValue: string,
+      nextFromSession: DaySession,
+      toValue: string,
+      nextToSession: DaySession,
+    ) => {
+      const value = computeSessionLeaveDaysFromInput(
+        fromValue,
+        nextFromSession,
+        toValue,
+        nextToSession,
+      );
+      const days = value ? formatSessionDays(value) : "";
       setFormFieldValue("totalDays", days);
       setFormFieldValue("englishDays", days);
+      setComputedDays(days);
     },
     [setFormFieldValue],
   );
@@ -301,7 +342,35 @@ export default function JoiningReportPage() {
           : (formRef.current?.querySelector<HTMLInputElement>('[name="toDate"]')
               ?.value ?? "");
 
-      syncDurationFields(fromValue, toValue);
+      if (sourceField === "fromDate" || sourceField === "englishFrom") {
+        setFromDateValue(nextValue);
+      }
+      if (sourceField === "toDate" || sourceField === "englishTo") {
+        setToDateValue(nextValue);
+      }
+
+      syncDurationFields(fromValue, fromSession, toValue, toSession);
+    };
+  };
+
+  const handlePeriodSessionChange = (field: "fromSession" | "toSession") => {
+    return (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const nextSession = event.target.value as DaySession;
+      const fromValue =
+        formRef.current?.querySelector<HTMLInputElement>('[name="fromDate"]')
+          ?.value ?? "";
+      const toValue =
+        formRef.current?.querySelector<HTMLInputElement>('[name="toDate"]')
+          ?.value ?? "";
+
+      if (field === "fromSession") {
+        setFromSession(nextSession);
+        syncDurationFields(fromValue, nextSession, toValue, toSession);
+        return;
+      }
+
+      setToSession(nextSession);
+      syncDurationFields(fromValue, fromSession, toValue, nextSession);
     };
   };
 
@@ -446,7 +515,18 @@ export default function JoiningReportPage() {
           "";
         const toValue =
           form.querySelector<HTMLInputElement>('[name="toDate"]')?.value ?? "";
-        syncDurationFields(fromValue, toValue);
+        const bootFromSession =
+          (form.querySelector<HTMLSelectElement>('[name="fromSession"]')
+            ?.value as DaySession | undefined) ?? "MORNING";
+        const bootToSession =
+          (form.querySelector<HTMLSelectElement>('[name="toSession"]')
+            ?.value as DaySession | undefined) ?? "EVENING";
+
+        setFromSession(bootFromSession);
+        setToSession(bootToSession);
+        setFromDateValue(fromValue);
+        setToDateValue(toValue);
+        syncDurationFields(fromValue, bootFromSession, toValue, bootToSession);
         setChoiceValues({
           dutySession:
             form.querySelector<HTMLSelectElement>('[name="dutySession"]')
@@ -466,6 +546,32 @@ export default function JoiningReportPage() {
       );
     }
   }, [syncDurationFields]);
+
+  useEffect(() => {
+    if (!fromDateValue || !toDateValue) return;
+
+    if (toDateValue < fromDateValue) {
+      setToDateValue(fromDateValue);
+      setFormFieldValue("toDate", fromDateValue);
+      setToSession("EVENING");
+      setFormFieldValue("toSession", "EVENING");
+      return;
+    }
+
+    if (
+      toDateValue === fromDateValue &&
+      SESSION_OFFSET[toSession] <= SESSION_OFFSET[fromSession]
+    ) {
+      const nextSession =
+        fromSession === "MORNING"
+          ? "AFTERNOON"
+          : fromSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING";
+      setToSession(nextSession);
+      setFormFieldValue("toSession", nextSession);
+    }
+  }, [fromDateValue, fromSession, toDateValue, toSession, setFormFieldValue]);
 
   useEffect(() => {
     const form = formRef.current;
@@ -589,13 +695,29 @@ export default function JoiningReportPage() {
                 <DateUnderlineInput
                   id="fromDate"
                   width="w-36"
+                  min={getTodayIso()}
                   onChange={handlePeriodDateChange("fromDate", "englishFrom")}
+                />
+                <InlineSelect
+                  id="fromSession"
+                  width="w-32"
+                  options={PERIOD_SESSION_OPTIONS}
+                  value={fromSession}
+                  onChange={handlePeriodSessionChange("fromSession")}
                 />
                 <span>से</span>
                 <DateUnderlineInput
                   id="toDate"
                   width="w-36"
+                  min={fromDateValue || getTodayIso()}
                   onChange={handlePeriodDateChange("toDate", "englishTo")}
+                />
+                <InlineSelect
+                  id="toSession"
+                  width="w-32"
+                  options={PERIOD_SESSION_OPTIONS}
+                  value={toSession}
+                  onChange={handlePeriodSessionChange("toSession")}
                 />
                 <span>तक</span>
                 <UnderlineInput id="totalDays" width="w-16" readOnly />

@@ -9,6 +9,12 @@ import {
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
+import {
+  SESSION_OFFSET,
+  SESSION_VALUES,
+  computeSessionLeaveDays,
+  resolveCurrentSession,
+} from "@/lib/leave-session";
 import { sendLeaveSubmissionEmail } from "@/server/email/mailer";
 
 const nonAirIndiaPayloadSchema = z.object({
@@ -18,6 +24,8 @@ const nonAirIndiaPayloadSchema = z.object({
     department: z.string().trim().min(1),
     onwardJourney: z.string().trim().min(1),
     returnJourney: z.string().trim().min(1),
+    onwardSession: z.enum(SESSION_VALUES).optional().default("MORNING"),
+    returnSession: z.enum(SESSION_VALUES).optional().default("EVENING"),
     placeToVisit: z.string().trim().min(1),
     purpose: z.string().trim().min(1),
     sectors: z.string().trim().min(1),
@@ -143,13 +151,37 @@ export const submitNonAirIndia = async (
   const leaveType = await getNonAirIndiaLeaveType();
   const startDate = parseDateInput(parsed.form.onwardJourney) ?? new Date();
   const endDate = parseDateInput(parsed.form.returnJourney) ?? startDate;
+  if (endDate < startDate) {
+    throw new Error(
+      "Return journey date must be the same as or later than onward journey date.",
+    );
+  }
 
-  // Calculate approximate days between dates
-  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-  const totalDays = Math.max(
-    Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1,
-    1,
+  const computedDays = computeSessionLeaveDays(
+    startDate,
+    parsed.form.onwardSession,
+    endDate,
+    parsed.form.returnSession,
   );
+  if (!computedDays) {
+    throw new Error(
+      "The selected date/session window is invalid. Please ensure Return is after Onward.",
+    );
+  }
+
+  const today = new Date();
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const endMarker =
+    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.returnSession];
+  const nowMarker =
+    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+  if (endMarker <= nowMarker) {
+    throw new Error(
+      "Return journey date/session must be after the current date/session.",
+    );
+  }
+
+  const totalDays = Math.max(Math.ceil(computedDays), 1);
 
   const stepsToCreate: Prisma.ApprovalStepCreateWithoutLeaveApplicationInput[] =
     [

@@ -14,6 +14,13 @@ import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
+import {
+  type DaySession,
+  SESSION_OFFSET,
+  computeSessionLeaveDaysFromInput,
+  formatSessionDays,
+  getTodayIso,
+} from "@/lib/leave-session";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
 import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
@@ -57,6 +64,12 @@ export default function LtcPage() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [leaveFrom, setLeaveFrom] = useState("");
+  const [leaveTo, setLeaveTo] = useState("");
+  const [leaveFromSession, setLeaveFromSession] =
+    useState<DaySession>("MORNING");
+  const [leaveToSession, setLeaveToSession] = useState<DaySession>("EVENING");
+  const [computedLeaveDays, setComputedLeaveDays] = useState("");
   const signature = useSignatureOtp({ enableTyped: true });
   const setOtpEmail = signature.setOtpEmail;
 
@@ -101,6 +114,9 @@ export default function LtcPage() {
       string,
       string
     >;
+    data.leaveFromSession = leaveFromSession;
+    data.leaveToSession = leaveToSession;
+    data.leaveDays = computedLeaveDays;
     data.applicantSignature =
       signature.signatureMode === "typed"
         ? signature.typedSignature.trim()
@@ -116,6 +132,13 @@ export default function LtcPage() {
     markMissingInputs(form, missingSet);
     if (missingSet.size > 0) {
       setMissingFields(Array.from(missingSet));
+      return;
+    }
+
+    if (!computedLeaveDays) {
+      window.alert(
+        "No. of leave days is auto-calculated from date/session and must be greater than 0.",
+      );
       return;
     }
 
@@ -140,8 +163,54 @@ export default function LtcPage() {
 
     void applyAutofillToForm(form, "ltc").then((profile) => {
       setOtpEmail(profile.email ?? "");
+      setLeaveFrom(
+        form.querySelector<HTMLInputElement>("#leaveFrom")?.value ?? "",
+      );
+      setLeaveTo(form.querySelector<HTMLInputElement>("#leaveTo")?.value ?? "");
+      setLeaveFromSession(
+        (form.querySelector<HTMLSelectElement>("#leaveFromSession")?.value as
+          | DaySession
+          | undefined) ?? "MORNING",
+      );
+      setLeaveToSession(
+        (form.querySelector<HTMLSelectElement>("#leaveToSession")?.value as
+          | DaySession
+          | undefined) ?? "EVENING",
+      );
     });
   }, [setOtpEmail]);
+
+  useEffect(() => {
+    const value = computeSessionLeaveDaysFromInput(
+      leaveFrom,
+      leaveFromSession,
+      leaveTo,
+      leaveToSession,
+    );
+    setComputedLeaveDays(value ? formatSessionDays(value) : "");
+  }, [leaveFrom, leaveFromSession, leaveTo, leaveToSession]);
+
+  useEffect(() => {
+    if (!leaveFrom || !leaveTo) return;
+    if (leaveTo < leaveFrom) {
+      setLeaveTo(leaveFrom);
+      setLeaveToSession("EVENING");
+      return;
+    }
+
+    if (
+      leaveTo === leaveFrom &&
+      SESSION_OFFSET[leaveToSession] <= SESSION_OFFSET[leaveFromSession]
+    ) {
+      setLeaveToSession(
+        leaveFromSession === "MORNING"
+          ? "AFTERNOON"
+          : leaveFromSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING",
+      );
+    }
+  }, [leaveFrom, leaveFromSession, leaveTo, leaveToSession]);
 
   const handleConfirmSubmit = () => {
     const signatureError = signature.ensureReadyForSubmit({
@@ -196,7 +265,19 @@ export default function LtcPage() {
           </span>
         </div>
 
-        {page === 0 && <LtcFormPage />}
+        {page === 0 && (
+          <LtcFormPage
+            leaveFrom={leaveFrom}
+            leaveTo={leaveTo}
+            leaveFromSession={leaveFromSession}
+            leaveToSession={leaveToSession}
+            computedLeaveDays={computedLeaveDays}
+            onLeaveFromChange={setLeaveFrom}
+            onLeaveToChange={setLeaveTo}
+            onLeaveFromSessionChange={setLeaveFromSession}
+            onLeaveToSessionChange={setLeaveToSession}
+          />
+        )}
         {page === 1 && <OfficeSectionsPage />}
 
         <SignatureOtpVerificationCard
@@ -349,7 +430,27 @@ const ConfirmationModal = ({
   );
 };
 
-const LtcFormPage = () => (
+const LtcFormPage = ({
+  leaveFrom,
+  leaveTo,
+  leaveFromSession,
+  leaveToSession,
+  computedLeaveDays,
+  onLeaveFromChange,
+  onLeaveToChange,
+  onLeaveFromSessionChange,
+  onLeaveToSessionChange,
+}: {
+  leaveFrom: string;
+  leaveTo: string;
+  leaveFromSession: DaySession;
+  leaveToSession: DaySession;
+  computedLeaveDays: string;
+  onLeaveFromChange: (value: string) => void;
+  onLeaveToChange: (value: string) => void;
+  onLeaveFromSessionChange: (value: DaySession) => void;
+  onLeaveToSessionChange: (value: DaySession) => void;
+}) => (
   <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
     <header className="space-y-1 text-center text-slate-900">
       <div className="flex items-center justify-center gap-4">
@@ -396,7 +497,17 @@ const LtcFormPage = () => (
             inputId="dateOfJoining"
           />
           <RowSimple number="4." label="Pay Level" inputId="payLevel" />
-          <RowLeaveRequired />
+          <RowLeaveRequired
+            leaveFrom={leaveFrom}
+            leaveTo={leaveTo}
+            leaveFromSession={leaveFromSession}
+            leaveToSession={leaveToSession}
+            computedLeaveDays={computedLeaveDays}
+            onLeaveFromChange={onLeaveFromChange}
+            onLeaveToChange={onLeaveToChange}
+            onLeaveFromSessionChange={onLeaveFromSessionChange}
+            onLeaveToSessionChange={onLeaveToSessionChange}
+          />
           <RowSimple
             number="6."
             label="Whether spouse is employed, if yes whether entitled to LTC"
@@ -465,7 +576,27 @@ const RowSimple = ({
   </tr>
 );
 
-const RowLeaveRequired = () => (
+const RowLeaveRequired = ({
+  leaveFrom,
+  leaveTo,
+  leaveFromSession,
+  leaveToSession,
+  computedLeaveDays,
+  onLeaveFromChange,
+  onLeaveToChange,
+  onLeaveFromSessionChange,
+  onLeaveToSessionChange,
+}: {
+  leaveFrom: string;
+  leaveTo: string;
+  leaveFromSession: DaySession;
+  leaveToSession: DaySession;
+  computedLeaveDays: string;
+  onLeaveFromChange: (value: string) => void;
+  onLeaveToChange: (value: string) => void;
+  onLeaveFromSessionChange: (value: DaySession) => void;
+  onLeaveToSessionChange: (value: DaySession) => void;
+}) => (
   <tr className="border-t border-slate-400">
     <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">5.</td>
     <td className="px-3 py-2">
@@ -475,11 +606,40 @@ const RowLeaveRequired = () => (
           <span>Nature:</span>
           <UnderlineInput id="leaveNature" width="w-32" />
           <span>From</span>
-          <UnderlineInput id="leaveFrom" width="w-32" />
+          <UnderlineInput
+            id="leaveFrom"
+            type="date"
+            width="w-32"
+            min={getTodayIso()}
+            value={leaveFrom}
+            onChange={(event) => onLeaveFromChange(event.target.value)}
+          />
+          <SessionSelect
+            id="leaveFromSession"
+            value={leaveFromSession}
+            onChange={onLeaveFromSessionChange}
+          />
           <span>To</span>
-          <UnderlineInput id="leaveTo" width="w-32" />
+          <UnderlineInput
+            id="leaveTo"
+            type="date"
+            width="w-32"
+            min={leaveFrom || getTodayIso()}
+            value={leaveTo}
+            onChange={(event) => onLeaveToChange(event.target.value)}
+          />
+          <SessionSelect
+            id="leaveToSession"
+            value={leaveToSession}
+            onChange={onLeaveToSessionChange}
+          />
           <span>No. of days</span>
-          <UnderlineInput id="leaveDays" width="w-20" />
+          <UnderlineInput
+            id="leaveDays"
+            width="w-20"
+            readOnly
+            value={computedLeaveDays}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span>Prefix: From</span>
@@ -494,6 +654,28 @@ const RowLeaveRequired = () => (
       </div>
     </td>
   </tr>
+);
+
+const SessionSelect = ({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: DaySession;
+  onChange: (value: DaySession) => void;
+}) => (
+  <select
+    id={id}
+    name={id}
+    value={value}
+    onChange={(event) => onChange(event.target.value as DaySession)}
+    className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+  >
+    <option value="MORNING">Morning</option>
+    <option value="AFTERNOON">Afternoon</option>
+    <option value="EVENING">Evening</option>
+  </select>
 );
 
 const RowProposedDates = () => (

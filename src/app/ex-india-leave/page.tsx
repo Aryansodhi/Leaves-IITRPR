@@ -11,6 +11,13 @@ import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
+import {
+  type DaySession,
+  SESSION_OFFSET,
+  computeSessionLeaveDaysFromInput,
+  formatSessionDays,
+  getTodayIso,
+} from "@/lib/leave-session";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
@@ -75,6 +82,11 @@ export default function ExIndiaLeavePage() {
   const [confirmed, setConfirmed] = useState(false);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [fromSession, setFromSession] = useState<DaySession>("MORNING");
+  const [toSession, setToSession] = useState<DaySession>("EVENING");
+  const [computedDays, setComputedDays] = useState("");
   const {
     otpEmail,
     setOtpEmail,
@@ -136,6 +148,9 @@ export default function ExIndiaLeavePage() {
       string,
       string
     >;
+    data.fromSession = fromSession;
+    data.toSession = toSession;
+    data.days = computedDays;
     Object.keys(data).forEach((key) => {
       if (isSignatureFieldId(key)) {
         data[key] = DIGITAL_SIGNATURE_VALUE;
@@ -152,6 +167,13 @@ export default function ExIndiaLeavePage() {
     markMissingInputs(form, missingSet);
     if (missingSet.size > 0) {
       setMissingFields(Array.from(missingSet));
+      return;
+    }
+
+    if (!computedDays) {
+      window.alert(
+        "No. of days is auto-calculated from date/session and must be greater than 0.",
+      );
       return;
     }
 
@@ -175,8 +197,54 @@ export default function ExIndiaLeavePage() {
 
     void applyAutofillToForm(form, "ex-india-leave").then((profile) => {
       setOtpEmail(profile.email ?? "");
+      setFromDate(
+        form.querySelector<HTMLInputElement>("#fromDate")?.value ?? "",
+      );
+      setToDate(form.querySelector<HTMLInputElement>("#toDate")?.value ?? "");
+      setFromSession(
+        (form.querySelector<HTMLSelectElement>("#fromSession")?.value as
+          | DaySession
+          | undefined) ?? "MORNING",
+      );
+      setToSession(
+        (form.querySelector<HTMLSelectElement>("#toSession")?.value as
+          | DaySession
+          | undefined) ?? "EVENING",
+      );
     });
   }, [setOtpEmail]);
+
+  useEffect(() => {
+    const value = computeSessionLeaveDaysFromInput(
+      fromDate,
+      fromSession,
+      toDate,
+      toSession,
+    );
+    setComputedDays(value ? formatSessionDays(value) : "");
+  }, [fromDate, fromSession, toDate, toSession]);
+
+  useEffect(() => {
+    if (!fromDate || !toDate) return;
+    if (toDate < fromDate) {
+      setToDate(fromDate);
+      setToSession("EVENING");
+      return;
+    }
+
+    if (
+      toDate === fromDate &&
+      SESSION_OFFSET[toSession] <= SESSION_OFFSET[fromSession]
+    ) {
+      setToSession(
+        fromSession === "MORNING"
+          ? "AFTERNOON"
+          : fromSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING",
+      );
+    }
+  }, [fromDate, fromSession, toDate, toSession]);
 
   const handleConfirmSubmit = () => {
     const signatureError = ensureReadyForSubmit({
@@ -230,7 +298,19 @@ export default function ExIndiaLeavePage() {
           </span>
         </div>
 
-        {page === 0 && <FormPage />}
+        {page === 0 && (
+          <FormPage
+            fromDate={fromDate}
+            toDate={toDate}
+            fromSession={fromSession}
+            toSession={toSession}
+            computedDays={computedDays}
+            onFromDateChange={setFromDate}
+            onToDateChange={setToDate}
+            onFromSessionChange={setFromSession}
+            onToSessionChange={setToSession}
+          />
+        )}
         {page === 1 && <LetterPage />}
         {page === 2 && <UndertakingFormOne />}
         {page === 3 && <UndertakingFormTwo />}
@@ -385,7 +465,27 @@ const ConfirmationModal = ({
   );
 };
 
-const FormPage = () => (
+const FormPage = ({
+  fromDate,
+  toDate,
+  fromSession,
+  toSession,
+  computedDays,
+  onFromDateChange,
+  onToDateChange,
+  onFromSessionChange,
+  onToSessionChange,
+}: {
+  fromDate: string;
+  toDate: string;
+  fromSession: DaySession;
+  toSession: DaySession;
+  computedDays: string;
+  onFromDateChange: (value: string) => void;
+  onToDateChange: (value: string) => void;
+  onFromSessionChange: (value: DaySession) => void;
+  onToSessionChange: (value: DaySession) => void;
+}) => (
   <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
     <header className="space-y-1 text-center text-slate-900">
       <p className="text-base font-semibold">
@@ -424,7 +524,17 @@ const FormPage = () => (
             label="4. अवकाश का प्रकार / Nature of Leave applied for"
             inputId="leaveType"
           />
-          <RowPeriod />
+          <RowPeriod
+            fromDate={fromDate}
+            toDate={toDate}
+            fromSession={fromSession}
+            toSession={toSession}
+            computedDays={computedDays}
+            onFromDateChange={onFromDateChange}
+            onToDateChange={onToDateChange}
+            onFromSessionChange={onFromSessionChange}
+            onToSessionChange={onToSessionChange}
+          />
           <RowPrefixSuffix />
           <Row label="7. उद्देश्य / Purpose of the visit" inputId="purpose" />
           <Row
@@ -512,7 +622,27 @@ const Row = ({ label, inputId }: { label: string; inputId: string }) => (
   </tr>
 );
 
-const RowPeriod = () => (
+const RowPeriod = ({
+  fromDate,
+  toDate,
+  fromSession,
+  toSession,
+  computedDays,
+  onFromDateChange,
+  onToDateChange,
+  onFromSessionChange,
+  onToSessionChange,
+}: {
+  fromDate: string;
+  toDate: string;
+  fromSession: DaySession;
+  toSession: DaySession;
+  computedDays: string;
+  onFromDateChange: (value: string) => void;
+  onToDateChange: (value: string) => void;
+  onFromSessionChange: (value: DaySession) => void;
+  onToSessionChange: (value: DaySession) => void;
+}) => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
       5. छुट्टी की अवधि / Period of Leave
@@ -520,14 +650,60 @@ const RowPeriod = () => (
     <td className="px-3 py-2 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
         <span>से / From:</span>
-        <UnderlineInput id="fromDate" width="w-32" />
+        <UnderlineInput
+          id="fromDate"
+          type="date"
+          width="w-32"
+          min={getTodayIso()}
+          value={fromDate}
+          onChange={(event) => onFromDateChange(event.target.value)}
+        />
+        <SessionSelect
+          id="fromSession"
+          value={fromSession}
+          onChange={onFromSessionChange}
+        />
         <span>तक / To:</span>
-        <UnderlineInput id="toDate" width="w-32" />
+        <UnderlineInput
+          id="toDate"
+          type="date"
+          width="w-32"
+          min={fromDate || getTodayIso()}
+          value={toDate}
+          onChange={(event) => onToDateChange(event.target.value)}
+        />
+        <SessionSelect
+          id="toSession"
+          value={toSession}
+          onChange={onToSessionChange}
+        />
         <span>दिनों की संख्या / No. of days:</span>
-        <UnderlineInput id="days" width="w-20" />
+        <UnderlineInput id="days" width="w-20" readOnly value={computedDays} />
       </div>
     </td>
   </tr>
+);
+
+const SessionSelect = ({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: DaySession;
+  onChange: (value: DaySession) => void;
+}) => (
+  <select
+    id={id}
+    name={id}
+    value={value}
+    onChange={(event) => onChange(event.target.value as DaySession)}
+    className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+  >
+    <option value="MORNING">Morning</option>
+    <option value="AFTERNOON">Afternoon</option>
+    <option value="EVENING">Evening</option>
+  </select>
 );
 
 const RowPrefixSuffix = () => (
