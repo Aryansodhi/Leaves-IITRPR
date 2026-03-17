@@ -12,61 +12,97 @@ import { prisma } from "@/server/db/prisma";
 import { sendLeaveStatusUpdateEmail } from "@/server/email/mailer";
 import { sendLeaveSubmissionEmail } from "@/server/email/mailer";
 
-const stationLeavePayloadSchema = z.object({
-  form: z.object({
-    name: z.string().trim().min(1),
-    designation: z.string().trim().min(1),
-    department: z.string().trim().min(1),
-    days: z
-      .string()
-      .trim()
-      .regex(/^\d+$/)
-      .refine((value) => Number.parseInt(value, 10) > 0),
-    from: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    to: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    nature: z.string().trim().min(1),
-    purpose: z.string().trim().min(1),
-    contactPrefix: z
-      .string()
-      .trim()
-      .regex(/^\+\d{1,4}$/),
-    contactNumber: z
-      .string()
-      .trim()
-      .regex(/^\d{10}$/),
-    contactAddress: z.string().trim().min(1),
-    place: z.string().trim().min(1),
-    date: z.string().trim().min(1),
-    applicantSign: z.string().trim().min(1),
-  }),
-  signature: z.object({
-    animation: z
-      .array(
-        z
-          .object({
-            points: z
-              .array(
-                z.object({
-                  x: z.number(),
-                  y: z.number(),
-                  time: z.number(),
-                }),
-              )
-              .min(1),
-          })
-          .passthrough(),
-      )
-      .min(1),
-    image: z.string().trim().startsWith("data:image/png;base64,"),
-  }),
-  otpVerified: z.literal(true),
-});
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+const SESSION_VALUES = ["MORNING", "AFTERNOON", "EVENING"] as const;
+type DaySession = (typeof SESSION_VALUES)[number];
+const SESSION_OFFSET: Record<DaySession, number> = {
+  MORNING: 0,
+  AFTERNOON: 0.5,
+  EVENING: 1,
+};
+
+const stationLeavePayloadSchema = z
+  .object({
+    form: z.object({
+      name: z.string().trim().min(1),
+      designation: z.string().trim().min(1),
+      department: z.string().trim().min(1),
+      days: z
+        .string()
+        .trim()
+        .regex(/^\d+(\.5)?$/)
+        .refine((value) => Number.parseFloat(value) > 0),
+      from: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      fromSession: z.enum(SESSION_VALUES),
+      to: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      toSession: z.enum(SESSION_VALUES),
+      nature: z.string().trim().min(1),
+      purpose: z.string().trim().min(1),
+      contactPrefix: z
+        .string()
+        .trim()
+        .regex(/^\+\d{1,4}$/),
+      contactNumber: z
+        .string()
+        .trim()
+        .regex(/^\d{10}$/),
+      contactAddress: z.string().trim().min(1),
+      place: z.string().trim().min(1),
+      date: z.string().trim().min(1),
+      applicantSign: z.string().trim().min(1),
+    }),
+    signature: z
+      .object({
+        animation: z
+          .array(
+            z
+              .object({
+                points: z
+                  .array(
+                    z.object({
+                      x: z.number(),
+                      y: z.number(),
+                      time: z.number(),
+                    }),
+                  )
+                  .min(1),
+              })
+              .passthrough(),
+          )
+          .min(1),
+        image: z.string().trim().startsWith("data:image/png;base64,"),
+      })
+      .optional(),
+    otpVerified: z.boolean().optional().default(false),
+  })
+  .superRefine((value, context) => {
+    const usesDigitalSignature =
+      value.form.applicantSign === DIGITAL_SIGNATURE_VALUE;
+
+    if (usesDigitalSignature) {
+      if (!value.signature) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["signature"],
+          message: "Digital signature image is required.",
+        });
+      }
+
+      if (!value.otpVerified) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["otpVerified"],
+          message: "OTP verification is required for digital signature.",
+        });
+      }
+    }
+  });
 
 const approvalActionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
@@ -108,6 +144,26 @@ const parseDateInput = (raw?: string | null) => {
   const parsed = new Date(year, month - 1, day);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+};
+
+const resolveCurrentSession = (): DaySession => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "MORNING";
+  if (hour < 17) return "AFTERNOON";
+  return "EVENING";
+};
+
+const computeSessionLeaveDays = (
+  fromDate: Date,
+  fromSession: DaySession,
+  toDate: Date,
+  toSession: DaySession,
+) => {
+  const fromMarker =
+    fromDate.getTime() / 86400000 + SESSION_OFFSET[fromSession];
+  const toMarker = toDate.getTime() / 86400000 + SESSION_OFFSET[toSession];
+  const value = Number((toMarker - fromMarker).toFixed(1));
+  return value > 0 ? value : null;
 };
 
 const toWorkflowActor = (role: RoleKey): WorkflowActor => {
@@ -249,6 +305,12 @@ export const getStationLeaveBootstrap = async (actor: SessionActor) => {
       : "",
     place: latestFormData ? String(latestFormData.place ?? "") : "",
     date: new Date().toLocaleDateString("en-GB"),
+    fromSession: latestFormData
+      ? String(latestFormData.fromSession ?? "MORNING")
+      : "MORNING",
+    toSession: latestFormData
+      ? String(latestFormData.toSession ?? "EVENING")
+      : "EVENING",
   };
 
   return {
@@ -256,11 +318,21 @@ export const getStationLeaveBootstrap = async (actor: SessionActor) => {
     data: {
       defaults,
       history: history.map((item) => ({
+        formData:
+          ((item.metadata as Prisma.JsonObject | null)?.formData as
+            | Record<string, unknown>
+            | undefined) ?? null,
         id: item.id,
         referenceCode: item.referenceCode,
         from: item.startDate.toISOString(),
         to: item.endDate.toISOString(),
-        totalDays: item.totalDays,
+        totalDays: Number(
+          ((
+            (item.metadata as Prisma.JsonObject | null)?.formData as
+              | Record<string, unknown>
+              | undefined
+          )?.days as string | undefined) ?? item.totalDays,
+        ),
         status: item.status,
         submittedAt:
           item.submittedAt?.toISOString() ?? item.createdAt.toISOString(),
@@ -385,7 +457,31 @@ export const submitStationLeave = async (
     );
   }
 
-  const totalDays = Math.max(Number.parseInt(parsed.form.days, 10) || 1, 1);
+  const computedLeaveDays = computeSessionLeaveDays(
+    startDate,
+    parsed.form.fromSession,
+    endDate,
+    parsed.form.toSession,
+  );
+  if (!computedLeaveDays) {
+    throw new Error(
+      "The selected date/session window is invalid. Please ensure To is after From.",
+    );
+  }
+
+  const today = new Date();
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const endMarker =
+    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.toSession];
+  const nowMarker =
+    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+  if (endMarker <= nowMarker) {
+    throw new Error(
+      "The leave end date/session must be after the current date/session.",
+    );
+  }
+
+  const totalDays = Math.max(Math.ceil(computedLeaveDays), 1);
   const contactDuringLeave = `${parsed.form.contactPrefix} ${parsed.form.contactNumber} | ${parsed.form.contactAddress}`;
   const needsDirectorEscalation =
     totalDays > DIRECTOR_ESCALATION_THRESHOLD_DAYS &&
@@ -427,9 +523,10 @@ export const submitStationLeave = async (
   }
 
   const signatureTimestamp = new Date().toISOString();
-  const signatureAnimationSerialized = JSON.stringify(
-    parsed.signature.animation,
-  );
+  const hasDigitalSignature = Boolean(parsed.signature && parsed.otpVerified);
+  const signatureAnimationSerialized = hasDigitalSignature
+    ? JSON.stringify(parsed.signature?.animation)
+    : "";
 
   const application = await prisma.leaveApplication.create({
     data: {
@@ -449,6 +546,7 @@ export const submitStationLeave = async (
       metadata: {
         formData: {
           ...parsed.form,
+          days: computedLeaveDays.toString(),
           contact: contactDuringLeave,
         },
         routing: {
@@ -470,22 +568,31 @@ export const submitStationLeave = async (
     )
     .digest("hex");
 
+  const signatureProof = hasDigitalSignature
+    ? {
+        formId: application.id,
+        animation: parsed.signature?.animation,
+        image: parsed.signature?.image,
+        timestamp: signatureTimestamp,
+        hash: signatureHash,
+        otpVerified: true,
+      }
+    : {
+        mode: "TYPED",
+        value: parsed.form.applicantSign,
+        timestamp: signatureTimestamp,
+      };
+
   await prisma.leaveApplication.update({
     where: { id: application.id },
     data: {
       metadata: {
         formData: {
           ...parsed.form,
+          days: computedLeaveDays.toString(),
           contact: contactDuringLeave,
         },
-        signatureProof: {
-          formId: application.id,
-          animation: parsed.signature.animation,
-          image: parsed.signature.image,
-          timestamp: signatureTimestamp,
-          hash: signatureHash,
-          otpVerified: true,
-        },
+        signatureProof,
         routing: {
           applicantRole,
           approverRole: approverRole,

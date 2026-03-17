@@ -95,6 +95,8 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         metadata && typeof metadata.formData === "object"
           ? (metadata.formData as Record<string, string>)
           : null;
+      const storedDays = formData?.days;
+      const parsedDays = storedDays ? Number.parseFloat(storedDays) : null;
       const signatureProof =
         metadata && typeof metadata.signatureProof === "object"
           ? (metadata.signatureProof as Record<string, unknown>)
@@ -137,7 +139,10 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         },
         startDate: step.leaveApplication.startDate.toISOString(),
         endDate: step.leaveApplication.endDate.toISOString(),
-        totalDays: step.leaveApplication.totalDays,
+        totalDays:
+          parsedDays && Number.isFinite(parsedDays)
+            ? parsedDays
+            : step.leaveApplication.totalDays,
         purpose: step.leaveApplication.purpose,
         contactDuringLeave: step.leaveApplication.contactDuringLeave,
         destination: step.leaveApplication.destination,
@@ -289,7 +294,7 @@ export const decideLeaveApproval = async (
           ...(parsed.approverSignatureProof && {
             approverSignatureProof: parsed.approverSignatureProof,
           }),
-        },
+        } as Prisma.InputJsonValue,
       },
     }),
   ];

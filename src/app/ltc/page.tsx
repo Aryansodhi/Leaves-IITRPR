@@ -1,44 +1,45 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import {
-  SignatureOtpVerificationCard,
-  type SignatureCapture,
-} from "@/components/leaves/signature-otp-verification-card";
+import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
+import {
+  DIGITAL_SIGNATURE_VALUE,
+  useSignatureOtp,
+} from "@/components/leaves/use-signature-otp";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
 import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
 
-const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
-
 const UnderlineInput = ({
   id,
   width = "w-48",
   className,
+  ...props
 }: {
   id: string;
   width?: string;
   className?: string;
-}) => (
+} & InputHTMLAttributes<HTMLInputElement>) => (
   <input
     id={id}
     name={id}
-    type="text"
+    type={props.type ?? "text"}
     className={cn(
       "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none",
       width,
       className,
     )}
+    {...props}
   />
 );
 
@@ -56,14 +57,8 @@ export default function LtcPage() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [signatureCapture, setSignatureCapture] =
-    useState<SignatureCapture | null>(null);
+  const signature = useSignatureOtp({ enableTyped: true });
+  const setOtpEmail = signature.setOtpEmail;
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -106,7 +101,10 @@ export default function LtcPage() {
       string,
       string
     >;
-    data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
+    data.applicantSignature =
+      signature.signatureMode === "typed"
+        ? signature.typedSignature.trim()
+        : DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("ltc", data);
     const required = Array.from(
       form.querySelectorAll<HTMLInputElement>("input"),
@@ -121,10 +119,13 @@ export default function LtcPage() {
       return;
     }
 
-    if (!isOtpVerified || !signatureCapture) {
-      window.alert(
+    const signatureError = signature.ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
-      );
+    });
+    if (signatureError) {
+      window.alert(signatureError);
       return;
     }
 
@@ -140,113 +141,27 @@ export default function LtcPage() {
     void applyAutofillToForm(form, "ltc").then((profile) => {
       setOtpEmail(profile.email ?? "");
     });
-  }, []);
+  }, [setOtpEmail]);
 
   const handleConfirmSubmit = () => {
-    if (!isOtpVerified || !signatureCapture) {
-      window.alert(
+    const signatureError = signature.ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Complete digital signature and OTP verification before submitting.",
-      );
+    });
+    if (signatureError) {
+      window.alert(signatureError);
       return;
     }
     setConfirmed(true);
     setDialogState("success");
-    setOtpCode("");
-    setOtpStatusMessage(null);
-    setIsOtpVerified(false);
-    setSignatureCapture(null);
+    signature.resetAfterSubmit();
     console.log("LTC form submitted", pendingDataRef.current);
   };
 
   const handleCloseDialog = () => {
     setDialogState(null);
-    setOtpStatusMessage(null);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signatureCapture) {
-      setOtpStatusMessage(
-        "Please add your digital signature before OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage(
-        "Unable to resolve your institute email for OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (otpCode.trim().length !== 6) {
-      setOtpStatusMessage("Enter a valid 6-digit OTP.");
-      setIsOtpVerified(false);
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    try {
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to verify OTP.");
-      }
-
-      setIsOtpVerified(true);
-      setOtpStatusMessage("OTP verified successfully.");
-    } catch (err) {
-      setIsOtpVerified(false);
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to verify OTP.",
-      );
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpStatusMessage(null);
-    try {
-      const response = await fetch("/api/auth/request-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to send OTP.");
-      }
-
-      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
-    } catch (err) {
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to send OTP.",
-      );
-    } finally {
-      setIsSendingOtp(false);
-    }
+    signature.setOtpCode("");
   };
 
   const handleDownloadPdf = async () => {
@@ -285,21 +200,21 @@ export default function LtcPage() {
         {page === 1 && <OfficeSectionsPage />}
 
         <SignatureOtpVerificationCard
-          otpEmail={otpEmail}
-          otpCode={otpCode}
-          onOtpCodeChange={setOtpCode}
-          otpStatusMessage={otpStatusMessage}
-          isSendingOtp={isSendingOtp}
-          isVerifyingOtp={isVerifyingOtp}
+          signatureMode={signature.signatureMode}
+          onSignatureModeChange={signature.onSignatureModeChange}
+          typedSignature={signature.typedSignature}
+          onTypedSignatureChange={signature.onTypedSignatureChange}
+          otpEmail={signature.otpEmail}
+          otpCode={signature.otpCode}
+          onOtpCodeChange={signature.setOtpCode}
+          otpStatusMessage={signature.otpStatusMessage}
+          isSendingOtp={signature.isSendingOtp}
+          isVerifyingOtp={signature.isVerifyingOtp}
           isSubmitting={false}
-          onSendOtp={handleSendOtp}
-          onVerifyOtp={handleVerifyOtp}
-          onSignatureChange={(capture) => {
-            setSignatureCapture(capture);
-            setIsOtpVerified(false);
-            setOtpStatusMessage(null);
-          }}
-          isOtpVerified={isOtpVerified}
+          onSendOtp={signature.handleSendOtp}
+          onVerifyOtp={signature.handleVerifyOtp}
+          onSignatureChange={signature.onSignatureChange}
+          isOtpVerified={signature.isOtpVerified}
         />
 
         <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">

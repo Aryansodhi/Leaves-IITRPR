@@ -6,10 +6,11 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
 import {
-  SignatureOtpVerificationCard,
-  type SignatureCapture,
-} from "@/components/leaves/signature-otp-verification-card";
+  DIGITAL_SIGNATURE_VALUE,
+  useSignatureOtp,
+} from "@/components/leaves/use-signature-otp";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
@@ -17,8 +18,6 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
-
-const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
 const isSignatureFieldId = (fieldId: string) =>
   /signature/i.test(fieldId) || /Sign$/.test(fieldId);
@@ -76,14 +75,25 @@ export default function ExIndiaLeavePage() {
   const [confirmed, setConfirmed] = useState(false);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [signatureCapture, setSignatureCapture] =
-    useState<SignatureCapture | null>(null);
+  const {
+    otpEmail,
+    setOtpEmail,
+    otpCode,
+    setOtpCode,
+    otpStatusMessage,
+    isSendingOtp,
+    isVerifyingOtp,
+    isOtpVerified,
+    signatureMode,
+    typedSignature,
+    onSignatureModeChange,
+    onTypedSignatureChange,
+    onSignatureChange,
+    ensureReadyForSubmit,
+    handleSendOtp,
+    handleVerifyOtp,
+    resetAfterSubmit,
+  } = useSignatureOtp({ enableTyped: false });
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -145,10 +155,12 @@ export default function ExIndiaLeavePage() {
       return;
     }
 
-    if (!isOtpVerified || !signatureCapture) {
-      window.alert(
+    const signatureError = ensureReadyForSubmit({
+      digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
-      );
+    });
+    if (signatureError) {
+      window.alert(signatureError);
       return;
     }
 
@@ -164,113 +176,26 @@ export default function ExIndiaLeavePage() {
     void applyAutofillToForm(form, "ex-india-leave").then((profile) => {
       setOtpEmail(profile.email ?? "");
     });
-  }, []);
+  }, [setOtpEmail]);
 
   const handleConfirmSubmit = () => {
-    if (!isOtpVerified || !signatureCapture) {
-      window.alert(
+    const signatureError = ensureReadyForSubmit({
+      digital:
         "Complete digital signature and OTP verification before submitting.",
-      );
+    });
+    if (signatureError) {
+      window.alert(signatureError);
       return;
     }
     setConfirmed(true);
     setDialogState("success");
-    setOtpCode("");
-    setOtpStatusMessage(null);
-    setIsOtpVerified(false);
-    setSignatureCapture(null);
+    resetAfterSubmit();
     console.log("Ex-India leave form submitted", pendingDataRef.current);
   };
 
   const handleCloseDialog = () => {
     setDialogState(null);
-    setOtpStatusMessage(null);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signatureCapture) {
-      setOtpStatusMessage(
-        "Please add your digital signature before OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage(
-        "Unable to resolve your institute email for OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (otpCode.trim().length !== 6) {
-      setOtpStatusMessage("Enter a valid 6-digit OTP.");
-      setIsOtpVerified(false);
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    try {
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to verify OTP.");
-      }
-
-      setIsOtpVerified(true);
-      setOtpStatusMessage("OTP verified successfully.");
-    } catch (err) {
-      setIsOtpVerified(false);
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to verify OTP.",
-      );
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpStatusMessage(null);
-    try {
-      const response = await fetch("/api/auth/request-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to send OTP.");
-      }
-
-      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
-    } catch (err) {
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to send OTP.",
-      );
-    } finally {
-      setIsSendingOtp(false);
-    }
+    setOtpCode("");
   };
 
   const handleDownloadPdf = async () => {
@@ -311,6 +236,10 @@ export default function ExIndiaLeavePage() {
         {page === 3 && <UndertakingFormTwo />}
 
         <SignatureOtpVerificationCard
+          signatureMode={signatureMode}
+          onSignatureModeChange={onSignatureModeChange}
+          typedSignature={typedSignature}
+          onTypedSignatureChange={onTypedSignatureChange}
           otpEmail={otpEmail}
           otpCode={otpCode}
           onOtpCodeChange={setOtpCode}
@@ -320,11 +249,7 @@ export default function ExIndiaLeavePage() {
           isSubmitting={false}
           onSendOtp={handleSendOtp}
           onVerifyOtp={handleVerifyOtp}
-          onSignatureChange={(capture) => {
-            setSignatureCapture(capture);
-            setIsOtpVerified(false);
-            setOtpStatusMessage(null);
-          }}
+          onSignatureChange={onSignatureChange}
           isOtpVerified={isOtpVerified}
         />
 

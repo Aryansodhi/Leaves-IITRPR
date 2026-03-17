@@ -7,6 +7,8 @@ import type SignaturePad from "signature_pad";
 
 import { Button } from "@/components/ui/button";
 
+export type SignatureMode = "digital" | "typed";
+
 export type SignaturePoint = {
   x: number;
   y: number;
@@ -24,6 +26,10 @@ export type SignatureCapture = {
 };
 
 export const SignatureOtpVerificationCard = ({
+  signatureMode,
+  onSignatureModeChange,
+  typedSignature,
+  onTypedSignatureChange,
   otpEmail,
   otpCode,
   onOtpCodeChange,
@@ -36,6 +42,10 @@ export const SignatureOtpVerificationCard = ({
   onSignatureChange,
   isOtpVerified,
 }: {
+  signatureMode: SignatureMode;
+  onSignatureModeChange: (mode: SignatureMode) => void;
+  typedSignature: string;
+  onTypedSignatureChange: (value: string) => void;
   otpEmail: string;
   otpCode: string;
   onOtpCodeChange: (value: string) => void;
@@ -80,6 +90,8 @@ export const SignatureOtpVerificationCard = ({
     onSignatureChange(capture);
   };
 
+  const isDigitalMode = signatureMode === "digital";
+
   return (
     <div className="space-y-4 rounded-2xl border border-cyan-200/70 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_45%),radial-gradient(circle_at_top_right,rgba(34,197,94,0.14),transparent_38%),linear-gradient(145deg,#f8fbff_0%,#eff8ff_48%,#f9fffb_100%)] p-4 shadow-[0_16px_45px_-34px_rgba(14,116,144,0.75)] sm:p-5">
       <div className="space-y-3 rounded-xl border border-cyan-200/80 bg-white/80 p-4 backdrop-blur-sm">
@@ -101,7 +113,48 @@ export const SignatureOtpVerificationCard = ({
           </div>
         </div>
 
-        {!showSignaturePad ? (
+        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="radio"
+              name="signatureMode"
+              value="digital"
+              checked={signatureMode === "digital"}
+              onChange={() => onSignatureModeChange("digital")}
+              className="h-4 w-4"
+              disabled={isSubmitting}
+            />
+            Digital signature + OTP
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="radio"
+              name="signatureMode"
+              value="typed"
+              checked={signatureMode === "typed"}
+              onChange={() => onSignatureModeChange("typed")}
+              className="h-4 w-4"
+              disabled={isSubmitting}
+            />
+            Type signature using keyboard
+          </label>
+        </div>
+
+        {!isDigitalMode ? (
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+              Typed signature
+            </label>
+            <input
+              type="text"
+              value={typedSignature}
+              onChange={(event) => onTypedSignatureChange(event.target.value)}
+              placeholder="Type your full name"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-cyan-600 focus:outline-none"
+              disabled={isSubmitting}
+            />
+          </div>
+        ) : !showSignaturePad ? (
           <Button
             type="button"
             variant="secondary"
@@ -176,7 +229,7 @@ export const SignatureOtpVerificationCard = ({
         )}
       </div>
 
-      {showOtpEntry ? (
+      {isDigitalMode && showOtpEntry ? (
         <div className="space-y-3 rounded-xl border border-emerald-200 bg-white/85 p-4 backdrop-blur-sm">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">

@@ -1,15 +1,16 @@
 "use client";
 
-import type { FormEvent, InputHTMLAttributes } from "react";
+import type { ChangeEvent, FormEvent, InputHTMLAttributes } from "react";
 import { useEffect, useRef, useState, forwardRef } from "react";
-import { ArrowLeft, Minus, Plus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { SignatureOtpVerificationCard } from "../../components/leaves/signature-otp-verification-card";
 import {
-  SignatureOtpVerificationCard,
-  type SignatureCapture,
-} from "../../components/leaves/signature-otp-verification-card";
+  DIGITAL_SIGNATURE_VALUE,
+  useSignatureOtp,
+} from "@/components/leaves/use-signature-otp";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
@@ -17,8 +18,45 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+type DaySession = "MORNING" | "AFTERNOON" | "EVENING";
 
-const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+const SESSION_OFFSET: Record<DaySession, number> = {
+  MORNING: 0,
+  AFTERNOON: 0.5,
+  EVENING: 1,
+};
+
+const getTodayIso = () => new Date().toISOString().slice(0, 10);
+
+const resolveCurrentSession = (): DaySession => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "MORNING";
+  if (hour < 17) return "AFTERNOON";
+  return "EVENING";
+};
+
+const computeSessionLeaveDays = (
+  fromDate: string,
+  fromSession: DaySession,
+  toDate: string,
+  toSession: DaySession,
+) => {
+  if (!fromDate || !toDate) return null;
+
+  const from = new Date(`${fromDate}T00:00:00`);
+  const to = new Date(`${toDate}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+
+  const fromMarker = from.getTime() / 86400000 + SESSION_OFFSET[fromSession];
+  const toMarker = to.getTime() / 86400000 + SESSION_OFFSET[toSession];
+  const value = Number((toMarker - fromMarker).toFixed(1));
+  if (value <= 0) return null;
+
+  return value;
+};
+
+const formatDays = (value: number) =>
+  Number.isInteger(value) ? `${value}` : value.toFixed(1);
 
 type StationLeaveHistoryItem = {
   id: string;
@@ -43,9 +81,10 @@ const requiredInputIds = [
   "name",
   "designation",
   "department",
-  "days",
   "from",
+  "fromSession",
   "to",
+  "toSession",
   "nature",
   "purpose",
   "contactPrefix",
@@ -53,7 +92,6 @@ const requiredInputIds = [
   "contactAddress",
   "place",
   "date",
-  "applicantSign",
 ];
 
 const UnderlineInput = forwardRef<
@@ -104,14 +142,13 @@ export default function StationLeavePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<StationLeaveHistoryItem[]>([]);
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [signatureCapture, setSignatureCapture] =
-    useState<SignatureCapture | null>(null);
+  const signature = useSignatureOtp({ enableTyped: true });
+  const setOtpEmail = signature.setOtpEmail;
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [fromSession, setFromSession] = useState<DaySession>("MORNING");
+  const [toSession, setToSession] = useState<DaySession>("EVENING");
+  const [computedLeaveDays, setComputedLeaveDays] = useState("");
   const [workflowMessage, setWorkflowMessage] = useState(
     "On submit, this request is routed to your authority automatically.",
   );
@@ -134,6 +171,38 @@ export default function StationLeavePage() {
       input.setAttribute("aria-invalid", hasError ? "true" : "false");
     });
   };
+
+  useEffect(() => {
+    const value = computeSessionLeaveDays(
+      fromDate,
+      fromSession,
+      toDate,
+      toSession,
+    );
+    setComputedLeaveDays(value ? formatDays(value) : "");
+  }, [fromDate, fromSession, toDate, toSession]);
+
+  useEffect(() => {
+    if (!fromDate || !toDate) return;
+    if (toDate < fromDate) {
+      setToDate(fromDate);
+      setToSession("EVENING");
+      return;
+    }
+
+    if (
+      toDate === fromDate &&
+      SESSION_OFFSET[toSession] <= SESSION_OFFSET[fromSession]
+    ) {
+      setToSession(
+        fromSession === "MORNING"
+          ? "AFTERNOON"
+          : fromSession === "AFTERNOON"
+            ? "EVENING"
+            : "EVENING",
+      );
+    }
+  }, [fromDate, fromSession, toDate, toSession]);
 
   const handleBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -165,13 +234,22 @@ export default function StationLeavePage() {
     data.contactPrefix = contactPrefix;
     data.contactNumber = contactNumber;
     data.contact = `${contactPrefix} ${contactNumber}`.trim();
-    data.applicantSign = DIGITAL_SIGNATURE_VALUE;
+    data.fromSession = fromSession;
+    data.toSession = toSession;
+    data.days = computedLeaveDays;
+    data.applicantSign =
+      signature.signatureMode === "typed"
+        ? signature.typedSignature.trim()
+        : DIGITAL_SIGNATURE_VALUE;
 
     saveFormDraft("station-leave", data);
     const missing = requiredInputIds.filter((key) => !data[key]?.trim());
     const invalid = new Set<string>();
 
-    if (!/^\d+$/.test(data.days ?? "") || Number.parseInt(data.days, 10) < 1) {
+    if (
+      !/^\d+(\.5)?$/.test(data.days ?? "") ||
+      Number.parseFloat(data.days) <= 0
+    ) {
       invalid.add("days");
     }
 
@@ -192,15 +270,40 @@ export default function StationLeavePage() {
       invalid.add("to");
     }
 
+    if (!computedLeaveDays) {
+      invalid.add("from");
+      invalid.add("to");
+      invalid.add("fromSession");
+      invalid.add("toSession");
+      invalid.add("days");
+    }
+
+    const toMarker =
+      (toDate?.getTime() ?? 0) / 86400000 + SESSION_OFFSET[toSession];
+    const today = new Date();
+    const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+    const nowMarker =
+      todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+    if (toDate && toMarker <= nowMarker) {
+      invalid.add("to");
+      invalid.add("toSession");
+    }
+
     const flaggedFields = new Set([...missing, ...invalid]);
     markMissingInputs(form, flaggedFields);
 
     if (flaggedFields.size > 0) {
       setMissingFields(Array.from(flaggedFields));
       if (invalid.has("days")) {
-        setSubmitError("No. of days must be a whole number greater than 0.");
+        setSubmitError(
+          "No. of days is auto-calculated from date/session and must be greater than 0.",
+        );
       } else if (invalid.has("contactNumber")) {
         setSubmitError("Phone number must contain exactly 10 digits.");
+      } else if (invalid.has("toSession")) {
+        setSubmitError(
+          "End date/session must be after the current date session and after start date/session.",
+        );
       } else if (invalid.has("from") || invalid.has("to")) {
         setSubmitError(
           "The To date must be the same as or later than the From date.",
@@ -209,10 +312,13 @@ export default function StationLeavePage() {
       return;
     }
 
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = signature.ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -223,10 +329,13 @@ export default function StationLeavePage() {
   };
 
   const handleConfirmSubmit = async () => {
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = signature.ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Complete digital signature and OTP verification before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -241,8 +350,11 @@ export default function StationLeavePage() {
         },
         body: JSON.stringify({
           form: pendingDataRef.current,
-          signature: signatureCapture,
-          otpVerified: true,
+          signature:
+            signature.signatureMode === "digital"
+              ? signature.signatureCapture
+              : undefined,
+          otpVerified: signature.signatureMode === "digital",
         }),
       });
 
@@ -273,10 +385,7 @@ export default function StationLeavePage() {
       );
       setConfirmed(true);
       setDialogState("success");
-      setOtpCode("");
-      setOtpStatusMessage(null);
-      setIsOtpVerified(false);
-      setSignatureCapture(null);
+      signature.resetAfterSubmit({ clearSignature: false });
       await loadBootstrap();
     } catch (error) {
       setSubmitError(
@@ -291,93 +400,7 @@ export default function StationLeavePage() {
 
   const handleCloseDialog = () => {
     setDialogState(null);
-    setOtpStatusMessage(null);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signatureCapture) {
-      setOtpStatusMessage(
-        "Please add your digital signature before OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage(
-        "Unable to resolve your institute email for OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (otpCode.trim().length !== 6) {
-      setOtpStatusMessage("Enter a valid 6-digit OTP.");
-      setIsOtpVerified(false);
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    try {
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to verify OTP.");
-      }
-
-      setIsOtpVerified(true);
-      setOtpStatusMessage("OTP verified successfully.");
-    } catch (err) {
-      setIsOtpVerified(false);
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to verify OTP.",
-      );
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpStatusMessage(null);
-    try {
-      const response = await fetch("/api/auth/request-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to send OTP.");
-      }
-
-      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
-    } catch (err) {
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to send OTP.",
-      );
-    } finally {
-      setIsSendingOtp(false);
-    }
+    signature.setOtpCode("");
   };
 
   const handleDownloadPdf = async () => {
@@ -431,6 +454,23 @@ export default function StationLeavePage() {
             field.value = value;
           }
         });
+
+        const loadedFrom =
+          form.querySelector<HTMLInputElement>("input[name='from']")?.value ??
+          "";
+        const loadedTo =
+          form.querySelector<HTMLInputElement>("input[name='to']")?.value ?? "";
+        const loadedFromSession =
+          (form.querySelector<HTMLSelectElement>("select[name='fromSession']")
+            ?.value as DaySession | undefined) ?? "MORNING";
+        const loadedToSession =
+          (form.querySelector<HTMLSelectElement>("select[name='toSession']")
+            ?.value as DaySession | undefined) ?? "EVENING";
+
+        setFromDate(loadedFrom);
+        setToDate(loadedTo);
+        setFromSession(loadedFromSession);
+        setToSession(loadedToSession);
       }
 
       setHistory(result.data?.history ?? []);
@@ -452,7 +492,7 @@ export default function StationLeavePage() {
     }
 
     void loadBootstrap();
-  }, []);
+  }, [setOtpEmail]);
 
   useEffect(() => {
     const form = formRef.current;
@@ -558,7 +598,17 @@ export default function StationLeavePage() {
                   inputId="designation"
                 />
                 <LineItem number="3." label="Department" inputId="department" />
-                <StationLeaveDatesRow />
+                <StationLeaveDatesRow
+                  fromDate={fromDate}
+                  toDate={toDate}
+                  fromSession={fromSession}
+                  toSession={toSession}
+                  computedLeaveDays={computedLeaveDays}
+                  onFromDateChange={setFromDate}
+                  onToDateChange={setToDate}
+                  onFromSessionChange={setFromSession}
+                  onToSessionChange={setToSession}
+                />
                 <LineItem
                   number="5."
                   label="Nature of Leave sanctioned (if applicable)"
@@ -585,12 +635,31 @@ export default function StationLeavePage() {
                   <span className="text-[12px] text-slate-800">
                     (Signature of the applicant)
                   </span>
-                  <UnderlineInput
+                  <input
+                    type="hidden"
                     id="applicantSign"
-                    width="w-64"
+                    name="applicantSign"
+                    value={
+                      signature.signatureMode === "typed"
+                        ? signature.typedSignature
+                        : DIGITAL_SIGNATURE_VALUE
+                    }
                     readOnly
-                    defaultValue={DIGITAL_SIGNATURE_VALUE}
                   />
+                  <div className="relative flex h-10 w-64 items-end border-b border-dashed border-slate-500 px-1 pb-0.5 text-left text-[13px] text-slate-900">
+                    {signature.signatureMode === "typed" ? (
+                      <span className="truncate">
+                        {signature.typedSignature}
+                      </span>
+                    ) : signature.signatureCapture?.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={signature.signatureCapture.image}
+                        alt="Applicant signature"
+                        className="h-9 w-full object-contain object-left"
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </SurfaceCard>
@@ -630,21 +699,21 @@ export default function StationLeavePage() {
           ) : null}
 
           <SignatureOtpVerificationCard
-            otpEmail={otpEmail}
-            otpCode={otpCode}
-            onOtpCodeChange={setOtpCode}
-            otpStatusMessage={otpStatusMessage}
-            isSendingOtp={isSendingOtp}
-            isVerifyingOtp={isVerifyingOtp}
+            signatureMode={signature.signatureMode}
+            onSignatureModeChange={signature.onSignatureModeChange}
+            typedSignature={signature.typedSignature}
+            onTypedSignatureChange={signature.onTypedSignatureChange}
+            otpEmail={signature.otpEmail}
+            otpCode={signature.otpCode}
+            onOtpCodeChange={signature.setOtpCode}
+            otpStatusMessage={signature.otpStatusMessage}
+            isSendingOtp={signature.isSendingOtp}
+            isVerifyingOtp={signature.isVerifyingOtp}
             isSubmitting={isSubmitting}
-            onSendOtp={handleSendOtp}
-            onVerifyOtp={handleVerifyOtp}
-            onSignatureChange={(capture: SignatureCapture | null) => {
-              setSignatureCapture(capture);
-              setIsOtpVerified(false);
-              setOtpStatusMessage(null);
-            }}
-            isOtpVerified={isOtpVerified}
+            onSendOtp={signature.handleSendOtp}
+            onVerifyOtp={signature.handleVerifyOtp}
+            onSignatureChange={signature.onSignatureChange}
+            isOtpVerified={signature.isOtpVerified}
           />
 
           <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-3">
@@ -826,7 +895,27 @@ const LineItem = ({
   </div>
 );
 
-const StationLeaveDatesRow = () => (
+const StationLeaveDatesRow = ({
+  fromDate,
+  toDate,
+  fromSession,
+  toSession,
+  computedLeaveDays,
+  onFromDateChange,
+  onToDateChange,
+  onFromSessionChange,
+  onToSessionChange,
+}: {
+  fromDate: string;
+  toDate: string;
+  fromSession: DaySession;
+  toSession: DaySession;
+  computedLeaveDays: string;
+  onFromDateChange: (value: string) => void;
+  onToDateChange: (value: string) => void;
+  onFromSessionChange: (value: DaySession) => void;
+  onToSessionChange: (value: DaySession) => void;
+}) => (
   <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-6">4.</span>
@@ -837,72 +926,94 @@ const StationLeaveDatesRow = () => (
     <div className="flex flex-wrap items-center gap-3 pl-8">
       <div className="flex items-center gap-2">
         <span>From</span>
-        <DateUnderlineInput id="from" />
+        <DateUnderlineInput
+          id="from"
+          value={fromDate}
+          min={getTodayIso()}
+          onChange={(event) => onFromDateChange(event.target.value)}
+        />
+        <SessionSelect
+          id="fromSession"
+          value={fromSession}
+          onChange={(event) =>
+            onFromSessionChange(event.target.value as DaySession)
+          }
+        />
       </div>
       <div className="flex items-center gap-2">
         <span>To</span>
-        <DateUnderlineInput id="to" />
+        <DateUnderlineInput
+          id="to"
+          value={toDate}
+          min={fromDate || getTodayIso()}
+          onChange={(event) => onToDateChange(event.target.value)}
+        />
+        <SessionSelect
+          id="toSession"
+          value={toSession}
+          onChange={(event) =>
+            onToSessionChange(event.target.value as DaySession)
+          }
+        />
       </div>
       <div className="flex items-center gap-2">
         <span>No. of days</span>
-        <NumberStepperInput id="days" />
+        <UnderlineInput
+          id="days"
+          type="text"
+          width="w-14"
+          value={computedLeaveDays}
+          readOnly
+          className="text-center"
+        />
       </div>
     </div>
   </div>
 );
 
-const DateUnderlineInput = ({ id }: { id: string }) => (
-  <UnderlineInput id={id} type="date" width="w-40" className="scheme-light" />
+const DateUnderlineInput = ({
+  id,
+  value,
+  min,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  min?: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) => (
+  <UnderlineInput
+    id={id}
+    type="date"
+    width="w-40"
+    className="scheme-light"
+    value={value}
+    min={min}
+    onChange={onChange}
+  />
 );
 
-const NumberStepperInput = ({ id }: { id: string }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const updateValue = (direction: "up" | "down") => {
-    const input = inputRef.current;
-    if (!input) return;
-
-    if (direction === "up") {
-      input.stepUp();
-    } else if (Number.parseInt(input.value || "1", 10) > 1) {
-      input.stepDown();
-    }
-
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-
-  return (
-    <div className="flex items-center gap-1 rounded-full border border-slate-300 px-1 py-0.5">
-      <button
-        type="button"
-        onClick={() => updateValue("down")}
-        className="rounded-full p-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-        aria-label="Decrease number of days"
-      >
-        <Minus className="h-3.5 w-3.5" />
-      </button>
-      <UnderlineInput
-        ref={inputRef}
-        id={id}
-        type="number"
-        min={1}
-        step={1}
-        defaultValue="1"
-        inputMode="numeric"
-        width="w-14"
-        className="text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-      />
-      <button
-        type="button"
-        onClick={() => updateValue("up")}
-        className="rounded-full p-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-        aria-label="Increase number of days"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-};
+const SessionSelect = ({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: DaySession;
+  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+}) => (
+  <select
+    id={id}
+    name={id}
+    value={value}
+    onChange={onChange}
+    className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+  >
+    <option value="MORNING">Morning</option>
+    <option value="AFTERNOON">Afternoon</option>
+    <option value="EVENING">Evening</option>
+  </select>
+);
 
 const StationLeaveContactRow = () => (
   <div className="space-y-2">

@@ -7,10 +7,11 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { SignatureOtpVerificationCard } from "../../components/leaves/signature-otp-verification-card";
 import {
-  SignatureOtpVerificationCard,
-  type SignatureCapture,
-} from "../../components/leaves/signature-otp-verification-card";
+  DIGITAL_SIGNATURE_VALUE,
+  useSignatureOtp,
+} from "@/components/leaves/use-signature-otp";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -22,8 +23,6 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
-
-const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
 const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
   if (!fromValue || !toValue) return "";
@@ -107,14 +106,26 @@ export default function EarnedLeavePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [ltcChoice, setLtcChoice] = useState<string>("");
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [signatureCapture, setSignatureCapture] =
-    useState<SignatureCapture | null>(null);
+  const {
+    otpEmail,
+    setOtpEmail,
+    otpCode,
+    setOtpCode,
+    otpStatusMessage,
+    isSendingOtp,
+    isVerifyingOtp,
+    isOtpVerified,
+    signatureMode,
+    typedSignature,
+    signatureCapture,
+    onSignatureModeChange,
+    onTypedSignatureChange,
+    onSignatureChange,
+    ensureReadyForSubmit,
+    handleSendOtp,
+    handleVerifyOtp,
+    resetAfterSubmit,
+  } = useSignatureOtp({ enableTyped: false });
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>("input"));
@@ -231,10 +242,12 @@ export default function EarnedLeavePage() {
       return;
     }
 
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = ensureReadyForSubmit({
+      digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -336,13 +349,20 @@ export default function EarnedLeavePage() {
       suffixFromInput?.removeEventListener("change", handleSuffixDateChange);
       suffixToInput?.removeEventListener("change", handleSuffixDateChange);
     };
-  }, [handlePeriodDateChange, handlePrefixDateChange, handleSuffixDateChange]);
+  }, [
+    handlePeriodDateChange,
+    handlePrefixDateChange,
+    handleSuffixDateChange,
+    setOtpEmail,
+  ]);
 
   const handleConfirmSubmit = async () => {
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = ensureReadyForSubmit({
+      digital:
         "Complete digital signature and OTP verification before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -374,10 +394,7 @@ export default function EarnedLeavePage() {
         result.message || "Earned leave application submitted successfully.",
       );
       clearFormDraft("earned-leave");
-      setOtpCode("");
-      setOtpStatusMessage(null);
-      setIsOtpVerified(false);
-      setSignatureCapture(null);
+      resetAfterSubmit();
       setDialogState("success");
     } catch (err) {
       const errorMessage =
@@ -393,93 +410,7 @@ export default function EarnedLeavePage() {
 
   const handleCloseDialog = () => {
     setDialogState(null);
-    setOtpStatusMessage(null);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signatureCapture) {
-      setOtpStatusMessage(
-        "Please add your digital signature before OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage(
-        "Unable to resolve your institute email for OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (otpCode.trim().length !== 6) {
-      setOtpStatusMessage("Enter a valid 6-digit OTP.");
-      setIsOtpVerified(false);
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    try {
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to verify OTP.");
-      }
-
-      setIsOtpVerified(true);
-      setOtpStatusMessage("OTP verified successfully.");
-    } catch (err) {
-      setIsOtpVerified(false);
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to verify OTP.",
-      );
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpStatusMessage(null);
-    try {
-      const response = await fetch("/api/auth/request-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to send OTP.");
-      }
-
-      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
-    } catch (err) {
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to send OTP.",
-      );
-    } finally {
-      setIsSendingOtp(false);
-    }
+    setOtpCode("");
   };
 
   const handleDownloadPdf = async () => {
@@ -695,6 +626,10 @@ export default function EarnedLeavePage() {
           )}
 
           <SignatureOtpVerificationCard
+            signatureMode={signatureMode}
+            onSignatureModeChange={onSignatureModeChange}
+            typedSignature={typedSignature}
+            onTypedSignatureChange={onTypedSignatureChange}
             otpEmail={otpEmail}
             otpCode={otpCode}
             onOtpCodeChange={setOtpCode}
@@ -704,11 +639,7 @@ export default function EarnedLeavePage() {
             isSubmitting={isSubmitting}
             onSendOtp={handleSendOtp}
             onVerifyOtp={handleVerifyOtp}
-            onSignatureChange={(capture: SignatureCapture | null) => {
-              setSignatureCapture(capture);
-              setIsOtpVerified(false);
-              setOtpStatusMessage(null);
-            }}
+            onSignatureChange={onSignatureChange}
             isOtpVerified={isOtpVerified}
           />
 

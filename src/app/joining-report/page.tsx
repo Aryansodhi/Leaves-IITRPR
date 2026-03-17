@@ -12,18 +12,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { downloadFormAsPdf } from "@/lib/pdf-export";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { SignatureOtpVerificationCard } from "../../components/leaves/signature-otp-verification-card";
 import {
-  SignatureOtpVerificationCard,
-  type SignatureCapture,
-} from "../../components/leaves/signature-otp-verification-card";
+  DIGITAL_SIGNATURE_VALUE,
+  useSignatureOtp,
+} from "@/components/leaves/use-signature-otp";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
-
-const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
 type JoiningReportHistoryItem = {
   id: string;
@@ -134,14 +133,26 @@ export default function JoiningReportPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<JoiningReportHistoryItem[]>([]);
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpStatusMessage, setOtpStatusMessage] = useState<string | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
-  const [signatureCapture, setSignatureCapture] =
-    useState<SignatureCapture | null>(null);
+  const {
+    otpEmail,
+    setOtpEmail,
+    otpCode,
+    setOtpCode,
+    otpStatusMessage,
+    isSendingOtp,
+    isVerifyingOtp,
+    isOtpVerified,
+    signatureMode,
+    typedSignature,
+    signatureCapture,
+    onSignatureModeChange,
+    onTypedSignatureChange,
+    onSignatureChange,
+    ensureReadyForSubmit,
+    handleSendOtp,
+    handleVerifyOtp,
+    resetAfterSubmit,
+  } = useSignatureOtp();
   const [choiceValues, setChoiceValues] = useState({
     dutySession: "",
     leaveCategory: "",
@@ -201,7 +212,10 @@ export default function JoiningReportPage() {
     data.englishTo = data.toDate;
     data.englishRejoin = data.rejoinDate;
     data.englishOrderDate = data.orderDate;
-    data.signature = DIGITAL_SIGNATURE_VALUE;
+    data.signature =
+      signatureMode === "typed"
+        ? typedSignature.trim()
+        : DIGITAL_SIGNATURE_VALUE;
     if (!data.signedDate?.trim()) {
       data.signedDate = new Date().toISOString().slice(0, 10);
     }
@@ -229,10 +243,13 @@ export default function JoiningReportPage() {
       return;
     }
 
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -310,10 +327,13 @@ export default function JoiningReportPage() {
   };
 
   const handleConfirmSubmit = async () => {
-    if (!isOtpVerified || !signatureCapture) {
-      setSubmitError(
+    const signatureError = ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
+      digital:
         "Complete digital signature and OTP verification before submitting.",
-      );
+    });
+    if (signatureError) {
+      setSubmitError(signatureError);
       return;
     }
 
@@ -328,8 +348,8 @@ export default function JoiningReportPage() {
         },
         body: JSON.stringify({
           form: pendingDataRef.current,
-          signature: signatureCapture,
-          otpVerified: true,
+          signature: signatureMode === "digital" ? signatureCapture : undefined,
+          otpVerified: signatureMode === "digital",
         }),
       });
 
@@ -353,10 +373,7 @@ export default function JoiningReportPage() {
       );
       setConfirmed(true);
       setDialogState("success");
-      setOtpCode("");
-      setOtpStatusMessage(null);
-      setIsOtpVerified(false);
-      setSignatureCapture(null);
+      resetAfterSubmit();
       await loadBootstrap();
     } catch (error) {
       setSubmitError(
@@ -371,93 +388,7 @@ export default function JoiningReportPage() {
 
   const handleCloseDialog = () => {
     setDialogState(null);
-    setOtpStatusMessage(null);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signatureCapture) {
-      setOtpStatusMessage(
-        "Please add your digital signature before OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage(
-        "Unable to resolve your institute email for OTP verification.",
-      );
-      setIsOtpVerified(false);
-      return;
-    }
-
-    if (otpCode.trim().length !== 6) {
-      setOtpStatusMessage("Enter a valid 6-digit OTP.");
-      setIsOtpVerified(false);
-      return;
-    }
-
-    setIsVerifyingOtp(true);
-    try {
-      const response = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to verify OTP.");
-      }
-
-      setIsOtpVerified(true);
-      setOtpStatusMessage("OTP verified successfully.");
-    } catch (err) {
-      setIsOtpVerified(false);
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to verify OTP.",
-      );
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpEmail.trim()) {
-      setOtpStatusMessage("Unable to resolve your institute email for OTP.");
-      return;
-    }
-
-    setIsSendingOtp(true);
-    setOtpStatusMessage(null);
-    try {
-      const response = await fetch("/api/auth/request-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.message ?? "Unable to send OTP.");
-      }
-
-      setOtpStatusMessage(result.message ?? "OTP sent to your email.");
-    } catch (err) {
-      setOtpStatusMessage(
-        err instanceof Error ? err.message : "Unable to send OTP.",
-      );
-    } finally {
-      setIsSendingOtp(false);
-    }
+    setOtpCode("");
   };
 
   const handleDownloadPdf = async () => {
@@ -545,7 +476,7 @@ export default function JoiningReportPage() {
     }
 
     void loadBootstrap();
-  }, [loadBootstrap]);
+  }, [loadBootstrap, setOtpEmail]);
 
   useEffect(() => {
     const roleKeyRaw =
@@ -764,12 +695,22 @@ export default function JoiningReportPage() {
                 <p>भवदीय / Yours faithfully</p>
                 <p>
                   हस्ताक्षर / Signature:{" "}
-                  <UnderlineInput
+                  <input
+                    type="hidden"
                     id="signature"
-                    width="w-56"
+                    name="signature"
+                    value={
+                      signatureMode === "typed"
+                        ? typedSignature
+                        : DIGITAL_SIGNATURE_VALUE
+                    }
                     readOnly
-                    defaultValue={DIGITAL_SIGNATURE_VALUE}
                   />
+                  <span className="inline-flex h-9 w-56 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-sm text-slate-900">
+                    {signatureMode === "typed"
+                      ? typedSignature
+                      : "DIGITALLY_SIGNED"}
+                  </span>
                 </p>
                 <p>
                   नाम / Name : <UnderlineInput id="signName" width="w-48" />
@@ -821,6 +762,10 @@ export default function JoiningReportPage() {
           ) : null}
 
           <SignatureOtpVerificationCard
+            signatureMode={signatureMode}
+            onSignatureModeChange={onSignatureModeChange}
+            typedSignature={typedSignature}
+            onTypedSignatureChange={onTypedSignatureChange}
             otpEmail={otpEmail}
             otpCode={otpCode}
             onOtpCodeChange={setOtpCode}
@@ -830,11 +775,7 @@ export default function JoiningReportPage() {
             isSubmitting={isSubmitting}
             onSendOtp={handleSendOtp}
             onVerifyOtp={handleVerifyOtp}
-            onSignatureChange={(capture: SignatureCapture | null) => {
-              setSignatureCapture(capture);
-              setIsOtpVerified(false);
-              setOtpStatusMessage(null);
-            }}
+            onSignatureChange={onSignatureChange}
             isOtpVerified={isOtpVerified}
           />
 

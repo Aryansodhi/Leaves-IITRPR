@@ -14,83 +14,110 @@ import {
   sendLeaveSubmissionEmail,
 } from "@/server/email/mailer";
 
-const joiningReportPayloadSchema = z.object({
-  form: z.object({
-    name: z.string().trim().min(1),
-    fromDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    toDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    totalDays: z.string().trim().regex(/^\d+$/),
-    dutySession: z.enum(["Forenoon", "Afternoon"]),
-    leaveCategory: z.enum([
-      "Earned Leave",
-      "Half Pay Leave",
-      "Medical Leave",
-      "Extra Ordinary Leave",
-      "Vacation Leave",
-    ]),
-    rejoinDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    orderNo: z.string().trim().min(1),
-    orderDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    englishRejoin: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    englishDays: z.string().trim().regex(/^\d+$/),
-    englishFrom: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    englishTo: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    englishOrder: z.string().trim().min(1),
-    englishOrderDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-    signature: z.string().trim().min(1),
-    signName: z.string().trim().min(1),
-    signDesignation: z.string().trim().min(1),
-    signedDate: z
-      .string()
-      .trim()
-      .refine((value) => parseDateInput(value) !== null),
-  }),
-  signature: z.object({
-    animation: z
-      .array(
-        z
-          .object({
-            points: z
-              .array(
-                z.object({
-                  x: z.number(),
-                  y: z.number(),
-                  time: z.number(),
-                }),
-              )
-              .min(1),
-          })
-          .passthrough(),
-      )
-      .min(1),
-    image: z.string().trim().startsWith("data:image/png;base64,"),
-  }),
-  otpVerified: z.literal(true),
-});
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+
+const joiningReportPayloadSchema = z
+  .object({
+    form: z.object({
+      name: z.string().trim().min(1),
+      fromDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      toDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      totalDays: z.string().trim().regex(/^\d+$/),
+      dutySession: z.enum(["Forenoon", "Afternoon"]),
+      leaveCategory: z.enum([
+        "Earned Leave",
+        "Half Pay Leave",
+        "Medical Leave",
+        "Extra Ordinary Leave",
+        "Vacation Leave",
+      ]),
+      rejoinDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      orderNo: z.string().trim().min(1),
+      orderDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      englishRejoin: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      englishDays: z.string().trim().regex(/^\d+$/),
+      englishFrom: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      englishTo: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      englishOrder: z.string().trim().min(1),
+      englishOrderDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+      signature: z.string().trim().min(1),
+      signName: z.string().trim().min(1),
+      signDesignation: z.string().trim().min(1),
+      signedDate: z
+        .string()
+        .trim()
+        .refine((value) => parseDateInput(value) !== null),
+    }),
+    signature: z
+      .object({
+        animation: z
+          .array(
+            z
+              .object({
+                points: z
+                  .array(
+                    z.object({
+                      x: z.number(),
+                      y: z.number(),
+                      time: z.number(),
+                    }),
+                  )
+                  .min(1),
+              })
+              .passthrough(),
+          )
+          .min(1),
+        image: z.string().trim().startsWith("data:image/png;base64,"),
+      })
+      .optional(),
+    otpVerified: z.boolean().optional().default(false),
+  })
+  .superRefine((value, context) => {
+    const usesDigitalSignature =
+      value.form.signature === DIGITAL_SIGNATURE_VALUE;
+
+    if (usesDigitalSignature) {
+      if (!value.signature) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["signature"],
+          message: "Digital signature image is required.",
+        });
+      }
+
+      if (!value.otpVerified) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["otpVerified"],
+          message: "OTP verification is required for digital signature.",
+        });
+      }
+    }
+  });
 
 const toIsoDateString = (value?: Date | null) => {
   if (!value) return "";
@@ -474,9 +501,10 @@ export const submitJoiningReport = async (
   };
 
   const signatureTimestamp = new Date().toISOString();
-  const signatureAnimationSerialized = JSON.stringify(
-    parsed.signature.animation,
-  );
+  const hasDigitalSignature = Boolean(parsed.signature && parsed.otpVerified);
+  const signatureAnimationSerialized = hasDigitalSignature
+    ? JSON.stringify(parsed.signature?.animation)
+    : "";
 
   const application = await prisma.leaveApplication.create({
     data: {
@@ -528,19 +556,27 @@ export const submitJoiningReport = async (
     )
     .digest("hex");
 
+  const signatureProof = hasDigitalSignature
+    ? {
+        formId: application.id,
+        animation: parsed.signature?.animation,
+        image: parsed.signature?.image,
+        timestamp: signatureTimestamp,
+        hash: signatureHash,
+        otpVerified: true,
+      }
+    : {
+        mode: "TYPED",
+        value: parsed.form.signature,
+        timestamp: signatureTimestamp,
+      };
+
   await prisma.leaveApplication.update({
     where: { id: application.id },
     data: {
       metadata: {
         formData: persistedForm,
-        signatureProof: {
-          formId: application.id,
-          animation: parsed.signature.animation,
-          image: parsed.signature.image,
-          timestamp: signatureTimestamp,
-          hash: signatureHash,
-          otpVerified: true,
-        },
+        signatureProof,
         routing: {
           applicantRole,
           approverRole: approver.approverRole,
