@@ -65,76 +65,103 @@ const LeaveStatus = {
 } as const;
 type LeaveStatus = (typeof LeaveStatus)[keyof typeof LeaveStatus];
 
-const earnedLeavePayloadSchema = z.object({
-  form: z.object({
-    name: z.string().trim().min(1),
-    post: z.string().trim().min(1),
-    department: z.string().trim().min(1),
-    leaveType: z.string().trim().min(1),
-    fromDate: z.string().trim().min(1),
-    toDate: z.string().trim().min(1),
-    fromSession: z.enum(SESSION_VALUES),
-    toSession: z.enum(SESSION_VALUES),
-    days: z
-      .string()
-      .trim()
-      .regex(/^\d+(\.5)?$/),
-    purpose: z.string().trim().min(1),
-    arrangements: z.string().trim().optional(),
-    ltc: z.enum(["PROPOSE", "NOT_PROPOSE"]),
-    address: z.string().trim().min(1),
-    contactNo: z
-      .string()
-      .trim()
-      .regex(/^\d{10}$/),
-    pin: z
-      .string()
-      .trim()
-      .regex(/^\d{6}$/),
-    stationYesNo: z.preprocess(
-      (value) => {
-        if (typeof value !== "string") return value;
-        const normalized = value.trim().toLowerCase();
-        if (!normalized) return undefined;
-        if (normalized === "yes") return "Yes";
-        if (normalized === "no") return "No";
-        return value;
-      },
-      z.enum(["Yes", "No"]).optional(),
-    ),
-    stationFrom: z.string().trim().optional(),
-    stationTo: z.string().trim().optional(),
-    prefixFromDate: z.string().trim().optional(),
-    prefixToDate: z.string().trim().optional(),
-    prefixDays: z.string().trim().optional(),
-    suffixFromDate: z.string().trim().optional(),
-    suffixToDate: z.string().trim().optional(),
-    suffixDays: z.string().trim().optional(),
-    applicantSignature: z.string().trim().optional(),
-    applicantSignatureDate: z.string().trim().optional(),
-  }),
-  signature: z.object({
-    animation: z
-      .array(
-        z
-          .object({
-            points: z
-              .array(
-                z.object({
-                  x: z.number(),
-                  y: z.number(),
-                  time: z.number(),
-                }),
-              )
-              .min(1),
-          })
-          .passthrough(),
-      )
-      .min(1),
-    image: z.string().trim().startsWith("data:image/png;base64,"),
-  }),
-  otpVerified: z.literal(true),
-});
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+
+const earnedLeavePayloadSchema = z
+  .object({
+    form: z.object({
+      name: z.string().trim().min(1),
+      post: z.string().trim().min(1),
+      department: z.string().trim().min(1),
+      leaveType: z.string().trim().min(1),
+      fromDate: z.string().trim().min(1),
+      toDate: z.string().trim().min(1),
+      fromSession: z.enum(SESSION_VALUES),
+      toSession: z.enum(SESSION_VALUES),
+      days: z
+        .string()
+        .trim()
+        .regex(/^\d+(\.5)?$/),
+      purpose: z.string().trim().min(1),
+      arrangements: z.string().trim().optional(),
+      ltc: z.enum(["PROPOSE", "NOT_PROPOSE"]),
+      address: z.string().trim().min(1),
+      contactNo: z
+        .string()
+        .trim()
+        .regex(/^\d{10}$/),
+      pin: z
+        .string()
+        .trim()
+        .regex(/^\d{6}$/),
+      stationYesNo: z.preprocess(
+        (value) => {
+          if (typeof value !== "string") return value;
+          const normalized = value.trim().toLowerCase();
+          if (!normalized) return undefined;
+          if (normalized === "yes") return "Yes";
+          if (normalized === "no") return "No";
+          return value;
+        },
+        z.enum(["Yes", "No"]).optional(),
+      ),
+      stationFrom: z.string().trim().optional(),
+      stationTo: z.string().trim().optional(),
+      prefixFromDate: z.string().trim().optional(),
+      prefixToDate: z.string().trim().optional(),
+      prefixDays: z.string().trim().optional(),
+      suffixFromDate: z.string().trim().optional(),
+      suffixToDate: z.string().trim().optional(),
+      suffixDays: z.string().trim().optional(),
+      applicantSignature: z.string().trim().optional(),
+      applicantSignatureDate: z.string().trim().optional(),
+    }),
+    signature: z
+      .object({
+        animation: z
+          .array(
+            z
+              .object({
+                points: z
+                  .array(
+                    z.object({
+                      x: z.number(),
+                      y: z.number(),
+                      time: z.number(),
+                    }),
+                  )
+                  .min(1),
+              })
+              .passthrough(),
+          )
+          .min(1),
+        image: z.string().trim().startsWith("data:image/png;base64,"),
+      })
+      .optional(),
+    otpVerified: z.boolean().optional().default(false),
+  })
+  .superRefine((value, context) => {
+    const usesDigitalSignature =
+      value.form.applicantSignature === DIGITAL_SIGNATURE_VALUE;
+
+    if (usesDigitalSignature) {
+      if (!value.signature) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["signature"],
+          message: "Digital signature image is required.",
+        });
+      }
+
+      if (!value.otpVerified) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["otpVerified"],
+          message: "OTP verification is required for digital signature.",
+        });
+      }
+    }
+  });
 
 const approvalActionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
@@ -539,9 +566,10 @@ export const submitEarnedLeave = async (
   }
 
   const signatureTimestamp = new Date().toISOString();
-  const signatureAnimationSerialized = JSON.stringify(
-    parsed.signature.animation,
-  );
+  const hasDigitalSignature = Boolean(parsed.signature && parsed.otpVerified);
+  const signatureAnimationSerialized = hasDigitalSignature
+    ? JSON.stringify(parsed.signature?.animation)
+    : "";
 
   const application = await prisma.leaveApplication.create({
     data: {
@@ -571,16 +599,24 @@ export const submitEarnedLeave = async (
     )
     .digest("hex");
 
+  const signatureProof = hasDigitalSignature
+    ? {
+        formId: application.id,
+        animation: parsed.signature?.animation,
+        image: parsed.signature?.image,
+        timestamp: signatureTimestamp,
+        hash: signatureHash,
+        otpVerified: true,
+      }
+    : {
+        mode: "TYPED",
+        value: parsed.form.applicantSignature,
+        timestamp: signatureTimestamp,
+      };
+
   const metadataWithSignature: Record<string, unknown> = {
     ...metadata,
-    signatureProof: {
-      formId: application.id,
-      animation: parsed.signature.animation,
-      image: parsed.signature.image,
-      timestamp: signatureTimestamp,
-      hash: signatureHash,
-      otpVerified: true,
-    },
+    signatureProof,
   };
 
   await prisma.leaveApplication.update({

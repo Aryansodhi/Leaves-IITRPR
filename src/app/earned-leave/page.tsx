@@ -138,7 +138,7 @@ export default function EarnedLeavePage() {
     handleSendOtp,
     handleVerifyOtp,
     resetAfterSubmit,
-  } = useSignatureOtp({ enableTyped: false });
+  } = useSignatureOtp({ enableTyped: true });
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -182,7 +182,10 @@ export default function EarnedLeavePage() {
     data.fromSession = fromSession;
     data.toSession = toSession;
     data.days = computedLeaveDays;
-    data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
+    data.applicantSignature =
+      signatureMode === "typed"
+        ? typedSignature.trim()
+        : DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("earned-leave", data);
 
     // Exclude row 6 (prefix/suffix) fields from required validation
@@ -290,6 +293,7 @@ export default function EarnedLeavePage() {
     }
 
     const signatureError = ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
       digital:
         "Please complete Digital Signature and OTP verification on the form before submitting.",
     });
@@ -448,6 +452,7 @@ export default function EarnedLeavePage() {
 
   const handleConfirmSubmit = async () => {
     const signatureError = ensureReadyForSubmit({
+      typed: "Please type your signature before submitting.",
       digital:
         "Complete digital signature and OTP verification before submitting.",
     });
@@ -466,8 +471,8 @@ export default function EarnedLeavePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           form: pendingDataRef.current,
-          signature: signatureCapture,
-          otpVerified: true,
+          signature: signatureMode === "digital" ? signatureCapture : undefined,
+          otpVerified: signatureMode === "digital",
         }),
       });
 
@@ -617,12 +622,22 @@ export default function EarnedLeavePage() {
             <p className="text-right text-[12px] text-slate-900">
               आवेदक के हस्ताक्षर दिनांक सहित / Signature of the applicant with
               date:{" "}
-              <UnderlineInput
+              <input
+                type="hidden"
                 id="applicantSignature"
-                width="w-40"
+                name="applicantSignature"
+                value={
+                  signatureMode === "typed"
+                    ? typedSignature
+                    : DIGITAL_SIGNATURE_VALUE
+                }
                 readOnly
-                defaultValue={DIGITAL_SIGNATURE_VALUE}
               />{" "}
+              <span className="inline-flex h-9 w-40 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[13px] text-slate-900">
+                {signatureMode === "typed"
+                  ? typedSignature
+                  : "DIGITALLY_SIGNED"}
+              </span>{" "}
               <DateUnderlineInput
                 id="applicantSignatureDate"
                 width="w-32"
