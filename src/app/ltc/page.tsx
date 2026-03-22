@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import type { FormEvent, InputHTMLAttributes } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -53,6 +55,14 @@ const UnderlineInput = ({
 const pages = ["LTC form", "Office sections"] as const;
 
 export default function LtcPage() {
+  return (
+    <Suspense fallback={null}>
+      <LtcPageContent />
+    </Suspense>
+  );
+}
+
+function LtcPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

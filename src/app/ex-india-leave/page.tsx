@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import type { FormEvent, InputHTMLAttributes } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -71,6 +73,14 @@ const pages = [
 ] as const;
 
 export default function ExIndiaLeavePage() {
+  return (
+    <Suspense fallback={null}>
+      <ExIndiaLeavePageContent />
+    </Suspense>
+  );
+}
+
+function ExIndiaLeavePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

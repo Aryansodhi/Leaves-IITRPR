@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import type { ChangeEvent, FormEvent, InputHTMLAttributes } from "react";
-import { useEffect, useRef, useState, forwardRef } from "react";
+import { Suspense, useEffect, useRef, useState, forwardRef } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -127,6 +129,14 @@ const COUNTRY_CODE_OPTIONS = [
 ] as const;
 
 export default function StationLeavePage() {
+  return (
+    <Suspense fallback={null}>
+      <StationLeavePageContent />
+    </Suspense>
+  );
+}
+
+function StationLeavePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

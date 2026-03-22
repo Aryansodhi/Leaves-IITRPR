@@ -1,7 +1,9 @@
 ﻿"use client";
 
+export const dynamic = "force-dynamic";
+
 import type { ChangeEvent, FormEvent, InputHTMLAttributes } from "react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -100,6 +102,14 @@ const DateUnderlineInput = ({
 );
 
 export default function EarnedLeavePage() {
+  return (
+    <Suspense fallback={null}>
+      <EarnedLeavePageContent />
+    </Suspense>
+  );
+}
+
+function EarnedLeavePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

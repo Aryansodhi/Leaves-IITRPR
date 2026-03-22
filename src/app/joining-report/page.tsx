@@ -1,11 +1,13 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import type {
   FormEvent,
   InputHTMLAttributes,
   SelectHTMLAttributes,
 } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -122,6 +124,14 @@ const PERIOD_SESSION_OPTIONS = [
 ] as const;
 
 export default function JoiningReportPage() {
+  return (
+    <Suspense fallback={null}>
+      <JoiningReportPageContent />
+    </Suspense>
+  );
+}
+
+function JoiningReportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

@@ -1,7 +1,9 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import type { FormEvent, InputHTMLAttributes } from "react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -64,6 +66,14 @@ const UnderlineInput = ({
 );
 
 export default function NonAirIndiaPage() {
+  return (
+    <Suspense fallback={null}>
+      <NonAirIndiaPageContent />
+    </Suspense>
+  );
+}
+
+function NonAirIndiaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");

@@ -14,7 +14,7 @@ export const RoleDashboard = ({ config }: { config: RoleDashboardConfig }) => (
         tone={config.badge === "Applicant" ? "review" : "submitted"}
       />
       <div className="space-y-2">
-        <h1 className="text-4xl font-semibold text-slate-900">
+        <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900">
           {config.label}
         </h1>
         <p className="text-base text-slate-600">{config.blurb}</p>
