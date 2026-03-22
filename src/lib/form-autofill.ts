@@ -110,6 +110,11 @@ const setCachedProfile = (profile: AutofillProfile) => {
   window.sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile));
 };
 
+export const clearAutofillProfileCache = () => {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(PROFILE_CACHE_KEY);
+};
+
 export const getAutofillProfile = async () => {
   const cached = getCachedProfile();
   if (cached) return cached;
