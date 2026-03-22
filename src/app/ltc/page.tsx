@@ -27,11 +27,64 @@ import {
   formatSessionDays,
   getTodayIso,
 } from "@/lib/leave-session";
-import { applyAutofillToForm, saveFormDraft } from "@/lib/form-autofill";
+import {
+  applyAutofillToForm,
+  clearFormDraft,
+  saveFormDraft,
+} from "@/lib/form-autofill";
 import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+
+type WorkflowPreview = {
+  label: string;
+  steps: Array<{ actor: string; label: string }>;
+  note?: string;
+};
+
+const LTC_WORKFLOW_PREVIEWS: Array<WorkflowPreview & { key: string }> = [
+  {
+    key: "FACULTY",
+    label: "Faculty",
+    steps: [
+      { actor: "HOD", label: "HoD / Associate HoD" },
+      { actor: "ESTABLISHMENT", label: "Establishment" },
+      { actor: "ACCOUNTS", label: "Accounts" },
+      { actor: "DEAN", label: "Dean" },
+    ],
+    note: "The HoD step is chosen from your reporting chain or department mapping.",
+  },
+  {
+    key: "STAFF",
+    label: "Staff",
+    steps: [
+      { actor: "REGISTRAR", label: "Registrar" },
+      { actor: "ESTABLISHMENT", label: "Establishment" },
+      { actor: "ACCOUNTS", label: "Accounts" },
+      { actor: "REGISTRAR", label: "Registrar (final)" },
+    ],
+  },
+  {
+    key: "HOD",
+    label: "HoD",
+    steps: [
+      { actor: "DEAN", label: "Dean" },
+      { actor: "ESTABLISHMENT", label: "Establishment" },
+      { actor: "ACCOUNTS", label: "Accounts" },
+      { actor: "DEAN", label: "Dean (final)" },
+    ],
+  },
+];
+
+const resolveApplicableWorkflowKey = (roleKey: string | null) => {
+  if (!roleKey) return null;
+  if (roleKey === "ASSOCIATE_HOD") return "HOD";
+  if (roleKey === "FACULTY" || roleKey === "STAFF" || roleKey === "HOD") {
+    return roleKey;
+  }
+  return null;
+};
 
 const UnderlineInput = ({
   id,
@@ -42,19 +95,22 @@ const UnderlineInput = ({
   id: string;
   width?: string;
   className?: string;
-} & InputHTMLAttributes<HTMLInputElement>) => (
-  <input
-    id={id}
-    name={id}
-    type={props.type ?? "text"}
-    className={cn(
-      "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none",
-      width,
-      className,
-    )}
-    {...props}
-  />
-);
+} & InputHTMLAttributes<HTMLInputElement>) =>
+  // Treat readOnly/disabled fields as locked for role-gated sections.
+  ((locked: boolean) => (
+    <input
+      id={id}
+      name={id}
+      type={props.type ?? "text"}
+      className={cn(
+        "border-0 border-b border-dashed border-slate-500 bg-transparent px-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none",
+        locked && "cursor-not-allowed bg-slate-50 opacity-80",
+        width,
+        className,
+      )}
+      {...props}
+    />
+  ))(Boolean(props.readOnly || (props.disabled as boolean | undefined)));
 
 const pages = ["LTC form", "Office sections"] as const;
 
@@ -70,14 +126,28 @@ function LtcPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
+  const [viewerRoleKey, setViewerRoleKey] = useState<string | null>(null);
+  const canSeeOfficeSections =
+    viewerRoleKey === "ESTABLISHMENT" ||
+    viewerRoleKey === "ACCOUNTS" ||
+    viewerRoleKey === "REGISTRAR" ||
+    viewerRoleKey === "DEAN" ||
+    viewerRoleKey === "ADMIN";
+  const activePages = useMemo(
+    () => (canSeeOfficeSections ? pages : ([pages[0]] as const)),
+    [canSeeOfficeSections],
+  );
   const [page, setPage] = useState(0);
-  const isLastPage = page === pages.length - 1;
+  const isLastPage = page === activePages.length - 1;
   const formRef = useRef<HTMLFormElement>(null);
   const pendingDataRef = useRef<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [leaveFrom, setLeaveFrom] = useState("");
   const [leaveTo, setLeaveTo] = useState("");
   const [leaveFromSession, setLeaveFromSession] =
@@ -116,7 +186,7 @@ function LtcPageContent() {
     }
   };
 
-  const next = () => setPage((p) => Math.min(p + 1, pages.length - 1));
+  const next = () => setPage((p) => Math.min(p + 1, activePages.length - 1));
   const prev = () => setPage((p) => Math.max(p - 1, 0));
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -176,6 +246,7 @@ function LtcPageContent() {
     if (!form) return;
 
     void applyAutofillToForm(form, "ltc").then((profile) => {
+      setViewerRoleKey(profile.roleKey ?? null);
       setOtpEmail(profile.email ?? "");
       setLeaveFrom(
         form.querySelector<HTMLInputElement>("#leaveFrom")?.value ?? "",
@@ -193,6 +264,10 @@ function LtcPageContent() {
       );
     });
   }, [setOtpEmail]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, activePages.length - 1));
+  }, [activePages.length]);
 
   useEffect(() => {
     const value = computeSessionLeaveDaysFromInput(
@@ -226,20 +301,64 @@ function LtcPageContent() {
     }
   }, [leaveFrom, leaveFromSession, leaveTo, leaveToSession]);
 
-  const handleConfirmSubmit = () => {
+  const handleConfirmSubmit = async () => {
     const signatureError = signature.ensureReadyForSubmit({
       typed: "Please type your signature before submitting.",
       digital:
         "Complete digital signature and OTP verification before submitting.",
     });
     if (signatureError) {
-      window.alert(signatureError);
+      setSubmitError(signatureError);
       return;
     }
-    setConfirmed(true);
-    setDialogState("success");
-    signature.resetAfterSubmit();
-    console.log("LTC form submitted", pendingDataRef.current);
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitMessage(null);
+
+    try {
+      const response = await fetch("/api/ltc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          form: pendingDataRef.current,
+          signature:
+            signature.signatureMode !== "typed"
+              ? signature.signatureCapture
+              : undefined,
+          otpVerified:
+            signature.signatureMode !== "typed"
+              ? signature.isOtpVerified
+              : false,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "Failed to submit LTC application.");
+      }
+
+      setConfirmed(true);
+      setSubmitMessage(
+        result.message || "LTC application submitted successfully.",
+      );
+      clearFormDraft("ltc");
+      signature.resetAfterSubmit();
+      setDialogState("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Unable to submit LTC application.";
+      setSubmitError(errorMessage);
+      setDialogState(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCloseDialog = () => {
@@ -261,7 +380,10 @@ function LtcPageContent() {
     }
   };
 
-  const pageLabel = useMemo(() => `${pages[page]} (${page + 1}/2)`, [page]);
+  const pageLabel = useMemo(
+    () => `${activePages[page]} (${page + 1}/${activePages.length})`,
+    [activePages, page],
+  );
   return (
     <DashboardShell>
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
@@ -295,7 +417,11 @@ function LtcPageContent() {
             signatureCapture={signature.signatureCapture}
           />
         )}
-        {page === 1 && <OfficeSectionsPage />}
+        {page === 1 && canSeeOfficeSections && (
+          <OfficeSectionsPage viewerRoleKey={viewerRoleKey} />
+        )}
+
+        <LtcWorkflowPreviewCard viewerRoleKey={viewerRoleKey} />
 
         <SignatureOtpVerificationCard
           storageScope="ltc"
@@ -309,7 +435,7 @@ function LtcPageContent() {
           otpStatusMessage={signature.otpStatusMessage}
           isSendingOtp={signature.isSendingOtp}
           isVerifyingOtp={signature.isVerifyingOtp}
-          isSubmitting={false}
+          isSubmitting={isSubmitting}
           onSendOtp={signature.handleSendOtp}
           onVerifyOtp={signature.handleVerifyOtp}
           onSignatureChange={signature.onSignatureChange}
@@ -317,11 +443,15 @@ function LtcPageContent() {
         />
 
         <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-          {confirmed
-            ? "Submission confirmed. You can still edit and resubmit if needed."
-            : missingFields.length > 0
-              ? "Please fill the highlighted fields."
-              : "Fill all fields, then submit."}
+          {submitError
+            ? submitError
+            : submitMessage
+              ? submitMessage
+              : confirmed
+                ? "Submission confirmed. You can still edit and resubmit if needed."
+                : missingFields.length > 0
+                  ? "Please fill the highlighted fields."
+                  : "Fill all fields, then submit."}
         </div>
 
         <div className="flex items-center justify-between border-t border-slate-200 pt-3">
@@ -339,8 +469,13 @@ function LtcPageContent() {
               type={isLastPage ? "submit" : "button"}
               onClick={isLastPage ? undefined : next}
               className="px-4 text-sm"
+              disabled={isSubmitting}
             >
-              {isLastPage ? "Submit" : "Next"}
+              {isLastPage
+                ? isSubmitting
+                  ? "Submitting..."
+                  : "Submit"
+                : "Next"}
               {!isLastPage && <ArrowRight className="ml-1 h-4 w-4" />}
             </Button>
           </div>
@@ -353,6 +488,7 @@ function LtcPageContent() {
           onConfirm={handleConfirmSubmit}
           onDownload={handleDownloadPdf}
           isDownloading={isDownloading}
+          isSubmitting={isSubmitting}
         />
       </form>
     </DashboardShell>
@@ -366,13 +502,15 @@ const ConfirmationModal = ({
   onConfirm,
   onDownload,
   isDownloading,
+  isSubmitting,
 }: {
   state: DialogState;
   title: string;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>;
   onDownload: () => void;
   isDownloading: boolean;
+  isSubmitting: boolean;
 }) => {
   if (!state) return null;
   const isSuccess = state === "success";
@@ -430,6 +568,7 @@ const ConfirmationModal = ({
                 onClick={onCancel}
                 className="px-3 text-sm"
                 type="button"
+                disabled={isSubmitting}
               >
                 Go back
               </Button>
@@ -437,8 +576,9 @@ const ConfirmationModal = ({
                 type="button"
                 onClick={onConfirm}
                 className="px-4 text-sm"
+                disabled={isSubmitting}
               >
-                Yes, submit
+                {isSubmitting ? "Submitting..." : "Yes, submit"}
               </Button>
             </>
           )}
@@ -574,13 +714,95 @@ const LtcFormPage = ({
   </SurfaceCard>
 );
 
-const OfficeSectionsPage = () => (
+const OfficeSectionsPage = ({
+  viewerRoleKey,
+}: {
+  viewerRoleKey: string | null;
+}) => (
   <SurfaceCard className="mx-auto max-w-5xl space-y-6 border border-slate-300 bg-white p-4 md:p-6">
-    <EstablishmentSection />
-    <AccountsSection />
-    <AuditSection />
+    <EstablishmentSection viewerRoleKey={viewerRoleKey} />
+    <AccountsSection viewerRoleKey={viewerRoleKey} />
+    <AuditSection viewerRoleKey={viewerRoleKey} />
   </SurfaceCard>
 );
+
+const LtcWorkflowPreviewCard = ({
+  viewerRoleKey,
+}: {
+  viewerRoleKey: string | null;
+}) => {
+  const applicableKey = resolveApplicableWorkflowKey(viewerRoleKey);
+  const applicable = applicableKey
+    ? (LTC_WORKFLOW_PREVIEWS.find((entry) => entry.key === applicableKey) ??
+      null)
+    : null;
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Approval workflow
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            This is the complete routing for LTC applications.
+          </p>
+        </div>
+        {applicable?.steps?.[0] ? (
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
+            Your route: {applicable.label} | Next: {applicable.steps[0].label}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-3">
+        {applicable ? (
+          <div
+            className={cn(
+              "rounded-xl border border-slate-200 bg-white p-4 ring-2 ring-slate-300",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">
+                {applicable.label}
+              </p>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
+                Your route
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {applicable.steps.map((step, index) => (
+                <div key={`${applicable.key}-${step.actor}-${index}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
+                      {index + 1}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-800">
+                      {step.label}
+                    </span>
+                  </div>
+                  {index < applicable.steps.length - 1 ? (
+                    <div className="ml-3.5 mt-1 h-3 border-l border-dashed border-slate-300" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            {applicable.note ? (
+              <p className="mt-3 text-xs text-slate-500">{applicable.note}</p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-slate-500">
+            Your role does not submit LTC applications, but office roles may
+            still view and process them.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const RowSimple = ({
   number,
@@ -986,252 +1208,368 @@ const Undertaking = ({
   </div>
 );
 
-const EstablishmentSection = () => (
-  <div className="space-y-3 text-[12px] text-slate-900">
-    <div className="text-center font-semibold">
-      (A) FOR USE OF ESTABLISHMENT SECTION
-    </div>
-    <div className="flex flex-wrap items-center gap-2">
-      <span>
-        Fresh Recruit i.e. joining Govt. Service after 01.09.2008 /otherwise,
-        Date of joining:
-      </span>
-      <UnderlineInput id="freshRecruitDate" width="w-40" />
-      <span>Block year:</span>
-      <UnderlineInput id="estBlockYear" width="w-28" />
-    </div>
-    <div className="overflow-x-auto">
-      <table className="w-full border border-slate-400 text-[11px]">
-        <thead className="bg-slate-50">
-          <tr>
-            <th className="w-14 border border-slate-400 px-2 py-1 text-left">
-              Sl. No.
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Particulars
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Last availed
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Current LTC
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              01
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              Nature of LTC (Home Town/Anywhere in India-place visited/to be
-              visited)
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estNatureLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estNatureCurrent" className="w-full" />
-            </td>
-          </tr>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              02
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              Period (from _______ to _______)
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estPeriodLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estPeriodCurrent" className="w-full" />
-            </td>
-          </tr>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              03
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              LTC for Self/Family
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estSelfFamilyLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estSelfFamilyCurrent" className="w-full" />
-            </td>
-          </tr>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              04
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              Earned leave encashment (No. of Days)
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estEncashLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estEncashCurrent" className="w-full" />
-            </td>
-          </tr>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              05
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <div className="space-y-1">
-                <div>Earned Leave standing to his credit on ________ =</div>
-                <div>Balance Earned leave after this encashment =</div>
-                <div>Earned Leave encashment admissible =</div>
-              </div>
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estLeaveLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estLeaveCurrent" className="w-full" />
-            </td>
-          </tr>
-          <tr>
-            <td className="border border-slate-400 px-2 py-1 font-semibold">
-              06
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              Period and nature of leave applied for and need to be sanctioned
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estPeriodNatureLast" className="w-full" />
-            </td>
-            <td className="border border-slate-400 px-2 py-1">
-              <UnderlineInput id="estPeriodNatureCurrent" className="w-full" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p className="text-[11px]">
-      May consider and approve the above LTC (Home Town/Anywhere in India),
-      Leave and Encashment of Leave.
-    </p>
-    <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
-      <span>Junior Assistant</span>
-      <span>Junior Superintendent/Superintendent</span>
-      <span>AR/DR</span>
-    </div>
-  </div>
-);
+const EstablishmentSection = ({
+  viewerRoleKey,
+}: {
+  viewerRoleKey: string | null;
+}) => {
+  const locked = !(
+    viewerRoleKey === "ESTABLISHMENT" || viewerRoleKey === "ADMIN"
+  );
 
-const AccountsSection = () => (
-  <div className="space-y-3 text-[12px] text-slate-900">
-    <div className="text-center font-semibold">
-      (B) For use by the Accounts Section
-    </div>
-    <div className="overflow-x-auto">
-      <table className="w-full border border-slate-400 text-[11px]">
-        <thead className="bg-slate-50">
-          <tr>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              From
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">To</th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Mode of Travel
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              No. of fares
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Single fare
-            </th>
-            <th className="border border-slate-400 px-2 py-1 text-left">
-              Amount
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {[1, 2, 3, 4].map((row) => (
-            <tr key={row}>
-              <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id={`accountsFrom${row}`} className="w-full" />
+  return (
+    <div className="space-y-3 text-[12px] text-slate-900">
+      <div className="text-center font-semibold">
+        (A) FOR USE OF ESTABLISHMENT SECTION
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span>
+          Fresh Recruit i.e. joining Govt. Service after 01.09.2008 /otherwise,
+          Date of joining:
+        </span>
+        <UnderlineInput id="freshRecruitDate" width="w-40" readOnly={locked} />
+        <span>Block year:</span>
+        <UnderlineInput id="estBlockYear" width="w-28" readOnly={locked} />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border border-slate-400 text-[11px]">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="w-14 border border-slate-400 px-2 py-1 text-left">
+                Sl. No.
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Particulars
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Last availed
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Current LTC
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                01
               </td>
               <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id={`accountsTo${row}`} className="w-full" />
-              </td>
-              <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id={`accountsMode${row}`} className="w-full" />
-              </td>
-              <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id={`accountsFares${row}`} className="w-full" />
+                Nature of LTC (Home Town/Anywhere in India-place visited/to be
+                visited)
               </td>
               <td className="border border-slate-400 px-2 py-1">
                 <UnderlineInput
-                  id={`accountsSingleFare${row}`}
+                  id="estNatureLast"
                   className="w-full"
+                  readOnly={locked}
                 />
               </td>
               <td className="border border-slate-400 px-2 py-1">
                 <UnderlineInput
-                  id={`accountsAmount${row}`}
+                  id="estNatureCurrent"
                   className="w-full"
+                  readOnly={locked}
                 />
               </td>
             </tr>
-          ))}
-        </tbody>
-      </table>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                02
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                Period (from _______ to _______)
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estPeriodLast"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estPeriodCurrent"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                03
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                LTC for Self/Family
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estSelfFamilyLast"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estSelfFamilyCurrent"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                04
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                Earned leave encashment (No. of Days)
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estEncashLast"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estEncashCurrent"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                05
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <div className="space-y-1">
+                  <div>Earned Leave standing to his credit on ________ =</div>
+                  <div>Balance Earned leave after this encashment =</div>
+                  <div>Earned Leave encashment admissible =</div>
+                </div>
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estLeaveLast"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estLeaveCurrent"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-slate-400 px-2 py-1 font-semibold">
+                06
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                Period and nature of leave applied for and need to be sanctioned
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estPeriodNatureLast"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                <UnderlineInput
+                  id="estPeriodNatureCurrent"
+                  className="w-full"
+                  readOnly={locked}
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px]">
+        May consider and approve the above LTC (Home Town/Anywhere in India),
+        Leave and Encashment of Leave.
+      </p>
+      <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
+        <span>Junior Assistant</span>
+        <span>Junior Superintendent/Superintendent</span>
+        <span>AR/DR</span>
+      </div>
     </div>
-    <div className="space-y-2 text-[11px]">
-      <p>
-        Total Rs. <UnderlineInput id="accountsTotal" width="w-40" />
-      </p>
-      <p>
-        Advance admissible (90% of above) = Rs.{" "}
-        <UnderlineInput id="accountsAdmissible" width="w-32" /> Passed for Rs.{" "}
-        <UnderlineInput id="accountsPassed" width="w-32" />
-      </p>
-      <p>
-        (in words); Rupees <UnderlineInput id="accountsInWords" width="w-64" />
-      </p>
-      <p>
-        Debitable to LTC advance Dr./Mr./Mrs./Ms{" "}
-        <UnderlineInput id="accountsDebitable" width="w-64" />
-      </p>
-    </div>
-    <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
-      <span>JAA/SAA</span>
-      <span>JAO/AO</span>
-      <span>AR/DR</span>
-    </div>
-  </div>
-);
+  );
+};
 
-const AuditSection = () => (
-  <div className="space-y-3 text-[12px] text-slate-900">
-    <div className="text-center font-semibold">
-      (C) For use by the Audit Section
-    </div>
-    <div className="border border-slate-400 p-3 text-[11px]">
-      <p>Comments/Observations:</p>
-      <UnderlineInput id="auditComments" className="mt-2 w-full" />
-    </div>
-    <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
-      <span>Dealing Assistant</span>
-      <span>JAO/AO</span>
-      <span>Sr. Audit Officer</span>
-    </div>
-    <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
-      <div className="flex items-center gap-2">
-        <span>Recommended & Forwarded</span>
-        <UnderlineInput id="auditRecommended" width="w-40" />
-        <span>Registrar</span>
+const AccountsSection = ({
+  viewerRoleKey,
+}: {
+  viewerRoleKey: string | null;
+}) => {
+  const locked = !(viewerRoleKey === "ACCOUNTS" || viewerRoleKey === "ADMIN");
+
+  return (
+    <div className="space-y-3 text-[12px] text-slate-900">
+      <div className="text-center font-semibold">
+        (B) For use by the Accounts Section
       </div>
-      <div className="flex items-center gap-2">
-        <span>Approved/Not Approved</span>
-        <UnderlineInput id="auditApproved" width="w-40" />
-        <span>Dean (F&A)</span>
+      <div className="overflow-x-auto">
+        <table className="w-full border border-slate-400 text-[11px]">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                From
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                To
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Mode of Travel
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                No. of fares
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Single fare
+              </th>
+              <th className="border border-slate-400 px-2 py-1 text-left">
+                Amount
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {[1, 2, 3, 4].map((row) => (
+              <tr key={row}>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsFrom${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsTo${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsMode${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsFares${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsSingleFare${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+                <td className="border border-slate-400 px-2 py-1">
+                  <UnderlineInput
+                    id={`accountsAmount${row}`}
+                    className="w-full"
+                    readOnly={locked}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-2 text-[11px]">
+        <p>
+          Total Rs.{" "}
+          <UnderlineInput id="accountsTotal" width="w-40" readOnly={locked} />
+        </p>
+        <p>
+          Advance admissible (90% of above) = Rs.{" "}
+          <UnderlineInput
+            id="accountsAdmissible"
+            width="w-32"
+            readOnly={locked}
+          />{" "}
+          Passed for Rs.{" "}
+          <UnderlineInput id="accountsPassed" width="w-32" readOnly={locked} />
+        </p>
+        <p>
+          (in words); Rupees{" "}
+          <UnderlineInput id="accountsInWords" width="w-64" readOnly={locked} />
+        </p>
+        <p>
+          Debitable to LTC advance Dr./Mr./Mrs./Ms{" "}
+          <UnderlineInput
+            id="accountsDebitable"
+            width="w-64"
+            readOnly={locked}
+          />
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
+        <span>JAA/SAA</span>
+        <span>JAO/AO</span>
+        <span>AR/DR</span>
       </div>
     </div>
-  </div>
-);
+  );
+};
+
+const AuditSection = ({ viewerRoleKey }: { viewerRoleKey: string | null }) => {
+  const registrarLocked = !(
+    viewerRoleKey === "REGISTRAR" || viewerRoleKey === "ADMIN"
+  );
+  const deanLocked = !(viewerRoleKey === "DEAN" || viewerRoleKey === "ADMIN");
+
+  return (
+    <div className="space-y-3 text-[12px] text-slate-900">
+      <div className="text-center font-semibold">
+        (C) For use by the Audit Section
+      </div>
+      <div className="border border-slate-400 p-3 text-[11px]">
+        <p>Comments/Observations:</p>
+        <UnderlineInput
+          id="auditComments"
+          className="mt-2 w-full"
+          readOnly={registrarLocked}
+        />
+      </div>
+      <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
+        <span>Dealing Assistant</span>
+        <span>JAO/AO</span>
+        <span>Sr. Audit Officer</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold">
+        <div className="flex items-center gap-2">
+          <span>Recommended & Forwarded</span>
+          <UnderlineInput
+            id="auditRecommended"
+            width="w-40"
+            readOnly={registrarLocked}
+          />
+          <span>Registrar</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>Approved/Not Approved</span>
+          <UnderlineInput
+            id="auditApproved"
+            width="w-40"
+            readOnly={deanLocked}
+          />
+          <span>Dean (F&A)</span>
+        </div>
+      </div>
+    </div>
+  );
+};
