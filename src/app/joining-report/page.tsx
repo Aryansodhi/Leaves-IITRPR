@@ -427,8 +427,8 @@ function JoiningReportPageContent() {
         },
         body: JSON.stringify({
           form: pendingDataRef.current,
-          signature: signatureMode === "digital" ? signatureCapture : undefined,
-          otpVerified: signatureMode === "digital",
+          signature: signatureMode !== "typed" ? signatureCapture : undefined,
+          otpVerified: signatureMode !== "typed" ? isOtpVerified : false,
         }),
       });
 
@@ -839,9 +839,20 @@ function JoiningReportPageContent() {
                     readOnly
                   />
                   <span className="inline-flex h-9 w-56 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-sm text-slate-900">
-                    {signatureMode === "typed"
-                      ? typedSignature
-                      : "DIGITALLY_SIGNED"}
+                    {signatureMode === "typed" ? (
+                      typedSignature
+                    ) : signatureCapture ? (
+                      <Image
+                        src={signatureCapture.image}
+                        alt="Applicant signature"
+                        width={224}
+                        height={36}
+                        unoptimized
+                        className="h-8 w-full object-contain"
+                      />
+                    ) : (
+                      "DIGITALLY_SIGNED"
+                    )}
                   </span>
                 </p>
                 <p>
@@ -894,6 +905,7 @@ function JoiningReportPageContent() {
           ) : null}
 
           <SignatureOtpVerificationCard
+            storageScope="joining-report"
             signatureMode={signatureMode}
             onSignatureModeChange={onSignatureModeChange}
             typedSignature={typedSignature}

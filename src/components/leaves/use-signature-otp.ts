@@ -74,7 +74,7 @@ export const useSignatureOtp = ({
       if (!isOtpVerified || !signatureCapture) {
         return (
           messages?.digital ??
-          "Please complete Digital Signature and OTP verification before submitting."
+          "Please complete signature capture and OTP verification before submitting."
         );
       }
 
@@ -84,9 +84,9 @@ export const useSignatureOtp = ({
   );
 
   const handleVerifyOtp = useCallback(async () => {
-    if (signatureMode !== "digital") {
+    if (signatureMode === "typed") {
       setOtpStatusMessage(
-        "OTP verification is only required for digital signature mode.",
+        "OTP verification is not required when using typed signature mode.",
       );
       setIsOtpVerified(false);
       return;
@@ -144,7 +144,7 @@ export const useSignatureOtp = ({
   }, [otpCode, otpEmail, signatureCapture, signatureMode]);
 
   const handleSendOtp = useCallback(async () => {
-    if (signatureMode !== "digital") {
+    if (signatureMode === "typed") {
       setOtpStatusMessage(
         "OTP is not required when using typed signature mode.",
       );

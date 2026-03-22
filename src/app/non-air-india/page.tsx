@@ -152,7 +152,10 @@ function NonAirIndiaPageContent() {
     data.onwardSession = onwardSession;
     data.returnSession = returnSession;
     data.travelDays = computedTravelDays;
-    data.applicantSignature = DIGITAL_SIGNATURE_VALUE;
+    data.applicantSignature =
+      signatureMode === "typed"
+        ? typedSignature.trim()
+        : DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("non-air-india", data);
 
     // Check missing for only required fields
@@ -295,8 +298,8 @@ function NonAirIndiaPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           form: pendingDataRef.current,
-          signature: signatureCapture,
-          otpVerified: true,
+          signature: signatureMode !== "typed" ? signatureCapture : undefined,
+          otpVerified: signatureMode !== "typed" ? isOtpVerified : false,
         }),
       });
 
@@ -433,13 +436,33 @@ function NonAirIndiaPageContent() {
 
           <div className="flex items-center justify-end text-[12px] text-slate-900">
             <span>(Signature of Applicant’s with date)</span>
-            <UnderlineInput
+            <input
+              type="hidden"
               id="applicantSignature"
-              width="w-64"
-              className="ml-2"
+              name="applicantSignature"
+              value={
+                signatureMode === "typed"
+                  ? typedSignature
+                  : DIGITAL_SIGNATURE_VALUE
+              }
               readOnly
-              defaultValue={DIGITAL_SIGNATURE_VALUE}
             />
+            <span className="ml-2 inline-flex h-9 w-64 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[13px] text-slate-900">
+              {signatureMode === "typed" ? (
+                typedSignature
+              ) : signatureCapture ? (
+                <Image
+                  src={signatureCapture.image}
+                  alt="Applicant signature"
+                  width={256}
+                  height={36}
+                  unoptimized
+                  className="h-8 w-full object-contain"
+                />
+              ) : (
+                "DIGITALLY_SIGNED"
+              )}
+            </span>
           </div>
 
           <div className="space-y-2 text-[12px] text-slate-900">
@@ -450,6 +473,7 @@ function NonAirIndiaPageContent() {
         </SurfaceCard>
 
         <SignatureOtpVerificationCard
+          storageScope="non-air-india"
           signatureMode={signatureMode}
           onSignatureModeChange={onSignatureModeChange}
           typedSignature={typedSignature}

@@ -361,10 +361,13 @@ function StationLeavePageContent() {
         body: JSON.stringify({
           form: pendingDataRef.current,
           signature:
-            signature.signatureMode === "digital"
+            signature.signatureMode !== "typed"
               ? signature.signatureCapture
               : undefined,
-          otpVerified: signature.signatureMode === "digital",
+          otpVerified:
+            signature.signatureMode !== "typed"
+              ? signature.isOtpVerified
+              : false,
         }),
       });
 
@@ -709,6 +712,7 @@ function StationLeavePageContent() {
           ) : null}
 
           <SignatureOtpVerificationCard
+            storageScope="station-leave"
             signatureMode={signature.signatureMode}
             onSignatureModeChange={signature.onSignatureModeChange}
             typedSignature={signature.typedSignature}

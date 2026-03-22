@@ -9,7 +9,11 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
+import {
+  SignatureOtpVerificationCard,
+  type SignatureCapture,
+  type SignatureMode,
+} from "@/components/leaves/signature-otp-verification-card";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -286,11 +290,15 @@ function LtcPageContent() {
             onLeaveToChange={setLeaveTo}
             onLeaveFromSessionChange={setLeaveFromSession}
             onLeaveToSessionChange={setLeaveToSession}
+            signatureMode={signature.signatureMode}
+            typedSignature={signature.typedSignature}
+            signatureCapture={signature.signatureCapture}
           />
         )}
         {page === 1 && <OfficeSectionsPage />}
 
         <SignatureOtpVerificationCard
+          storageScope="ltc"
           signatureMode={signature.signatureMode}
           onSignatureModeChange={signature.onSignatureModeChange}
           typedSignature={signature.typedSignature}
@@ -450,6 +458,9 @@ const LtcFormPage = ({
   onLeaveToChange,
   onLeaveFromSessionChange,
   onLeaveToSessionChange,
+  signatureMode,
+  typedSignature,
+  signatureCapture,
 }: {
   leaveFrom: string;
   leaveTo: string;
@@ -460,6 +471,9 @@ const LtcFormPage = ({
   onLeaveToChange: (value: string) => void;
   onLeaveFromSessionChange: (value: DaySession) => void;
   onLeaveToSessionChange: (value: DaySession) => void;
+  signatureMode: SignatureMode;
+  typedSignature: string;
+  signatureCapture: SignatureCapture | null;
 }) => (
   <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
     <header className="space-y-1 text-center text-slate-900">
@@ -552,7 +566,11 @@ const LtcFormPage = ({
     </div>
 
     <ImportantNote />
-    <Undertaking />
+    <Undertaking
+      signatureMode={signatureMode}
+      typedSignature={typedSignature}
+      signatureCapture={signatureCapture}
+    />
   </SurfaceCard>
 );
 
@@ -884,7 +902,15 @@ const ImportantNote = () => (
   </div>
 );
 
-const Undertaking = () => (
+const Undertaking = ({
+  signatureMode,
+  typedSignature,
+  signatureCapture,
+}: {
+  signatureMode: SignatureMode;
+  typedSignature: string;
+  signatureCapture: SignatureCapture | null;
+}) => (
   <div className="space-y-3 text-[12px] text-slate-900">
     <p className="font-semibold">I undertake:-</p>
     <ol className="space-y-1 pl-5">
@@ -926,12 +952,31 @@ const Undertaking = () => (
       <div className="font-semibold">Forwarded please.</div>
       <div className="flex items-center gap-2">
         <span>Signature of the Applicant with date</span>
-        <UnderlineInput
+        <input
+          type="hidden"
           id="applicantSignature"
-          width="w-56"
+          name="applicantSignature"
+          value={
+            signatureMode === "typed" ? typedSignature : DIGITAL_SIGNATURE_VALUE
+          }
           readOnly
-          defaultValue={DIGITAL_SIGNATURE_VALUE}
         />
+        <span className="inline-flex h-9 w-56 items-end border-b border-dashed border-slate-500 px-1 pb-0.5 align-middle text-left text-[13px] text-slate-900">
+          {signatureMode === "typed" ? (
+            typedSignature
+          ) : signatureCapture ? (
+            <Image
+              src={signatureCapture.image}
+              alt="Applicant signature"
+              width={224}
+              height={36}
+              unoptimized
+              className="h-8 w-full object-contain"
+            />
+          ) : (
+            DIGITAL_SIGNATURE_VALUE
+          )}
+        </span>
       </div>
     </div>
     <div className="flex flex-wrap items-center justify-between text-[12px]">

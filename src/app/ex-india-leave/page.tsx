@@ -326,6 +326,7 @@ function ExIndiaLeavePageContent() {
         {page === 3 && <UndertakingFormTwo />}
 
         <SignatureOtpVerificationCard
+          storageScope="ex-india-leave"
           signatureMode={signatureMode}
           onSignatureModeChange={onSignatureModeChange}
           typedSignature={typedSignature}

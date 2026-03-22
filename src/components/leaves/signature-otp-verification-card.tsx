@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BadgeCheck, CirclePlay, PenLine, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import type SignaturePad from "signature_pad";
 
 import { Button } from "@/components/ui/button";
+import {
+  getSessionEncryptionPassword,
+  loadDecryptedItem,
+  removeItem,
+  saveEncryptedItem,
+} from "@/lib/encrypted-local-storage";
 
-export type SignatureMode = "digital" | "typed";
+export type SignatureMode = "digital" | "upload" | "typed";
 
 export type SignaturePoint = {
   x: number;
@@ -25,7 +31,70 @@ export type SignatureCapture = {
   image: string;
 };
 
+const SIGNATURE_STORAGE_KEY = (scope: string) =>
+  `lf-signature-capture-v1:${scope || "global"}`;
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read signature file."));
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Unable to read signature file."));
+    };
+    reader.readAsDataURL(file);
+  });
+
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load signature image."));
+    img.src = src;
+  });
+
+const convertImageToPngDataUrl = async (file: File) => {
+  const inputDataUrl = await readFileAsDataUrl(file);
+  if (inputDataUrl.startsWith("data:image/png;base64,")) return inputDataUrl;
+
+  const img = await loadImage(inputDataUrl);
+  const canvas = document.createElement("canvas");
+  const width = 560;
+  const height = 180;
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Unable to process signature image.");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  const padding = 18;
+  const targetWidth = Math.max(width - padding * 2, 1);
+  const targetHeight = Math.max(height - padding * 2, 1);
+  const scale = Math.min(
+    targetWidth / Math.max(img.width, 1),
+    targetHeight / Math.max(img.height, 1),
+  );
+  const drawWidth = img.width * scale;
+  const drawHeight = img.height * scale;
+  const dx = (width - drawWidth) / 2;
+  const dy = (height - drawHeight) / 2;
+
+  ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+  return canvas.toDataURL("image/png");
+};
+
+const buildPlaceholderAnimation = (): SignatureStroke[] => [
+  {
+    points: [{ x: 0, y: 0, time: Date.now() }],
+    color: "rgb(15, 23, 42)",
+  },
+];
+
 export const SignatureOtpVerificationCard = ({
+  storageScope,
   signatureMode,
   onSignatureModeChange,
   typedSignature,
@@ -42,6 +111,7 @@ export const SignatureOtpVerificationCard = ({
   onSignatureChange,
   isOtpVerified,
 }: {
+  storageScope: string;
   signatureMode: SignatureMode;
   onSignatureModeChange: (mode: SignatureMode) => void;
   typedSignature: string;
@@ -64,6 +134,14 @@ export const SignatureOtpVerificationCard = ({
   const [signatureCapture, setSignatureCapture] =
     useState<SignatureCapture | null>(null);
   const [showReplay, setShowReplay] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [encryptionPassword] = useState(() => getSessionEncryptionPassword());
+
+  const isTypedMode = signatureMode === "typed";
+  const isDigitalLike = !isTypedMode;
+  const isPadMode = signatureMode === "digital";
+  const isUploadMode = signatureMode === "upload";
 
   const canSubmitOtp = otpCode.trim().length === 6;
   const disablePrimaryActions = isSubmitting || isSendingOtp || isVerifyingOtp;
@@ -81,16 +159,121 @@ export const SignatureOtpVerificationCard = ({
     return "text-slate-600";
   }, [otpStatusMessage]);
 
-  const handleSignatureChange = (capture: SignatureCapture | null) => {
-    setSignatureCapture(capture);
-    setSignatureReady(Boolean(capture));
-    setShowOtpEntry(false);
-    setShowReplay(false);
-    onOtpCodeChange("");
-    onSignatureChange(capture);
+  const handleSignatureChange = useCallback(
+    (capture: SignatureCapture | null) => {
+      setSignatureCapture(capture);
+      setSignatureReady(Boolean(capture));
+      setShowOtpEntry(false);
+      setShowReplay(false);
+      setUploadError(null);
+      onOtpCodeChange("");
+      onSignatureChange(capture);
+      if (capture) {
+        void saveEncryptedItem(
+          SIGNATURE_STORAGE_KEY(storageScope),
+          encryptionPassword,
+          JSON.stringify(capture),
+        );
+      } else {
+        removeItem(SIGNATURE_STORAGE_KEY(storageScope));
+      }
+    },
+    [encryptionPassword, onOtpCodeChange, onSignatureChange, storageScope],
+  );
+
+  const canReplay = useMemo(() => {
+    if (!signatureCapture?.animation?.length) return false;
+    return signatureCapture.animation.some(
+      (stroke) => stroke.points.length > 1,
+    );
+  }, [signatureCapture]);
+
+  useEffect(() => {
+    if (!isDigitalLike) return;
+    if (signatureCapture) return;
+
+    let mounted = true;
+    const restore = async () => {
+      const raw = await loadDecryptedItem(
+        SIGNATURE_STORAGE_KEY(storageScope),
+        encryptionPassword,
+      );
+      if (!mounted || !raw) return;
+
+      try {
+        const parsed = JSON.parse(raw) as SignatureCapture;
+        if (!parsed?.image || typeof parsed.image !== "string") return;
+        if (!parsed.image.startsWith("data:image/png;base64,")) return;
+        if (!Array.isArray(parsed.animation) || parsed.animation.length === 0)
+          return;
+        handleSignatureChange(parsed);
+        setShowSignaturePad(true);
+      } catch {
+        // ignore
+      }
+    };
+
+    void restore();
+    return () => {
+      mounted = false;
+    };
+  }, [
+    encryptionPassword,
+    handleSignatureChange,
+    isDigitalLike,
+    signatureCapture,
+    storageScope,
+  ]);
+
+  const handleUploadClick = () => {
+    setUploadError(null);
+    fileInputRef.current?.click();
   };
 
-  const isDigitalMode = signatureMode === "digital";
+  const handleUploadFile = async (file: File | null) => {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please upload a valid image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Signature file is too large. Use a file under 5MB.");
+      return;
+    }
+
+    try {
+      setUploadError(null);
+      const pngDataUrl = await convertImageToPngDataUrl(file);
+      setShowSignaturePad(false);
+      handleSignatureChange({
+        animation: buildPlaceholderAnimation(),
+        image: pngDataUrl,
+      });
+    } catch (err) {
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : "Unable to process signature file.",
+      );
+    }
+  };
+
+  const switchMode = (mode: SignatureMode) => {
+    onSignatureModeChange(mode);
+    setShowOtpEntry(false);
+    setShowReplay(false);
+    setUploadError(null);
+
+    if (mode === "digital") {
+      setShowSignaturePad(true);
+    } else {
+      setShowSignaturePad(false);
+    }
+
+    handleSignatureChange(null);
+  };
 
   return (
     <div className="space-y-4 rounded-2xl border border-cyan-200/70 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_45%),radial-gradient(circle_at_top_right,rgba(34,197,94,0.14),transparent_38%),linear-gradient(145deg,#f8fbff_0%,#eff8ff_48%,#f9fffb_100%)] p-4 shadow-[0_16px_45px_-34px_rgba(14,116,144,0.75)] sm:p-5">
@@ -120,11 +303,23 @@ export const SignatureOtpVerificationCard = ({
               name="signatureMode"
               value="digital"
               checked={signatureMode === "digital"}
-              onChange={() => onSignatureModeChange("digital")}
+              onChange={() => switchMode("digital")}
               className="h-4 w-4"
               disabled={isSubmitting}
             />
-            Digital signature + OTP
+            Digital signature pad
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="radio"
+              name="signatureMode"
+              value="upload"
+              checked={signatureMode === "upload"}
+              onChange={() => switchMode("upload")}
+              className="h-4 w-4"
+              disabled={isSubmitting}
+            />
+            Upload signature image
           </label>
           <label className="inline-flex items-center gap-2">
             <input
@@ -132,7 +327,7 @@ export const SignatureOtpVerificationCard = ({
               name="signatureMode"
               value="typed"
               checked={signatureMode === "typed"}
-              onChange={() => onSignatureModeChange("typed")}
+              onChange={() => switchMode("typed")}
               className="h-4 w-4"
               disabled={isSubmitting}
             />
@@ -140,7 +335,19 @@ export const SignatureOtpVerificationCard = ({
           </label>
         </div>
 
-        {!isDigitalMode ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            event.target.value = "";
+            void handleUploadFile(file);
+          }}
+        />
+
+        {isTypedMode ? (
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
               Typed signature
@@ -154,82 +361,141 @@ export const SignatureOtpVerificationCard = ({
               disabled={isSubmitting}
             />
           </div>
-        ) : !showSignaturePad ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => setShowSignaturePad(true)}
-            className="h-9 px-4 text-xs font-semibold text-cyan-900"
-            disabled={isSubmitting}
-          >
-            Open Digital Signature Pad
-          </Button>
-        ) : (
+        ) : isPadMode ? (
           <div className="space-y-3">
-            <SignaturePadField onSignatureChange={handleSignatureChange} />
-
-            {signatureReady ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setShowOtpEntry(true);
-                    void onSendOtp();
-                  }}
-                  disabled={disablePrimaryActions || isOtpVerified}
-                  className="h-9 px-4 text-xs font-semibold"
-                >
-                  {isOtpVerified
-                    ? "Verified"
-                    : isSendingOtp
-                      ? "Sending OTP..."
-                      : "Verify via OTP"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowReplay(true)}
-                  className="h-9 px-2 text-xs text-slate-700"
-                  disabled={!signatureCapture}
-                >
-                  <CirclePlay className="mr-1.5 h-3.5 w-3.5" />
-                  Playback
-                </Button>
-                {isOtpVerified ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-green-700">
-                    <BadgeCheck className="h-3.5 w-3.5" />
-                    Signature Verified
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-
-            {showReplay && signatureCapture ? (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="relative w-full max-w-md rounded-xl border border-cyan-200 bg-white p-6 shadow-2xl">
-                  <button
+            {showSignaturePad ? (
+              <SignaturePadField onSignatureChange={handleSignatureChange} />
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowSignaturePad(true)}
+                className="h-9 px-4 text-xs font-semibold text-cyan-900"
+                disabled={isSubmitting}
+              >
+                Open Digital Signature Pad
+              </Button>
+            )}
+          </div>
+        ) : isUploadMode ? (
+          <div className="space-y-3">
+            {!signatureCapture ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleUploadClick}
+                className="h-9 px-4 text-xs font-semibold"
+                disabled={isSubmitting}
+              >
+                Choose signature file
+              </Button>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                  Uploaded signature preview
+                </p>
+                <Image
+                  src={signatureCapture.image}
+                  alt="Uploaded signature"
+                  width={560}
+                  height={180}
+                  unoptimized
+                  className="h-32 w-full rounded-md border border-slate-200 bg-white object-contain"
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
                     type="button"
-                    aria-label="Close playback"
-                    className="absolute right-3 top-3 text-slate-500 hover:text-slate-800"
-                    onClick={() => setShowReplay(false)}
+                    variant="ghost"
+                    className="px-2 text-xs"
+                    onClick={handleUploadClick}
+                    disabled={isSubmitting}
                   >
-                    <span aria-hidden="true">&times;</span>
-                  </button>
-                  <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-cyan-800">
-                    Signature Playback
-                  </p>
-                  <SignaturePlaybackCanvas
-                    animation={signatureCapture.animation}
-                  />
+                    Change file
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 text-xs"
+                    onClick={() => handleSignatureChange(null)}
+                    disabled={isSubmitting}
+                  >
+                    Clear
+                  </Button>
                 </div>
               </div>
+            )}
+            {uploadError ? (
+              <p className="text-xs text-rose-700">{uploadError}</p>
             ) : null}
           </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-xs text-slate-600">
+              Choose a signature mode above.
+            </div>
+          </div>
         )}
+
+        {isDigitalLike && signatureReady ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowOtpEntry(true);
+                void onSendOtp();
+              }}
+              disabled={disablePrimaryActions || isOtpVerified}
+              className="h-9 px-4 text-xs font-semibold"
+            >
+              {isOtpVerified
+                ? "Verified"
+                : isSendingOtp
+                  ? "Sending OTP..."
+                  : "Verify via OTP"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setShowReplay(true)}
+              className="h-9 px-2 text-xs text-slate-700"
+              disabled={!signatureCapture || !canReplay || !isPadMode}
+            >
+              <CirclePlay className="mr-1.5 h-3.5 w-3.5" />
+              Playback
+            </Button>
+
+            {isOtpVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-green-700">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                Signature Verified
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showReplay && signatureCapture && isPadMode ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="relative w-full max-w-md rounded-xl border border-cyan-200 bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                aria-label="Close playback"
+                className="absolute right-3 top-3 text-slate-500 hover:text-slate-800"
+                onClick={() => setShowReplay(false)}
+              >
+                <span aria-hidden="true">&times;</span>
+              </button>
+              <p className="mb-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-cyan-800">
+                Signature Playback
+              </p>
+              <SignaturePlaybackCanvas animation={signatureCapture.animation} />
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      {isDigitalMode && showOtpEntry ? (
+      {isDigitalLike && showOtpEntry ? (
         <div className="space-y-3 rounded-xl border border-emerald-200 bg-white/85 p-4 backdrop-blur-sm">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">
