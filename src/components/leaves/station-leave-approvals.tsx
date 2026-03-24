@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import {
   LeaveRequestDetailsModal,
@@ -119,6 +120,7 @@ const isEarnedLeaveRecord = (item: ApprovalRecord) =>
   item.leaveType.toLowerCase().includes("earned");
 
 export const StationLeaveApprovals = ({ role }: { role: string }) => {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +168,16 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [bulkDecisionDate, setBulkDecisionDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+
+  useEffect(() => {
+    if (roleKey !== "hod") return;
+    if (searchParams.get("section") !== "acting-hod") return;
+
+    const section = document.getElementById("acting-hod-delegation");
+    if (!section) return;
+
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [roleKey, searchParams]);
 
   const loadItems = async () => {
     setLoading(true);
@@ -670,7 +682,10 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       </SurfaceCard>
 
       {roleKey === "hod" ? (
-        <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
+        <SurfaceCard
+          id="acting-hod-delegation"
+          className="space-y-3 border-slate-200/80 p-5"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-base font-semibold text-slate-900">
               Acting HoD delegation

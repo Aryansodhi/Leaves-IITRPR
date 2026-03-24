@@ -206,12 +206,17 @@ function LtcPageContent() {
         ? signature.typedSignature.trim()
         : DIGITAL_SIGNATURE_VALUE;
     saveFormDraft("ltc", data);
-    const required = Array.from(
+    const allInputKeys = Array.from(
       form.querySelectorAll<HTMLInputElement>("input"),
     )
       .map((input) => input.name || input.id)
       .filter(Boolean);
-    const missing = required.filter((key) => !data[key]?.trim());
+
+    const missing = allInputKeys.filter((key) => {
+      // Make the "persons" table optional: only require non-person fields.
+      if (key.startsWith("person")) return false;
+      return !data[key]?.trim();
+    });
     const missingSet = new Set(missing);
     markMissingInputs(form, missingSet);
     if (missingSet.size > 0) {
@@ -893,13 +898,13 @@ const RowLeaveRequired = ({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span>Prefix: From</span>
-          <UnderlineInput id="prefixFrom" width="w-32" />
+          <UnderlineInput id="prefixFrom" type="date" width="w-32" />
           <span>To</span>
-          <UnderlineInput id="prefixTo" width="w-32" />
+          <UnderlineInput id="prefixTo" type="date" width="w-32" />
           <span>&amp; Suffix: From</span>
-          <UnderlineInput id="suffixFrom" width="w-32" />
+          <UnderlineInput id="suffixFrom" type="date" width="w-32" />
           <span>To</span>
-          <UnderlineInput id="suffixTo" width="w-32" />
+          <UnderlineInput id="suffixTo" type="date" width="w-32" />
         </div>
       </div>
     </td>
@@ -954,10 +959,18 @@ const RowProposedDates = () => (
                 Self
               </td>
               <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id="selfOutward" className="w-full" />
+                <UnderlineInput
+                  id="selfOutward"
+                  type="date"
+                  className="w-full"
+                />
               </td>
               <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id="selfInward" className="w-full" />
+                <UnderlineInput
+                  id="selfInward"
+                  type="date"
+                  className="w-full"
+                />
               </td>
             </tr>
             <tr>
@@ -965,10 +978,18 @@ const RowProposedDates = () => (
                 Family
               </td>
               <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id="familyOutward" className="w-full" />
+                <UnderlineInput
+                  id="familyOutward"
+                  type="date"
+                  className="w-full"
+                />
               </td>
               <td className="border border-slate-400 px-2 py-1">
-                <UnderlineInput id="familyInward" className="w-full" />
+                <UnderlineInput
+                  id="familyInward"
+                  type="date"
+                  className="w-full"
+                />
               </td>
             </tr>
           </tbody>
@@ -1078,8 +1099,15 @@ const RowAdvance = () => (
     <td className="px-3 py-2">
       <div className="flex items-center gap-2">
         <span className="font-semibold">Advance Required</span>
-        <UnderlineInput id="advanceRequired" width="w-24" />
-        <span>Yes / No</span>
+        <select
+          id="advanceRequired"
+          name="advanceRequired"
+          className="w-32 rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+        >
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
       </div>
     </td>
   </tr>
@@ -1093,8 +1121,15 @@ const RowEncashment = () => (
         <span className="font-semibold">
           Encashment of earned leave required.
         </span>
-        <UnderlineInput id="encashmentRequired" width="w-24" />
-        <span>Yes/No</span>
+        <select
+          id="encashmentRequired"
+          name="encashmentRequired"
+          className="w-32 rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+        >
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
         <UnderlineInput id="encashmentDays" width="w-20" />
         <span>days</span>
       </div>

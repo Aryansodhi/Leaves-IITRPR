@@ -49,6 +49,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [showActingHodNav, setShowActingHodNav] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -66,6 +67,32 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           setProfile(result.data);
           window.localStorage.setItem("lf-user-role", result.data.roleKey);
           window.localStorage.setItem("lf-user-name", result.data.name);
+
+          if (result.data.roleKey === "HOD") {
+            try {
+              const actingResponse = await fetch("/api/leaves/acting-hod", {
+                method: "GET",
+                cache: "no-store",
+              });
+
+              const actingResult = (await actingResponse.json()) as {
+                ok?: boolean;
+                data?: { isOnLeave?: boolean };
+              };
+
+              setShowActingHodNav(
+                Boolean(
+                  actingResponse.ok &&
+                  actingResult.ok &&
+                  actingResult.data?.isOnLeave,
+                ),
+              );
+            } catch {
+              setShowActingHodNav(false);
+            }
+          } else {
+            setShowActingHodNav(false);
+          }
         }
       } catch {
         // Keep shell usable even if profile fetch fails.
@@ -84,6 +111,9 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
 
   const userName = profile?.name ?? null;
   const userRole = roleKey;
+  const isActingHodNavSelected =
+    pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
+    searchParams.get("section") === "acting-hod";
 
   const navItems = [
     {
@@ -99,7 +129,9 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     {
       label: "Approve Leaves",
       href: `/dashboard/${roleSlug}/approvals`,
-      active: pathname.startsWith(`/dashboard/${roleSlug}/approvals`),
+      active:
+        pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
+        !isActingHodNavSelected,
     },
     {
       label: "Profile",
@@ -107,6 +139,14 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
       active: pathname.startsWith(`/dashboard/${roleSlug}/profile`),
     },
   ];
+
+  if (roleKey === "HOD" && showActingHodNav) {
+    navItems.splice(3, 0, {
+      label: "Appoint Acting HoD",
+      href: `/dashboard/${roleSlug}/approvals?section=acting-hod`,
+      active: isActingHodNavSelected,
+    });
+  }
 
   useEffect(() => {
     if (!mobileNavOpen) return;

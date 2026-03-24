@@ -1,9 +1,4 @@
-import {
-  ApprovalStatus,
-  LeaveStatus,
-  RoleKey,
-  type Prisma,
-} from "@prisma/client";
+import { ApprovalStatus, LeaveStatus, RoleKey, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
@@ -73,15 +68,37 @@ const isHodOnEarnedLeave = async (hodId: string, at: Date) => {
   return Boolean(record);
 };
 
+const isMissingActingHodTableError = (error: unknown) => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+
+  if (error.code !== "P2021") {
+    return false;
+  }
+
+  const table = typeof error.meta?.table === "string" ? error.meta.table : "";
+  return table.toLowerCase().includes("actinghodassignment");
+};
+
 const resolveActingHodCoverage = async (actorId: string, at: Date) => {
-  const assignments = await prisma.actingHodAssignment.findMany({
-    where: {
-      actingHodId: actorId,
-      startDate: { lte: at },
-      endDate: { gte: at },
-    },
-    select: { hodId: true },
-  });
+  let assignments: Array<{ hodId: string }> = [];
+
+  try {
+    assignments = await prisma.actingHodAssignment.findMany({
+      where: {
+        actingHodId: actorId,
+        startDate: { lte: at },
+        endDate: { gte: at },
+      },
+      select: { hodId: true },
+    });
+  } catch (error) {
+    if (isMissingActingHodTableError(error)) {
+      return { hodIds: [] };
+    }
+    throw error;
+  }
 
   if (assignments.length === 0) {
     return { hodIds: [] };
