@@ -1,4 +1,4 @@
-import { ApprovalStatus, LeaveStatus, RoleKey, Prisma } from "@prisma/client";
+import { ApprovalStatus, LeaveStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
@@ -47,26 +47,6 @@ const isJoiningReportType = (input: {
 }) =>
   (input.code ?? "").toUpperCase() === "JR" ||
   (input.name ?? "").toLowerCase().includes("joining");
-
-const isHodOnEarnedLeave = async (hodId: string, at: Date) => {
-  const record = await prisma.leaveApplication.findFirst({
-    where: {
-      applicantId: hodId,
-      status: LeaveStatus.APPROVED,
-      startDate: { lte: at },
-      endDate: { gte: at },
-      leaveType: {
-        OR: [
-          { code: "EL" },
-          { name: { contains: "Earned", mode: "insensitive" } },
-        ],
-      },
-    },
-    select: { id: true },
-  });
-
-  return Boolean(record);
-};
 
 const isMissingActingHodTableError = (error: unknown) => {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
@@ -143,11 +123,6 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
     new Set([actor.userId, ...actingCoverage.hodIds]),
   );
 
-  const hodOnLeave =
-    actorProfile.role?.key === RoleKey.HOD
-      ? await isHodOnEarnedLeave(actor.userId, now)
-      : false;
-
   const steps = await prisma.approvalStep.findMany({
     where: {
       assignedToId: { in: assignedIds },
@@ -205,21 +180,12 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         code: step.leaveApplication.leaveType.code,
         name: step.leaveApplication.leaveType.name,
       });
-      let decisionRequired = isJoiningReport
+      const decisionRequired = isJoiningReport
         ? true
         : toBoolean(stepMetadata?.decisionRequired, true);
-      let viewerOnly = isJoiningReport
+      const viewerOnly = isJoiningReport
         ? false
         : toBoolean(stepMetadata?.viewerOnly, false);
-
-      if (
-        hodOnLeave &&
-        step.actor === "HOD" &&
-        step.assignedToId === actor.userId
-      ) {
-        decisionRequired = false;
-        viewerOnly = true;
-      }
 
       return {
         approvalStepId: step.id,
@@ -336,20 +302,6 @@ export const decideLeaveApproval = async (
       "No pending approval found for this request. It may have already been approved.",
       404,
     );
-  }
-
-  if (
-    actorProfile.role?.key === RoleKey.HOD &&
-    step.actor === "HOD" &&
-    step.assignedToId === actor.userId
-  ) {
-    const isOnLeave = await isHodOnEarnedLeave(actor.userId, now);
-    if (isOnLeave) {
-      throw withStatus(
-        "HoD approvals are view-only while on earned leave.",
-        403,
-      );
-    }
   }
 
   const stepMetadata = step.metadata as Prisma.JsonObject | null;

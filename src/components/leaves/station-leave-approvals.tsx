@@ -36,6 +36,7 @@ type ActingHodCandidate = {
   id: string;
   name: string;
   role: string;
+  department?: string;
 };
 
 type ActingHodStatus = {
@@ -784,6 +785,18 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
           </p>
           {deanInfo?.hods?.length ? (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <p className="mb-2 font-medium text-slate-900">
+                  HoD currently on leave
+                </p>
+                <div className="space-y-1">
+                  {deanInfo.hods.map((item) => (
+                    <p key={item.hod.id}>
+                      {item.hod.name} - {item.hod.department ?? "Dept"}
+                    </p>
+                  ))}
+                </div>
+              </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="space-y-1 text-sm text-slate-700">
                   <span className="font-medium text-slate-900">
@@ -818,7 +831,8 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     <option value="">Select acting HoD</option>
                     {selectedHod?.candidates.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
-                        {candidate.name} ({candidate.role})
+                        {candidate.name} ({candidate.role}) -{" "}
+                        {candidate.department ?? "Dept"}
                       </option>
                     ))}
                   </select>

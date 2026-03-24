@@ -315,6 +315,15 @@ export const submitEarnedLeave = async (
         approverId = hod.id;
         approverName = hod.name;
         approverRole = hod.role.key;
+      } else if (
+        profile.reportsTo &&
+        profile.reportsTo.isActive &&
+        profile.reportsTo.role?.key === RoleKey.DEAN
+      ) {
+        // Backward-compatible fallback for faculty records that directly report to Dean.
+        approverId = profile.reportsTo.id;
+        approverName = profile.reportsTo.name;
+        approverRole = profile.reportsTo.role.key;
       }
     }
   } else if (applicantRole === RoleKey.STAFF) {

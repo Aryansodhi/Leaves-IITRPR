@@ -93,6 +93,27 @@ const listCandidates = async (hodId: string, departmentId: string | null) => {
   }));
 };
 
+const listDeanCandidates = async (hodId: string) => {
+  const candidates = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      id: { not: hodId },
+    },
+    include: {
+      role: true,
+      department: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return candidates.map((user) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role?.name ?? user.role?.key ?? "Member",
+    department: user.department?.name ?? "Department not set",
+  }));
+};
+
 type SessionActor = {
   userId: string;
 };
@@ -307,7 +328,7 @@ export const getActingHodStatusForDean = async (actor: SessionActor) => {
         orderBy: { startDate: "desc" },
       });
 
-      const candidates = await listCandidates(hod.id, hod.departmentId ?? null);
+      const candidates = await listDeanCandidates(hod.id);
 
       return {
         hod: {
@@ -397,15 +418,8 @@ export const createActingHodAssignmentByDean = async (
     throw withStatus("Acting HoD selection is invalid.", 400);
   }
 
-  if (actingCandidate.departmentId !== hod.departmentId) {
-    throw withStatus("Acting HoD must belong to the same department.", 400);
-  }
-
-  if (
-    actingCandidate.role?.key !== RoleKey.ASSOCIATE_HOD &&
-    actingCandidate.role?.key !== RoleKey.FACULTY
-  ) {
-    throw withStatus("Selected user cannot be assigned as acting HoD.", 400);
+  if (actingCandidate.id === hod.id) {
+    throw withStatus("HoD cannot be assigned as acting HoD for self.", 400);
   }
 
   const existing = await prisma.actingHodAssignment.findFirst({
