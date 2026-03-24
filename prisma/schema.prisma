@@ -116,6 +116,27 @@ model User {
   officeOrders        OfficeOrder[]     @relation("IssuedOrders")
   otpTokens           OtpToken[]
   leaveBalances       LeaveBalance[]
+  actingHodAssignments ActingHodAssignment[] @relation("ActingHodFor")
+  actingHodDelegations ActingHodAssignment[] @relation("ActingHodActor")
+  actingHodAssigned    ActingHodAssignment[] @relation("ActingHodAssignedBy")
+}
+
+model ActingHodAssignment {
+  id           String   @id @default(cuid())
+  hodId        String
+  actingHodId  String
+  assignedById String
+  startDate    DateTime
+  endDate      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  hod          User     @relation("ActingHodFor", fields: [hodId], references: [id])
+  actingHod    User     @relation("ActingHodActor", fields: [actingHodId], references: [id])
+  assignedBy   User     @relation("ActingHodAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([hodId, startDate, endDate])
+  @@index([actingHodId, startDate, endDate])
 }
 
 model LeaveType {

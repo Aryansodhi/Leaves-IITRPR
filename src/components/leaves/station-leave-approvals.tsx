@@ -31,6 +31,51 @@ type ApprovalRecord = LeaveRequestDetails & {
   actedAt?: string | null;
 };
 
+type ActingHodCandidate = {
+  id: string;
+  name: string;
+  role: string;
+};
+
+type ActingHodStatus = {
+  hod: {
+    id: string;
+    name: string;
+    department: string | null;
+  };
+  isOnLeave: boolean;
+  leaveWindow: { startDate: string; endDate: string } | null;
+  activeAssignment: {
+    id: string;
+    actingHodId: string;
+    actingHodName: string;
+    startDate: string;
+    endDate: string;
+    assignedByName: string;
+  } | null;
+  candidates: ActingHodCandidate[];
+};
+
+type DeanActingHodStatus = {
+  hods: Array<{
+    hod: {
+      id: string;
+      name: string;
+      department: string | null;
+    };
+    leaveWindow: { startDate: string; endDate: string } | null;
+    activeAssignment: {
+      id: string;
+      actingHodId: string;
+      actingHodName: string;
+      startDate: string;
+      endDate: string;
+      assignedByName: string;
+    } | null;
+    candidates: ActingHodCandidate[];
+  }>;
+};
+
 const matchesDateFilters = (
   value: string,
   fromDate: string,
@@ -77,6 +122,17 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actingInfo, setActingInfo] = useState<ActingHodStatus | null>(null);
+  const [actingError, setActingError] = useState<string | null>(null);
+  const [actingBusy, setActingBusy] = useState(false);
+  const [actingHodId, setActingHodId] = useState("");
+  const [actingStartDate, setActingStartDate] = useState("");
+  const [actingEndDate, setActingEndDate] = useState("");
+  const [deanInfo, setDeanInfo] = useState<DeanActingHodStatus | null>(null);
+  const [selectedHodId, setSelectedHodId] = useState("");
+  const [selectedActingHodId, setSelectedActingHodId] = useState("");
+  const [deanStartDate, setDeanStartDate] = useState("");
+  const [deanEndDate, setDeanEndDate] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<ApprovalRecord | null>(null);
@@ -146,9 +202,108 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     }
   };
 
+  const loadActingInfo = async () => {
+    setActingError(null);
+    try {
+      const response = await fetch("/api/leaves/acting-hod", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        data?: ActingHodStatus;
+      };
+
+      if (!response.ok || !result.ok || !result.data) {
+        throw new Error(result.message ?? "Unable to load acting HoD status.");
+      }
+
+      setActingInfo(result.data);
+
+      const defaultCandidate = result.data.candidates[0]?.id ?? "";
+      setActingHodId((prev) => prev || defaultCandidate);
+
+      if (result.data.leaveWindow) {
+        const start = result.data.leaveWindow.startDate.slice(0, 10);
+        const end = result.data.leaveWindow.endDate.slice(0, 10);
+        setActingStartDate((prev) => prev || start);
+        setActingEndDate((prev) => prev || end);
+      }
+    } catch (err) {
+      setActingError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load acting HoD status.",
+      );
+    }
+  };
+
+  const loadDeanInfo = async () => {
+    setActingError(null);
+    try {
+      const response = await fetch("/api/leaves/acting-hod/dean", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        data?: DeanActingHodStatus;
+      };
+
+      if (!response.ok || !result.ok || !result.data) {
+        throw new Error(result.message ?? "Unable to load acting HoD status.");
+      }
+
+      setDeanInfo(result.data);
+    } catch (err) {
+      setActingError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load acting HoD status.",
+      );
+    }
+  };
+
   useEffect(() => {
     void loadItems();
   }, []);
+
+  useEffect(() => {
+    if (roleKey === "hod") {
+      void loadActingInfo();
+    }
+    if (roleKey === "dean") {
+      void loadDeanInfo();
+    }
+  }, [roleKey]);
+
+  useEffect(() => {
+    if (!deanInfo || selectedHodId) return;
+
+    const available = deanInfo.hods.find((item) => !item.activeAssignment);
+    if (available) {
+      setSelectedHodId(available.hod.id);
+    }
+  }, [deanInfo, selectedHodId]);
+
+  const selectedHod = useMemo(() => {
+    if (!deanInfo || !selectedHodId) return null;
+    return deanInfo.hods.find((item) => item.hod.id === selectedHodId) ?? null;
+  }, [deanInfo, selectedHodId]);
+
+  useEffect(() => {
+    if (!selectedHod) return;
+
+    const firstCandidate = selectedHod.candidates[0]?.id ?? "";
+    setSelectedActingHodId((prev) => prev || firstCandidate);
+
+    if (selectedHod.leaveWindow) {
+      setDeanStartDate(selectedHod.leaveWindow.startDate.slice(0, 10));
+      setDeanEndDate(selectedHod.leaveWindow.endDate.slice(0, 10));
+    }
+  }, [selectedHod]);
 
   const availableRoles = useMemo(
     () =>
@@ -202,6 +357,84 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       ),
     [filteredItems],
   );
+
+  const submitActingAssignment = async () => {
+    if (!actingHodId || !actingStartDate || !actingEndDate) return;
+
+    setActingBusy(true);
+    setActingError(null);
+
+    try {
+      const response = await fetch("/api/leaves/acting-hod", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actingHodId,
+          startDate: actingStartDate,
+          endDate: actingEndDate,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to assign acting HoD.");
+      }
+
+      await loadActingInfo();
+    } catch (err) {
+      setActingError(
+        err instanceof Error ? err.message : "Unable to assign acting HoD.",
+      );
+    } finally {
+      setActingBusy(false);
+    }
+  };
+
+  const submitDeanAssignment = async () => {
+    if (
+      !selectedHodId ||
+      !selectedActingHodId ||
+      !deanStartDate ||
+      !deanEndDate
+    ) {
+      return;
+    }
+
+    setActingBusy(true);
+    setActingError(null);
+
+    try {
+      const response = await fetch("/api/leaves/acting-hod/dean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hodId: selectedHodId,
+          actingHodId: selectedActingHodId,
+          startDate: deanStartDate,
+          endDate: deanEndDate,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to assign acting HoD.");
+      }
+
+      await loadDeanInfo();
+    } catch (err) {
+      setActingError(
+        err instanceof Error ? err.message : "Unable to assign acting HoD.",
+      );
+    } finally {
+      setActingBusy(false);
+    }
+  };
 
   const runDecision = async (
     applicationId: string,
@@ -436,6 +669,203 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         </p>
       </SurfaceCard>
 
+      {roleKey === "hod" ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-base font-semibold text-slate-900">
+              Acting HoD delegation
+            </p>
+            {actingInfo?.isOnLeave && actingInfo.leaveWindow ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                On earned leave
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                Not on earned leave
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-600">
+            Assign an acting HoD only for approved earned leave periods.
+          </p>
+          {actingInfo?.activeAssignment ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Acting HoD:{" "}
+              <span className="font-semibold">
+                {actingInfo.activeAssignment.actingHodName}
+              </span>{" "}
+              ({actingInfo.activeAssignment.startDate.slice(0, 10)} to{" "}
+              {actingInfo.activeAssignment.endDate.slice(0, 10)})
+            </div>
+          ) : actingInfo?.isOnLeave ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="space-y-1 text-sm text-slate-700">
+                <span className="font-medium text-slate-900">Acting HoD</span>
+                <select
+                  value={actingHodId}
+                  onChange={(event) => setActingHodId(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                  disabled={actingBusy}
+                >
+                  <option value="">Select a colleague</option>
+                  {actingInfo?.candidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name} ({candidate.role})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-sm text-slate-700">
+                <span className="font-medium text-slate-900">From</span>
+                <input
+                  type="date"
+                  value={actingStartDate}
+                  onChange={(event) => setActingStartDate(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                  disabled={actingBusy}
+                />
+              </label>
+              <label className="space-y-1 text-sm text-slate-700">
+                <span className="font-medium text-slate-900">To</span>
+                <input
+                  type="date"
+                  value={actingEndDate}
+                  onChange={(event) => setActingEndDate(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                  disabled={actingBusy}
+                />
+              </label>
+              <div className="md:col-span-3">
+                <Button
+                  onClick={submitActingAssignment}
+                  disabled={
+                    actingBusy ||
+                    !actingHodId ||
+                    !actingStartDate ||
+                    !actingEndDate
+                  }
+                >
+                  {actingBusy ? "Assigning..." : "Assign acting HoD"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Acting HoD can be assigned only when you have an approved earned
+              leave.
+            </div>
+          )}
+        </SurfaceCard>
+      ) : null}
+
+      {roleKey === "dean" ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
+          <p className="text-base font-semibold text-slate-900">
+            Acting HoD delegation (Dean)
+          </p>
+          <p className="text-sm text-slate-600">
+            Assign acting HoD for departments where the HoD is on approved
+            earned leave.
+          </p>
+          {deanInfo?.hods?.length ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="space-y-1 text-sm text-slate-700">
+                  <span className="font-medium text-slate-900">
+                    HoD on leave
+                  </span>
+                  <select
+                    value={selectedHodId}
+                    onChange={(event) => setSelectedHodId(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                    disabled={actingBusy}
+                  >
+                    <option value="">Select HoD</option>
+                    {deanInfo.hods
+                      .filter((item) => !item.activeAssignment)
+                      .map((item) => (
+                        <option key={item.hod.id} value={item.hod.id}>
+                          {item.hod.name} ({item.hod.department ?? "Dept"})
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-700">
+                  <span className="font-medium text-slate-900">Acting HoD</span>
+                  <select
+                    value={selectedActingHodId}
+                    onChange={(event) =>
+                      setSelectedActingHodId(event.target.value)
+                    }
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                    disabled={actingBusy || !selectedHod}
+                  >
+                    <option value="">Select acting HoD</option>
+                    {selectedHod?.candidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.name} ({candidate.role})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-700">
+                  <span className="font-medium text-slate-900">From</span>
+                  <input
+                    type="date"
+                    value={deanStartDate}
+                    onChange={(event) => setDeanStartDate(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                    disabled={actingBusy || !selectedHod}
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-slate-700">
+                  <span className="font-medium text-slate-900">To</span>
+                  <input
+                    type="date"
+                    value={deanEndDate}
+                    onChange={(event) => setDeanEndDate(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                    disabled={actingBusy || !selectedHod}
+                  />
+                </label>
+                <div className="md:col-span-3">
+                  <Button
+                    onClick={submitDeanAssignment}
+                    disabled={
+                      actingBusy ||
+                      !selectedHodId ||
+                      !selectedActingHodId ||
+                      !deanStartDate ||
+                      !deanEndDate
+                    }
+                  >
+                    {actingBusy ? "Assigning..." : "Assign acting HoD"}
+                  </Button>
+                </div>
+              </div>
+              {deanInfo.hods.some((item) => item.activeAssignment) ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  {deanInfo.hods
+                    .filter((item) => item.activeAssignment)
+                    .map((item) => (
+                      <p key={item.hod.id}>
+                        {item.hod.name}: acting HoD{" "}
+                        {item.activeAssignment?.actingHodName} (
+                        {item.activeAssignment?.startDate.slice(0, 10)} to{" "}
+                        {item.activeAssignment?.endDate.slice(0, 10)})
+                      </p>
+                    ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              No HoD is currently on approved earned leave.
+            </div>
+          )}
+        </SurfaceCard>
+      ) : null}
+
       <SurfaceCard className="space-y-4 border-slate-200/80 p-5">
         <div className="flex flex-wrap items-center gap-5">
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -516,6 +946,12 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
           </label>
         </div>
       </SurfaceCard>
+
+      {actingError ? (
+        <SurfaceCard className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          {actingError}
+        </SurfaceCard>
+      ) : null}
 
       {error ? (
         <SurfaceCard className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
