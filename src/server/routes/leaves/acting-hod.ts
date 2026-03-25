@@ -1,4 +1,4 @@
-import { LeaveStatus, RoleKey } from "@prisma/client";
+import { ApprovalStatus, LeaveStatus, Prisma, RoleKey } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
@@ -15,6 +15,64 @@ const deanAssignmentSchema = assignmentSchema.extend({
 
 const withStatus = (message: string, status: number) =>
   Object.assign(new Error(message), { status });
+
+type ActingHodAssignmentDelegate = {
+  findFirst: (args: unknown) => Promise<{
+    id: string;
+    actingHodId: string;
+    startDate: Date;
+    endDate: Date;
+    actingHod: { name: string };
+    assignedBy: { name: string };
+  } | null>;
+  findMany: (args: unknown) => Promise<
+    Array<{
+      id: string;
+      hodId: string;
+      actingHodId: string;
+      startDate: Date;
+      endDate: Date;
+      hod: { name: string };
+      assignedBy: { name: string };
+    }>
+  >;
+  create: (args: unknown) => Promise<{
+    id: string;
+    actingHodId: string;
+    startDate: Date;
+    endDate: Date;
+    actingHod: { name: string };
+    assignedBy: { name: string };
+  }>;
+};
+
+const getActingHodAssignmentDelegate = () => {
+  const candidate = (prisma as unknown as { actingHodAssignment?: unknown })
+    .actingHodAssignment;
+
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  if (
+    !("findFirst" in candidate) ||
+    !("findMany" in candidate) ||
+    !("create" in candidate)
+  ) {
+    return null;
+  }
+
+  const delegate = candidate as ActingHodAssignmentDelegate;
+  if (
+    typeof delegate.findFirst !== "function" ||
+    typeof delegate.findMany !== "function" ||
+    typeof delegate.create !== "function"
+  ) {
+    return null;
+  }
+
+  return delegate;
+};
 
 const parseDateInput = (raw: string) => {
   const normalized = raw.trim();
@@ -35,14 +93,17 @@ const parseDateInput = (raw: string) => {
   return Number.isNaN(fallback.getTime()) ? null : fallback;
 };
 
-const isEarnedLeaveType = (input: {
-  code?: string | null;
-  name?: string | null;
-}) =>
-  (input.code ?? "").toUpperCase() === "EL" ||
-  (input.name ?? "").toLowerCase().includes("earned");
+const getDayWindow = (input: Date) => {
+  const start = new Date(input);
+  start.setHours(0, 0, 0, 0);
 
-const findEarnedLeaveWindow = async (input: {
+  const end = new Date(input);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+const findEligibleLeaveWindow = async (input: {
   hodId: string;
   startDate: Date;
   endDate: Date;
@@ -50,21 +111,14 @@ const findEarnedLeaveWindow = async (input: {
   const record = await prisma.leaveApplication.findFirst({
     where: {
       applicantId: input.hodId,
-      status: LeaveStatus.APPROVED,
+      status: { in: [LeaveStatus.APPROVED, LeaveStatus.UNDER_REVIEW] },
       startDate: { lte: input.endDate },
       endDate: { gte: input.startDate },
-      leaveType: {
-        OR: [
-          { code: "EL" },
-          { name: { contains: "Earned", mode: "insensitive" } },
-        ],
-      },
     },
-    include: { leaveType: true },
     orderBy: { startDate: "desc" },
   });
 
-  if (!record || !isEarnedLeaveType(record.leaveType)) return null;
+  if (!record) return null;
 
   return {
     startDate: record.startDate,
@@ -118,6 +172,89 @@ type SessionActor = {
   userId: string;
 };
 
+type ActingHodRequestStatus = "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+
+type ActingHodRequestMeta = {
+  candidateId: string;
+  candidateName: string;
+  requestedById: string;
+  requestedByName?: string;
+  status: ActingHodRequestStatus;
+  requestedAt: string;
+  respondedAt?: string;
+  responseById?: string;
+};
+
+const leaveRequestSchema = z.object({
+  applicationId: z.string().trim().min(1),
+  actingHodId: z.string().trim().min(1),
+});
+
+const leaveResponseSchema = z.object({
+  applicationId: z.string().trim().min(1),
+  decision: z.enum(["ACCEPT", "REJECT"]),
+});
+
+const extractActingHodRequestMeta = (
+  metadata: Prisma.JsonValue | null | undefined,
+): ActingHodRequestMeta | null => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const request = (metadata as Prisma.JsonObject).actingHodRequest;
+  if (!request || typeof request !== "object" || Array.isArray(request)) {
+    return null;
+  }
+
+  const typed = request as Record<string, unknown>;
+  if (
+    typeof typed.candidateId !== "string" ||
+    typeof typed.requestedById !== "string" ||
+    typeof typed.status !== "string" ||
+    typeof typed.requestedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    candidateId: typed.candidateId,
+    candidateName:
+      typeof typed.candidateName === "string" ? typed.candidateName : "",
+    requestedById: typed.requestedById,
+    requestedByName:
+      typeof typed.requestedByName === "string"
+        ? typed.requestedByName
+        : undefined,
+    status: typed.status as ActingHodRequestStatus,
+    requestedAt: typed.requestedAt,
+    respondedAt:
+      typeof typed.respondedAt === "string" ? typed.respondedAt : undefined,
+    responseById:
+      typeof typed.responseById === "string" ? typed.responseById : undefined,
+  };
+};
+
+const isEligibleActingCandidate = (input: {
+  candidate: {
+    id: string;
+    isActive: boolean;
+    departmentId: string | null;
+    role: { key: RoleKey } | null;
+  };
+  hod: { id: string; departmentId: string | null };
+}) => {
+  if (!input.candidate.isActive) return false;
+  if (!input.hod.departmentId) return false;
+  if (input.candidate.id === input.hod.id) return false;
+  if (input.candidate.departmentId !== input.hod.departmentId) return false;
+
+  return (
+    input.candidate.role?.key === RoleKey.ASSOCIATE_HOD ||
+    input.candidate.role?.key === RoleKey.FACULTY
+  );
+};
+
 export const getActingHodStatus = async (actor: SessionActor) => {
   const hod = await prisma.user.findUnique({
     where: { id: actor.userId },
@@ -129,24 +266,28 @@ export const getActingHodStatus = async (actor: SessionActor) => {
   }
 
   const now = new Date();
-  const activeLeave = await findEarnedLeaveWindow({
+  const dayWindow = getDayWindow(now);
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  const activeLeave = await findEligibleLeaveWindow({
     hodId: hod.id,
-    startDate: now,
-    endDate: now,
+    startDate: dayWindow.start,
+    endDate: dayWindow.end,
   });
 
-  const activeAssignment = await prisma.actingHodAssignment.findFirst({
-    where: {
-      hodId: hod.id,
-      startDate: { lte: now },
-      endDate: { gte: now },
-    },
-    include: {
-      actingHod: true,
-      assignedBy: true,
-    },
-    orderBy: { startDate: "desc" },
-  });
+  const activeAssignment = actingHodAssignment
+    ? await actingHodAssignment.findFirst({
+        where: {
+          hodId: hod.id,
+          startDate: { lte: dayWindow.end },
+          endDate: { gte: dayWindow.start },
+        },
+        include: {
+          actingHod: true,
+          assignedBy: true,
+        },
+        orderBy: { startDate: "desc" },
+      })
+    : null;
 
   const candidates = await listCandidates(hod.id, hod.departmentId ?? null);
 
@@ -184,6 +325,14 @@ export const createActingHodAssignment = async (
   payload: unknown,
   actor: SessionActor,
 ) => {
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  if (!actingHodAssignment) {
+    throw withStatus(
+      "Acting HoD feature is temporarily unavailable. Please run Prisma generate/migrations.",
+      503,
+    );
+  }
+
   const parsed = assignmentSchema.parse(payload);
 
   const hod = await prisma.user.findUnique({
@@ -202,7 +351,7 @@ export const createActingHodAssignment = async (
     throw withStatus("Please provide a valid acting period.", 400);
   }
 
-  const activeLeave = await findEarnedLeaveWindow({
+  const activeLeave = await findEligibleLeaveWindow({
     hodId: hod.id,
     startDate,
     endDate,
@@ -210,7 +359,7 @@ export const createActingHodAssignment = async (
 
   if (!activeLeave) {
     throw withStatus(
-      "No approved earned leave found for the selected period.",
+      "No approved or under-review leave found for the selected period.",
       400,
     );
   }
@@ -235,7 +384,7 @@ export const createActingHodAssignment = async (
     throw withStatus("Selected user cannot be assigned as acting HoD.", 400);
   }
 
-  const existing = await prisma.actingHodAssignment.findFirst({
+  const existing = await actingHodAssignment.findFirst({
     where: {
       hodId: hod.id,
       startDate: { lte: endDate },
@@ -250,7 +399,7 @@ export const createActingHodAssignment = async (
     );
   }
 
-  const assignment = await prisma.actingHodAssignment.create({
+  const assignment = await actingHodAssignment.create({
     data: {
       hodId: hod.id,
       actingHodId: actingCandidate.id,
@@ -289,21 +438,17 @@ export const getActingHodStatusForDean = async (actor: SessionActor) => {
   }
 
   const now = new Date();
+  const dayWindow = getDayWindow(now);
+  const actingHodAssignment = getActingHodAssignmentDelegate();
   const hodsOnLeave = await prisma.user.findMany({
     where: {
       isActive: true,
       role: { key: RoleKey.HOD },
       leaveApplications: {
         some: {
-          status: LeaveStatus.APPROVED,
-          startDate: { lte: now },
-          endDate: { gte: now },
-          leaveType: {
-            OR: [
-              { code: "EL" },
-              { name: { contains: "Earned", mode: "insensitive" } },
-            ],
-          },
+          status: { in: [LeaveStatus.APPROVED, LeaveStatus.UNDER_REVIEW] },
+          startDate: { lte: dayWindow.end },
+          endDate: { gte: dayWindow.start },
         },
       },
     },
@@ -313,20 +458,22 @@ export const getActingHodStatusForDean = async (actor: SessionActor) => {
 
   const items = await Promise.all(
     hodsOnLeave.map(async (hod) => {
-      const activeLeave = await findEarnedLeaveWindow({
+      const activeLeave = await findEligibleLeaveWindow({
         hodId: hod.id,
-        startDate: now,
-        endDate: now,
+        startDate: dayWindow.start,
+        endDate: dayWindow.end,
       });
-      const activeAssignment = await prisma.actingHodAssignment.findFirst({
-        where: {
-          hodId: hod.id,
-          startDate: { lte: now },
-          endDate: { gte: now },
-        },
-        include: { actingHod: true, assignedBy: true },
-        orderBy: { startDate: "desc" },
-      });
+      const activeAssignment = actingHodAssignment
+        ? await actingHodAssignment.findFirst({
+            where: {
+              hodId: hod.id,
+              startDate: { lte: dayWindow.end },
+              endDate: { gte: dayWindow.start },
+            },
+            include: { actingHod: true, assignedBy: true },
+            orderBy: { startDate: "desc" },
+          })
+        : null;
 
       const candidates = await listDeanCandidates(hod.id);
 
@@ -369,6 +516,14 @@ export const createActingHodAssignmentByDean = async (
   payload: unknown,
   actor: SessionActor,
 ) => {
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  if (!actingHodAssignment) {
+    throw withStatus(
+      "Acting HoD feature is temporarily unavailable. Please run Prisma generate/migrations.",
+      503,
+    );
+  }
+
   const parsed = deanAssignmentSchema.parse(payload);
 
   const dean = await prisma.user.findUnique({
@@ -396,7 +551,7 @@ export const createActingHodAssignmentByDean = async (
     throw withStatus("Please provide a valid acting period.", 400);
   }
 
-  const activeLeave = await findEarnedLeaveWindow({
+  const activeLeave = await findEligibleLeaveWindow({
     hodId: hod.id,
     startDate,
     endDate,
@@ -404,7 +559,7 @@ export const createActingHodAssignmentByDean = async (
 
   if (!activeLeave) {
     throw withStatus(
-      "No approved earned leave found for the selected HoD period.",
+      "No approved or under-review leave found for the selected HoD period.",
       400,
     );
   }
@@ -422,7 +577,7 @@ export const createActingHodAssignmentByDean = async (
     throw withStatus("HoD cannot be assigned as acting HoD for self.", 400);
   }
 
-  const existing = await prisma.actingHodAssignment.findFirst({
+  const existing = await actingHodAssignment.findFirst({
     where: {
       hodId: hod.id,
       startDate: { lte: endDate },
@@ -437,7 +592,7 @@ export const createActingHodAssignmentByDean = async (
     );
   }
 
-  const assignment = await prisma.actingHodAssignment.create({
+  const assignment = await actingHodAssignment.create({
     data: {
       hodId: hod.id,
       actingHodId: actingCandidate.id,
@@ -458,6 +613,374 @@ export const createActingHodAssignmentByDean = async (
       startDate: assignment.startDate.toISOString(),
       endDate: assignment.endDate.toISOString(),
       assignedByName: assignment.assignedBy.name,
+    },
+  };
+};
+
+export const requestActingHodForLeave = async (
+  payload: unknown,
+  actor: SessionActor,
+) => {
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  if (!actingHodAssignment) {
+    throw withStatus(
+      "Acting HoD feature is temporarily unavailable. Please run Prisma generate/migrations.",
+      503,
+    );
+  }
+
+  const parsed = leaveRequestSchema.parse(payload);
+  const dean = await prisma.user.findUnique({
+    where: { id: actor.userId },
+    include: { role: true },
+  });
+
+  if (!dean || dean.role?.key !== RoleKey.DEAN) {
+    throw withStatus("Only Dean can request acting HoD confirmation.", 403);
+  }
+
+  const step = await prisma.approvalStep.findFirst({
+    where: {
+      leaveApplicationId: parsed.applicationId,
+      assignedToId: dean.id,
+      actor: "DEAN",
+      status: { in: [ApprovalStatus.PENDING, ApprovalStatus.IN_REVIEW] },
+    },
+    include: {
+      leaveApplication: {
+        include: {
+          applicant: { include: { role: true, department: true } },
+          approvalSteps: true,
+        },
+      },
+    },
+  });
+
+  if (!step) {
+    throw withStatus("No pending Dean approval found for this leave.", 404);
+  }
+
+  const hasLaterPending = step.leaveApplication.approvalSteps.some(
+    (candidate) =>
+      candidate.sequence > step.sequence &&
+      (candidate.status === ApprovalStatus.PENDING ||
+        candidate.status === ApprovalStatus.IN_REVIEW),
+  );
+
+  if (hasLaterPending) {
+    throw withStatus("This leave is not at final Dean approval stage.", 409);
+  }
+
+  if (step.leaveApplication.applicant.role?.key !== RoleKey.HOD) {
+    throw withStatus(
+      "Acting HoD confirmation is required only for HoD leave.",
+      400,
+    );
+  }
+
+  const candidate = await prisma.user.findUnique({
+    where: { id: parsed.actingHodId },
+    include: { role: true },
+  });
+
+  if (!candidate) {
+    throw withStatus("Selected acting HoD is invalid.", 400);
+  }
+
+  if (
+    !isEligibleActingCandidate({
+      candidate,
+      hod: {
+        id: step.leaveApplication.applicant.id,
+        departmentId: step.leaveApplication.applicant.departmentId,
+      },
+    })
+  ) {
+    throw withStatus(
+      "Selected acting HoD must be active, same department, and Faculty/Associate HoD.",
+      400,
+    );
+  }
+
+  const candidateLeave = await prisma.leaveApplication.findFirst({
+    where: {
+      applicantId: candidate.id,
+      status: { in: [LeaveStatus.APPROVED, LeaveStatus.UNDER_REVIEW] },
+      startDate: { lte: step.leaveApplication.endDate },
+      endDate: { gte: step.leaveApplication.startDate },
+    },
+    select: { id: true },
+  });
+
+  if (candidateLeave) {
+    throw withStatus(
+      "Selected acting HoD is on leave in the same period. Please choose another.",
+      400,
+    );
+  }
+
+  const existing = await actingHodAssignment.findFirst({
+    where: {
+      hodId: step.leaveApplication.applicant.id,
+      startDate: { lte: step.leaveApplication.endDate },
+      endDate: { gte: step.leaveApplication.startDate },
+    },
+    select: { id: true, actingHodId: true },
+  });
+
+  const metadata = (step.leaveApplication.metadata ?? {}) as Prisma.JsonObject;
+
+  const actingHodRequest: ActingHodRequestMeta = {
+    candidateId: candidate.id,
+    candidateName: candidate.name,
+    requestedById: dean.id,
+    requestedByName: dean.name,
+    status: "PENDING_CONFIRMATION",
+    requestedAt: new Date().toISOString(),
+  };
+
+  await prisma.leaveApplication.update({
+    where: { id: step.leaveApplication.id },
+    data: {
+      metadata: {
+        ...metadata,
+        actingHodRequest,
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  await prisma.notification.create({
+    data: {
+      userId: candidate.id,
+      title: "Acting HoD confirmation required",
+      body: `Please confirm acting HoD assignment for ${step.leaveApplication.applicant.name} (${step.leaveApplication.startDate.toISOString().slice(0, 10)} to ${step.leaveApplication.endDate.toISOString().slice(0, 10)}).`,
+      type: "ACTING_HOD_CONFIRMATION",
+      metadata: {
+        applicationId: step.leaveApplication.id,
+        hodId: step.leaveApplication.applicant.id,
+        requestedById: dean.id,
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    ok: true,
+    message:
+      existing && existing.actingHodId === candidate.id
+        ? `Confirmation request sent to ${candidate.name}. Existing acting assignment found for this period; candidate must still confirm this leave.`
+        : `Confirmation request sent to ${candidate.name}.`,
+    data: {
+      alreadyAssigned: Boolean(existing),
+      existingCandidateId: existing?.actingHodId ?? null,
+    },
+  };
+};
+
+export const respondToActingHodForLeave = async (
+  payload: unknown,
+  actor: SessionActor,
+) => {
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  if (!actingHodAssignment) {
+    throw withStatus(
+      "Acting HoD feature is temporarily unavailable. Please run Prisma generate/migrations.",
+      503,
+    );
+  }
+
+  const parsed = leaveResponseSchema.parse(payload);
+  const actorUser = await prisma.user.findUnique({
+    where: { id: actor.userId },
+    include: { role: true },
+  });
+  if (!actorUser || !actorUser.isActive) {
+    throw withStatus("Unable to resolve user profile.", 403);
+  }
+
+  const leave = await prisma.leaveApplication.findUnique({
+    where: { id: parsed.applicationId },
+    include: {
+      applicant: { include: { role: true, department: true } },
+    },
+  });
+
+  if (!leave) {
+    throw withStatus("Leave request not found.", 404);
+  }
+
+  const request = extractActingHodRequestMeta(leave.metadata);
+  if (!request || request.status !== "PENDING_CONFIRMATION") {
+    throw withStatus("No pending acting HoD confirmation found.", 400);
+  }
+
+  if (request.candidateId !== actor.userId) {
+    throw withStatus("This acting HoD request is not assigned to you.", 403);
+  }
+
+  const metadata = (leave.metadata ?? {}) as Prisma.JsonObject;
+
+  if (parsed.decision === "REJECT") {
+    await prisma.leaveApplication.update({
+      where: { id: leave.id },
+      data: {
+        metadata: {
+          ...metadata,
+          actingHodRequest: {
+            ...request,
+            status: "REJECTED",
+            respondedAt: new Date().toISOString(),
+            responseById: actor.userId,
+          },
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      ok: true,
+      message:
+        "Acting HoD request declined. Dean must choose another candidate.",
+    };
+  }
+
+  if (leave.applicant.role?.key !== RoleKey.HOD) {
+    throw withStatus(
+      "Acting HoD confirmation is only applicable to HoD leave.",
+      400,
+    );
+  }
+
+  const candidateLeave = await prisma.leaveApplication.findFirst({
+    where: {
+      applicantId: actor.userId,
+      status: { in: [LeaveStatus.APPROVED, LeaveStatus.UNDER_REVIEW] },
+      startDate: { lte: leave.endDate },
+      endDate: { gte: leave.startDate },
+      id: { not: leave.id },
+    },
+    select: { id: true },
+  });
+
+  if (candidateLeave) {
+    throw withStatus(
+      "You are on leave in this period. Please decline so Dean can choose another candidate.",
+      400,
+    );
+  }
+
+  const existing = await actingHodAssignment.findFirst({
+    where: {
+      hodId: leave.applicant.id,
+      actingHodId: actor.userId,
+      startDate: { lte: leave.endDate },
+      endDate: { gte: leave.startDate },
+    },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    await actingHodAssignment.create({
+      data: {
+        hodId: leave.applicant.id,
+        actingHodId: actor.userId,
+        assignedById: request.requestedById,
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+      },
+    });
+  }
+
+  await prisma.leaveApplication.update({
+    where: { id: leave.id },
+    data: {
+      metadata: {
+        ...metadata,
+        actingHodRequest: {
+          ...request,
+          status: "CONFIRMED",
+          respondedAt: new Date().toISOString(),
+          responseById: actor.userId,
+        },
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    ok: true,
+    message: "Acting HoD request accepted.",
+  };
+};
+
+export const getMyActingHodContext = async (actor: SessionActor) => {
+  const now = new Date();
+  const dayWindow = getDayWindow(now);
+  const actingHodAssignment = getActingHodAssignmentDelegate();
+  const activeAssignments = actingHodAssignment
+    ? await actingHodAssignment.findMany({
+        where: {
+          actingHodId: actor.userId,
+          startDate: { lte: dayWindow.end },
+          endDate: { gte: dayWindow.start },
+        },
+        include: {
+          hod: true,
+          assignedBy: true,
+        },
+        orderBy: { startDate: "desc" },
+      })
+    : [];
+
+  const leaves = await prisma.leaveApplication.findMany({
+    where: {
+      endDate: { gte: new Date(now.getTime() - 120 * 86400000) },
+      status: {
+        in: [
+          LeaveStatus.SUBMITTED,
+          LeaveStatus.UNDER_REVIEW,
+          LeaveStatus.APPROVED,
+        ],
+      },
+    },
+    include: {
+      applicant: { include: { role: true } },
+      leaveType: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  });
+
+  const pendingRequests = leaves
+    .map((leave) => {
+      const request = extractActingHodRequestMeta(leave.metadata);
+      if (!request || request.candidateId !== actor.userId) {
+        return null;
+      }
+
+      if (request.status !== "PENDING_CONFIRMATION") {
+        return null;
+      }
+
+      return {
+        applicationId: leave.id,
+        referenceCode: leave.referenceCode,
+        hodName: leave.applicant.name,
+        leaveType: leave.leaveType.name,
+        startDate: leave.startDate.toISOString(),
+        endDate: leave.endDate.toISOString(),
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    ok: true,
+    data: {
+      pendingRequests,
+      activeAssignments: activeAssignments.map((item) => ({
+        id: item.id,
+        hodName: item.hod.name,
+        startDate: item.startDate.toISOString(),
+        endDate: item.endDate.toISOString(),
+        assignedByName: item.assignedBy.name,
+      })),
     },
   };
 };

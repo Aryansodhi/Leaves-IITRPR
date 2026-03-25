@@ -56,6 +56,7 @@ const stationLeavePayloadSchema = z
       place: z.string().trim().min(1),
       date: z.string().trim().min(1),
       applicantSign: z.string().trim().min(1),
+      proposedActingHodId: z.string().trim().optional(),
     }),
     signature: z
       .object({
@@ -223,6 +224,46 @@ const splitStoredContact = (input?: string | null) => {
   };
 };
 
+const getDayWindow = (input: Date) => {
+  const start = new Date(input);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(input);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+const resolveActingHodForWindow = async (input: {
+  hodId: string;
+  startDate: Date;
+  endDate: Date;
+}) => {
+  try {
+    return await prisma.actingHodAssignment.findFirst({
+      where: {
+        hodId: input.hodId,
+        startDate: { lte: input.endDate },
+        endDate: { gte: input.startDate },
+      },
+      include: {
+        actingHod: {
+          include: { role: true },
+        },
+      },
+      orderBy: { startDate: "desc" },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+};
+
 const getStationLeaveType = async () => {
   const leaveType = await prisma.leaveType.findUnique({
     where: { code: "SL" },
@@ -313,6 +354,50 @@ export const getStationLeaveBootstrap = async (actor: SessionActor) => {
       : "EVENING",
   };
 
+  const roleBasedRoutingPreview = async () => {
+    if (actor.roleKey === RoleKey.STAFF) {
+      return "On submit, your station leave goes to Registrar for approval. If duration exceeds 30 days, it additionally routes to Director.";
+    }
+
+    if (
+      actor.roleKey === RoleKey.HOD ||
+      actor.roleKey === RoleKey.ASSOCIATE_HOD
+    ) {
+      return "On submit, your station leave goes to Dean for approval. If duration exceeds 30 days, it additionally routes to Director.";
+    }
+
+    if (actor.roleKey !== RoleKey.FACULTY) {
+      return "On submit, this request is routed to your authority automatically.";
+    }
+
+    const hod = await prisma.user.findFirst({
+      where: {
+        departmentId: profile.departmentId,
+        role: { key: RoleKey.HOD },
+        isActive: true,
+      },
+      include: { role: true },
+    });
+
+    const dept = profile.department?.name ?? "same department";
+    if (!hod) {
+      return `On submit, your station leave goes to HoD (${dept}) for approval. If duration exceeds 30 days, it additionally routes to Director.`;
+    }
+
+    const todayWindow = getDayWindow(new Date());
+    const acting = await resolveActingHodForWindow({
+      hodId: hod.id,
+      startDate: todayWindow.start,
+      endDate: todayWindow.end,
+    });
+
+    if (acting?.actingHod?.isActive) {
+      return `On submit, your station leave goes to ${acting.actingHod.name} (Acting HoD for ${hod.name}) for approval. If duration exceeds 30 days, it additionally routes to Director.`;
+    }
+
+    return `On submit, your station leave goes to HoD (${dept}) for approval. If duration exceeds 30 days, it additionally routes to Director.`;
+  };
+
   return {
     ok: true,
     data: {
@@ -342,6 +427,7 @@ export const getStationLeaveBootstrap = async (actor: SessionActor) => {
           "Pending assignment",
       })),
       leaveType: leaveType.name,
+      routingPreview: await roleBasedRoutingPreview(),
     },
   };
 };
@@ -376,9 +462,45 @@ export const submitStationLeave = async (
 
   const applicantRole = profile.role?.key ?? actor.roleKey;
 
+  const startDate =
+    parseDateInput(parsed.form.from) ??
+    parseDateInput(parsed.form.date) ??
+    new Date();
+  const endDate = parseDateInput(parsed.form.to) ?? startDate;
+  if (endDate < startDate) {
+    throw new Error(
+      "The To date must be the same as or later than the From date.",
+    );
+  }
+
+  const computedLeaveDays = computeSessionLeaveDays(
+    startDate,
+    parsed.form.fromSession,
+    endDate,
+    parsed.form.toSession,
+  );
+  if (!computedLeaveDays) {
+    throw new Error(
+      "The selected date/session window is invalid. Please ensure To is after From.",
+    );
+  }
+
+  const today = new Date();
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const endMarker =
+    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.toSession];
+  const nowMarker =
+    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
+  if (endMarker <= nowMarker) {
+    throw new Error(
+      "The leave end date/session must be after the current date/session.",
+    );
+  }
+
   let approverId: string | null = null;
   let approverName: string | null = null;
   let approverRole: RoleKey | null = null;
+  let approverDisplayRole = "";
 
   // STRATEGY 1: Use strictly assigned reportsTo manager from database
   if (
@@ -432,11 +554,30 @@ export const submitStationLeave = async (
     }
   }
 
+  if (approverId && approverRole === RoleKey.HOD) {
+    const routingWindow = getDayWindow(new Date());
+    const acting = await resolveActingHodForWindow({
+      hodId: approverId,
+      startDate: routingWindow.start,
+      endDate: routingWindow.end,
+    });
+
+    if (acting?.actingHod?.isActive) {
+      approverId = acting.actingHod.id;
+      approverName = acting.actingHod.name;
+      approverDisplayRole = "Acting HoD";
+    }
+  }
+
   // Final check to ensure we have a valid route
   if (!approverId || !approverName || !approverRole) {
     throw new Error(
       "Routing failed. No manager is directly assigned to you, and fallback department routing could not locate a manager.",
     );
+  }
+
+  if (!approverDisplayRole) {
+    approverDisplayRole = approverRole === RoleKey.HOD ? "HoD" : approverRole;
   }
 
   const leaveType = await getStationLeaveType();
@@ -445,41 +586,6 @@ export const submitStationLeave = async (
     where: { isActive: true, role: { key: RoleKey.DIRECTOR } },
     include: { role: true },
   });
-
-  const startDate =
-    parseDateInput(parsed.form.from) ??
-    parseDateInput(parsed.form.date) ??
-    new Date();
-  const endDate = parseDateInput(parsed.form.to) ?? startDate;
-  if (endDate < startDate) {
-    throw new Error(
-      "The To date must be the same as or later than the From date.",
-    );
-  }
-
-  const computedLeaveDays = computeSessionLeaveDays(
-    startDate,
-    parsed.form.fromSession,
-    endDate,
-    parsed.form.toSession,
-  );
-  if (!computedLeaveDays) {
-    throw new Error(
-      "The selected date/session window is invalid. Please ensure To is after From.",
-    );
-  }
-
-  const today = new Date();
-  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
-  const endMarker =
-    endDate.getTime() / 86400000 + SESSION_OFFSET[parsed.form.toSession];
-  const nowMarker =
-    todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
-  if (endMarker <= nowMarker) {
-    throw new Error(
-      "The leave end date/session must be after the current date/session.",
-    );
-  }
 
   const totalDays = Math.max(Math.ceil(computedLeaveDays), 1);
   const contactDuringLeave = `${parsed.form.contactPrefix} ${parsed.form.contactNumber} | ${parsed.form.contactAddress}`;
@@ -552,6 +658,7 @@ export const submitStationLeave = async (
         routing: {
           applicantRole,
           approverRole: approverRole,
+          approverDisplayRole,
           approverName: approverName,
           directorEscalation: needsDirectorEscalation,
         },
@@ -596,6 +703,7 @@ export const submitStationLeave = async (
         routing: {
           applicantRole,
           approverRole: approverRole,
+          approverDisplayRole,
           approverName: approverName,
           directorEscalation: needsDirectorEscalation,
         },
@@ -627,13 +735,13 @@ export const submitStationLeave = async (
 
   return {
     ok: true,
-    message: `Request submitted to ${approverName} (${approverRole}).${finalApprovalNote}`,
+    message: `Request submitted to ${approverName} (${approverDisplayRole}).${finalApprovalNote}`,
     data: {
       id: application.id,
       referenceCode: application.referenceCode,
       status: application.status,
       approverName: approverName,
-      approverRole: approverRole,
+      approverRole: approverDisplayRole,
       directorEscalation: needsDirectorEscalation,
       signatureTimestamp,
       signatureHash,

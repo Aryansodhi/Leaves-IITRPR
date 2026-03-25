@@ -33,6 +33,7 @@ const nonAirIndiaPayloadSchema = z.object({
     permissionMhrd: z.string().trim().min(1),
     budgetHead: z.string().trim().min(1),
     applicantSignature: z.string().trim().min(1),
+    proposedActingHodId: z.string().trim().optional(),
   }),
   signature: z.object({
     animation: z
@@ -69,6 +70,44 @@ const parseDateInput = (raw?: string | null) => {
   const native = new Date(value);
   if (!Number.isNaN(native.getTime())) return native;
   return null;
+};
+
+const getDayWindow = (input: Date) => {
+  const start = new Date(input);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(input);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+const resolveActiveActingHod = async (hodId: string, at: Date) => {
+  const window = getDayWindow(at);
+
+  try {
+    return await prisma.actingHodAssignment.findFirst({
+      where: {
+        hodId,
+        startDate: { lte: window.end },
+        endDate: { gte: window.start },
+      },
+      include: {
+        actingHod: {
+          include: { role: true },
+        },
+      },
+      orderBy: { startDate: "desc" },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 const toWorkflowActor = (role: RoleKey): WorkflowActor => {
@@ -147,6 +186,18 @@ export const submitNonAirIndia = async (
   const approverId = profile.reportsTo.id;
   const approverName = profile.reportsTo.name;
   const approverRole = profile.reportsTo.role.key;
+  let approverDisplayName = approverName;
+  let approverDisplayRole: string = approverRole;
+
+  if (approverRole === RoleKey.HOD) {
+    const acting = await resolveActiveActingHod(approverId, new Date());
+    if (acting?.actingHod?.isActive) {
+      approverDisplayName = acting.actingHod.name;
+      approverDisplayRole = "Acting HoD";
+    } else {
+      approverDisplayRole = "HoD";
+    }
+  }
 
   const leaveType = await getNonAirIndiaLeaveType();
   const startDate = parseDateInput(parsed.form.onwardJourney) ?? new Date();
@@ -230,6 +281,8 @@ export const submitNonAirIndia = async (
           applicantRole,
           approverRole: approverRole,
           approverName: approverName,
+          approverDisplayRole,
+          approverDisplayName,
         },
       } as Prisma.InputJsonValue,
       approvalSteps: {
@@ -261,6 +314,8 @@ export const submitNonAirIndia = async (
           applicantRole,
           approverRole: approverRole,
           approverName: approverName,
+          approverDisplayRole,
+          approverDisplayName,
         },
       } as Prisma.InputJsonValue,
     },
@@ -286,13 +341,13 @@ export const submitNonAirIndia = async (
 
   return {
     ok: true,
-    message: `Request submitted to ${approverName} (${approverRole}).`,
+    message: `Request submitted to ${approverDisplayName} (${approverDisplayRole}).`,
     data: {
       id: application.id,
       referenceCode: application.referenceCode,
       status: application.status,
-      approverName: approverName,
-      approverRole: approverRole,
+      approverName: approverDisplayName,
+      approverRole: approverDisplayRole,
       signatureTimestamp,
       signatureHash,
     },

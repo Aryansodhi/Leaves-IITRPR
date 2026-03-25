@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SignatureOtpVerificationCard } from "../../components/leaves/signature-otp-verification-card";
+import { ProposedActingHodField } from "@/components/leaves/proposed-acting-hod-field";
 import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
@@ -207,6 +208,7 @@ function EarnedLeavePageContent() {
       "suffixToDate",
       "suffixDays",
       "applicantSignature",
+      "proposedActingHodId",
     ]);
 
     // Exclude station leave dates if "No" is selected
@@ -760,6 +762,8 @@ function EarnedLeavePageContent() {
               {submitMessage}
             </div>
           )}
+
+          <ProposedActingHodField />
 
           <SignatureOtpVerificationCard
             storageScope="earned-leave"

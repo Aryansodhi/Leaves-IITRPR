@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
+import { ProposedActingHodField } from "@/components/leaves/proposed-acting-hod-field";
 import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
@@ -324,6 +325,8 @@ function ExIndiaLeavePageContent() {
         {page === 1 && <LetterPage />}
         {page === 2 && <UndertakingFormOne />}
         {page === 3 && <UndertakingFormTwo />}
+
+        <ProposedActingHodField />
 
         <SignatureOtpVerificationCard
           storageScope="ex-india-leave"

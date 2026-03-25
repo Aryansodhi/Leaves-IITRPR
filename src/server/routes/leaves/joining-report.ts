@@ -175,6 +175,44 @@ const parseDateInput = (raw?: string | null) => {
   return parsed;
 };
 
+const getDayWindow = (input: Date) => {
+  const start = new Date(input);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(input);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+const resolveActiveActingHod = async (hodId: string, at: Date) => {
+  const window = getDayWindow(at);
+
+  try {
+    return await prisma.actingHodAssignment.findFirst({
+      where: {
+        hodId,
+        startDate: { lte: window.end },
+        endDate: { gte: window.start },
+      },
+      include: {
+        actingHod: {
+          include: { role: true },
+        },
+      },
+      orderBy: { startDate: "desc" },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+};
+
 const looksLikeDepartmentHod = (input: {
   name?: string | null;
   designation?: string | null;
@@ -506,6 +544,21 @@ export const submitJoiningReport = async (
     reportsToId: profile.reportsToId,
   });
 
+  let approverDisplayName = approver.approverName;
+  let approverDisplayRole: string = approver.approverRole;
+  if (approver.approverRole === RoleKey.HOD) {
+    const acting = await resolveActiveActingHod(
+      approver.approverId,
+      new Date(),
+    );
+    if (acting?.actingHod?.isActive) {
+      approverDisplayName = acting.actingHod.name;
+      approverDisplayRole = "Acting HoD";
+    } else {
+      approverDisplayRole = "HoD";
+    }
+  }
+
   const startDate = parseDateInput(parsed.form.fromDate) ?? new Date();
   const endDate = parseDateInput(parsed.form.toDate) ?? startDate;
   if (endDate < startDate) {
@@ -577,6 +630,8 @@ export const submitJoiningReport = async (
           applicantRole,
           approverRole: approver.approverRole,
           approverName: approver.approverName,
+          approverDisplayRole,
+          approverDisplayName,
           viewerOnly: approver.viewerOnly,
         },
       } as Prisma.InputJsonValue,
@@ -632,6 +687,8 @@ export const submitJoiningReport = async (
           applicantRole,
           approverRole: approver.approverRole,
           approverName: approver.approverName,
+          approverDisplayRole,
+          approverDisplayName,
           viewerOnly: approver.viewerOnly,
         },
       } as Prisma.InputJsonValue,
@@ -675,14 +732,14 @@ export const submitJoiningReport = async (
   return {
     ok: true,
     message: approver.viewerOnly
-      ? `Joining report forwarded to ${approver.approverName} (${approver.approverRole}) for viewing.`
-      : `Joining report submitted to ${approver.approverName} (${approver.approverRole}) for approval.`,
+      ? `Joining report forwarded to ${approverDisplayName} (${approverDisplayRole}) for viewing.`
+      : `Joining report submitted to ${approverDisplayName} (${approverDisplayRole}) for approval.`,
     data: {
       id: application.id,
       referenceCode: application.referenceCode,
       status: application.status,
-      approverName: approver.approverName,
-      approverRole: approver.approverRole,
+      approverName: approverDisplayName,
+      approverRole: approverDisplayRole,
       viewerOnly: approver.viewerOnly,
       signatureTimestamp,
       signatureHash,

@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SignatureOtpVerificationCard } from "../../components/leaves/signature-otp-verification-card";
+import { ProposedActingHodField } from "@/components/leaves/proposed-acting-hod-field";
 import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
@@ -162,6 +163,7 @@ function StationLeavePageContent() {
   const [workflowMessage, setWorkflowMessage] = useState(
     "On submit, this request is routed to your authority automatically.",
   );
+  const [bootstrapRoutingPreview, setBootstrapRoutingPreview] = useState("");
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -447,6 +449,7 @@ function StationLeavePageContent() {
         data?: {
           defaults?: Record<string, string>;
           history?: StationLeaveHistoryItem[];
+          routingPreview?: string;
         };
       };
 
@@ -457,6 +460,7 @@ function StationLeavePageContent() {
       }
 
       const defaults = result.data?.defaults ?? {};
+      setBootstrapRoutingPreview(result.data?.routingPreview ?? "");
       if (form) {
         Object.entries(defaults).forEach(([key, value]) => {
           if (!value) return;
@@ -529,7 +533,8 @@ function StationLeavePageContent() {
 
     if (roleKeyRaw === ROLE_KEYS.FACULTY) {
       setWorkflowMessage(
-        `On submit, your station leave goes to HoD (${department || "same department"}) for approval. If duration exceeds 30 days, it additionally routes to Director.`,
+        bootstrapRoutingPreview ||
+          `On submit, your station leave goes to HoD (${department || "same department"}) for approval. If duration exceeds 30 days, it additionally routes to Director.`,
       );
       return;
     }
@@ -552,7 +557,7 @@ function StationLeavePageContent() {
 
     setIsRoleLocked(false);
     setSubmitError(null);
-  }, [history.length]);
+  }, [history.length, bootstrapRoutingPreview]);
 
   return (
     <DashboardShell>
@@ -710,6 +715,8 @@ function StationLeavePageContent() {
               </div>
             </SurfaceCard>
           ) : null}
+
+          <ProposedActingHodField />
 
           <SignatureOtpVerificationCard
             storageScope="station-leave"

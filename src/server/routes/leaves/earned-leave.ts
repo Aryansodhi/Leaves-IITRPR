@@ -115,6 +115,7 @@ const earnedLeavePayloadSchema = z
       suffixDays: z.string().trim().optional(),
       applicantSignature: z.string().trim().optional(),
       applicantSignatureDate: z.string().trim().optional(),
+      proposedActingHodId: z.string().trim().optional(),
     }),
     signature: z
       .object({
@@ -200,6 +201,44 @@ const parseDateInput = (raw?: string | null) => {
   const parsed = new Date(year, month - 1, day);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+};
+
+const getDayWindow = (input: Date) => {
+  const start = new Date(input);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(input);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+};
+
+const resolveActiveActingHod = async (hodId: string, at: Date) => {
+  const window = getDayWindow(at);
+
+  try {
+    return await prisma.actingHodAssignment.findFirst({
+      where: {
+        hodId,
+        startDate: { lte: window.end },
+        endDate: { gte: window.start },
+      },
+      include: {
+        actingHod: {
+          include: { role: true },
+        },
+      },
+      orderBy: { startDate: "desc" },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 // threshold used in multiple leave workflows when director approval is required
@@ -372,6 +411,18 @@ export const submitEarnedLeave = async (
     );
   }
 
+  let approverDisplayName = approverName;
+  let approverDisplayRole: string = approverRole;
+  if (approverRole === RoleKey.HOD) {
+    const acting = await resolveActiveActingHod(approverId, new Date());
+    if (acting?.actingHod?.isActive) {
+      approverDisplayName = acting.actingHod.name;
+      approverDisplayRole = "Acting HoD";
+    } else {
+      approverDisplayRole = "HoD";
+    }
+  }
+
   const leaveType = await getEarnedLeaveType();
 
   const startDate = parseDateInput(parsed.form.fromDate);
@@ -456,6 +507,8 @@ export const submitEarnedLeave = async (
       applicantRole,
       approverRole: approverRole,
       approverName: approverName,
+      approverDisplayRole,
+      approverDisplayName,
       directorEscalation: needsDirectorEscalation,
     },
   };
@@ -659,13 +712,13 @@ export const submitEarnedLeave = async (
 
   return {
     ok: true,
-    message: `Request submitted to ${approverName} (${approverRole}).${finalApprovalNote}`,
+    message: `Request submitted to ${approverDisplayName} (${approverDisplayRole}).${finalApprovalNote}`,
     data: {
       id: application.id,
       referenceCode: application.referenceCode,
       status: application.status,
-      approverName: approverName,
-      approverRole: approverRole,
+      approverName: approverDisplayName,
+      approverRole: approverDisplayRole,
       directorEscalation: needsDirectorEscalation,
       signatureTimestamp,
       signatureHash,

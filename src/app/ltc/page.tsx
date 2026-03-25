@@ -14,6 +14,7 @@ import {
   type SignatureCapture,
   type SignatureMode,
 } from "@/components/leaves/signature-otp-verification-card";
+import { ProposedActingHodField } from "@/components/leaves/proposed-acting-hod-field";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import {
@@ -427,6 +428,8 @@ function LtcPageContent() {
         )}
 
         <LtcWorkflowPreviewCard viewerRoleKey={viewerRoleKey} />
+
+        <ProposedActingHodField />
 
         <SignatureOtpVerificationCard
           storageScope="ltc"
