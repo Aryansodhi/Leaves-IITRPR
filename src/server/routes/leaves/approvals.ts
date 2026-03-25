@@ -62,7 +62,9 @@ const isMissingActingHodTableError = (error: unknown) => {
 };
 
 type ActingHodAssignmentDelegate = {
-  findMany: (args: unknown) => Promise<Array<{ hodId: string }>>;
+  findMany: (
+    args: unknown,
+  ) => Promise<Array<{ hodId: string; actingHodId?: string }>>;
   findFirst: (args: unknown) => Promise<{ id: string } | null>;
   create: (args: unknown) => Promise<unknown>;
 };
@@ -343,8 +345,24 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         })
       : null;
   const actingCoverage = await resolveActingHodCoverage(actor.userId, now);
+  const actorDelegationAssignments =
+    actorProfile.role?.key === RoleKey.HOD && actingHodAssignment
+      ? await actingHodAssignment.findMany({
+          where: {
+            hodId: actor.userId,
+            startDate: { lte: dayWindow.end },
+            endDate: { gte: dayWindow.start },
+          },
+          select: { actingHodId: true },
+        })
+      : [];
+  const delegatedActingIds = new Set(
+    actorDelegationAssignments
+      .map((item) => item.actingHodId)
+      .filter((value): value is string => typeof value === "string"),
+  );
   const assignedIds = Array.from(
-    new Set([actor.userId, ...actingCoverage.hodIds]),
+    new Set([actor.userId, ...actingCoverage.hodIds, ...delegatedActingIds]),
   );
 
   const steps = await prisma.approvalStep.findMany({
@@ -414,8 +432,14 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
       const isHodStep = step.actor === "HOD";
       const isOriginalHodViewingOwnStep =
         isHodStep && step.assignedToId === actor.userId;
+      const isOriginalHodViewingActingStep =
+        isHodStep &&
+        actorProfile.role?.key === RoleKey.HOD &&
+        step.assignedToId !== actor.userId &&
+        delegatedActingIds.has(step.assignedToId);
       const isHodTemporarilyViewOnly =
-        Boolean(actorSelfDelegation) && isOriginalHodViewingOwnStep;
+        Boolean(actorSelfDelegation) &&
+        (isOriginalHodViewingOwnStep || isOriginalHodViewingActingStep);
       const decisionRequired =
         baseDecisionRequired && !isHodTemporarilyViewOnly;
       const viewerOnly = baseViewerOnly || isHodTemporarilyViewOnly;
