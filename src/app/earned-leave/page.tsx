@@ -35,6 +35,313 @@ import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
 
+type FormLanguage = "HI" | "TE" | "PA" | "MR" | "TA" | "ML" | "UR";
+
+const FORM_LANGUAGE_OPTIONS = [
+  { value: "HI", label: "Hindi" },
+  { value: "TE", label: "Telugu" },
+  { value: "PA", label: "Punjabi" },
+  { value: "MR", label: "Marathi" },
+  { value: "TA", label: "Tamil" },
+  { value: "ML", label: "Malayalam" },
+  { value: "UR", label: "Urdu" },
+] as const;
+
+const HINDI_TRANSLATIONS: Record<
+  Exclude<FormLanguage, "HI">,
+  Record<string, string>
+> = {
+  TE: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "భారత సాంకేతిక సంస్థ రోపర్",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "నంగళ్ రోడ్, రూపనగర్, పంజాబ్-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "సెలవు కోసం లేదా సెలవు పొడిగింపుకు దరఖాస్తు",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(ఆర్జిత సెలవు/అర్ధ వేతన సెలవు/అసాధారణ సెలవు/కమ్యూటెడ్ సెలవు/వికేషన్ సెలవు/ప్రసూతి సెలవు/పితృత్వ సెలవు/బాల సంరక్షణ సెలవు)",
+    "आवेदक का नाम": "దరఖాస్తుదారుడి పేరు",
+    "पद नाम": "పదవి",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "విభాగం/కేంద్ర కార్యాలయం/విభాగం",
+    "अवकाश का प्रकार": "సెలవు రకం",
+    "छुट्टी की अवधि": "సెలవు వ్యవధి",
+    से: "నుంచి",
+    तक: "వరకు",
+    "दिनों की संख्या": "రోజుల సంఖ్య",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "ఉంటే, ఆదివారం మరియు సెలవులు సెలవుకు ముందు లేదా తర్వాత తీసుకుంటున్నారు",
+    "के पूर्व": "ముందు",
+    "के पश्चात": "తర్వాత",
+    उद्देश्य: "ఉద్దేశ్యం",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "కార్య, పరిపాలనా లేదా ఇతర బాధ్యతల కోసం ప్రత్యామ్నాయ ఏర్పాట్లు (ఉంటే)",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "దరఖాస్తుదారుడి సంతకం తేదీతో",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "నియంత్రణాధికారి వ్యాఖ్యలు మరియు సిఫార్సులు",
+    "सिफारिश की गई": "సిఫారసు చేయబడింది",
+    "या नहीं की गई": "లేదా సిఫారసు చేయలేదు",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "విభాగాధ్యక్షుడు మరియు విభాగ ప్ర‌ధానుడి సంతకం తేదీతో",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "పరిపాలనా విభాగం వినియోగానికి",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "ప్రకృతి (స్వభావం) ధృవీకరించబడింది",
+    "आज की तिथि तक शेष": "ఈ తేదీ వరకు బ్యాలెన్స్",
+    "कुल दिनों के लिए अवकाश": "మొత్తం రోజుల కోసం సెలవు",
+    "संबंधित सहायक": "సంబంధిత సహాయకుడు",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/":
+      "అధి./సహా. రిజిస్ట్రార్/విభాగాధ్యక్షుడు/",
+    कुलसचिव: "రిజిస్ట్రార్",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "సెలవు ఆమోదానికి అర్హ అధికారి వ్యాఖ్య: ఆమోదం / తిరస్కరణ",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "రిజిస్ట్రార్/ డీన్ (Faculty Affairs & Administration) / డైరెక్టర్ సంతకం",
+    "अवकाश के दौरान पता": "సెలవు సమయంలో చిరునామా",
+    "संपर्क नं.": "సంప్రదించు నం.",
+    पिन: "పిన్",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "స్టేషన్ సెలవు అవసరమా",
+    हाँ: "అవును",
+    नहीं: "కాదు",
+    "यदि हाँ": "అయితే",
+  },
+  PA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ਭਾਰਤੀ ਪ੍ਰੌਧੋਗਿਕੀ ਸੰਸਥਾਨ ਰੋਪੜ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "ਨੰਗਲ ਰੋਡ, ਰੂਪਨਗਰ, ਪੰਜਾਬ-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "ਛੁੱਟੀ ਲਈ ਜਾਂ ਛੁੱਟੀ ਵਧਾਉਣ ਲਈ ਅਰਜ਼ੀ",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(ਅਰਜਿਤ ਛੁੱਟੀ/ਅਰਧ ਵੇਤਨ ਛੁੱਟੀ/ਅਸਾਧਾਰਣ ਛੁੱਟੀ/ਕਮਿਊਟਡ ਛੁੱਟੀ/ਵਿਕੇਸ਼ਨ ਛੁੱਟੀ/ਮਾਤ੍ਰਿਤਵ ਛੁੱਟੀ/ਪਿਤ੍ਰਿਤਵ ਛੁੱਟੀ/ਬੱਚਾ ਸੰਭਾਲ ਛੁੱਟੀ)",
+    "आवेदक का नाम": "ਅਰਜ਼ੀਕਰਤਾ ਦਾ ਨਾਮ",
+    "पद नाम": "ਪਦ",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "ਵਿਭਾਗ/ਕੇਂਦਰੀ ਦਫ਼ਤਰ/ਸੈਕਸ਼ਨ",
+    "अवकाश का प्रकार": "ਛੁੱਟੀ ਦੀ ਕਿਸਮ",
+    "छुट्टी की अवधि": "ਛੁੱਟੀ ਦੀ ਮਿਆਦ",
+    से: "ਤੋਂ",
+    तक: "ਤੱਕ",
+    "दिनों की संख्या": "ਦਿਨਾਂ ਦੀ ਗਿਣਤੀ",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "ਜੇ ਕੋਈ ਹੋਵੇ, ਐਤਵਾਰ ਅਤੇ ਛੁੱਟੀਆਂ ਛੁੱਟੀ ਤੋਂ ਪਹਿਲਾਂ ਜਾਂ ਬਾਅਦ ਲਈਆਂ ਜਾ ਰਹੀਆਂ ਹਨ",
+    "के पूर्व": "ਪਹਿਲਾਂ",
+    "के पश्चात": "ਬਾਅਦ",
+    उद्देश्य: "ਉਦੇਸ਼",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "ਕੰਮ, ਪ੍ਰਸ਼ਾਸਨਿਕ ਜਾਂ ਹੋਰ ਜ਼ਿੰਮੇਵਾਰੀਆਂ ਲਈ ਬਦਲਵੀ ਬੰਦੋਬਸਤ (ਜੇ ਕੋਈ ਹੋਵੇ)",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "ਅਰਜ਼ੀਕਰਤਾ ਦੇ ਦਸਤਖ਼ਤ ਤਾਰੀਖ਼ ਸਮੇਤ",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "ਨਿਯੰਤਰਕ ਅਧਿਕਾਰੀ ਦੀਆਂ ਟਿੱਪਣੀਆਂ ਅਤੇ ਸਿਫ਼ਾਰਸ਼ਾਂ",
+    "सिफारिश की गई": "ਸਿਫ਼ਾਰਸ਼ ਕੀਤੀ ਗਈ",
+    "या नहीं की गई": "ਜਾਂ ਸਿਫ਼ਾਰਸ਼ ਨਾ ਕੀਤੀ ਗਈ",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "ਵਿਭਾਗ ਮੁਖੀ ਅਤੇ ਵਿਭਾਗ ਪ੍ਰਮੁੱਖ ਦੇ ਦਸਤਖ਼ਤ ਤਾਰੀਖ਼ ਸਮੇਤ",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "ਪ੍ਰਸ਼ਾਸਨਿਕ ਸੈਕਸ਼ਨ ਵੱਲੋਂ ਵਰਤੋਂ ਲਈ",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "ਇਹ ਪ੍ਰਮਾਣਿਤ ਕੀਤਾ ਜਾਂਦਾ ਹੈ ਕਿ (ਕਿਸਮ)",
+    "आज की तिथि तक शेष": "ਅੱਜ ਦੀ ਤਾਰੀਖ ਤੱਕ ਬਕਾਇਆ",
+    "कुल दिनों के लिए अवकाश": "ਕੁੱਲ ਦਿਨਾਂ ਲਈ ਛੁੱਟੀ",
+    "संबंधित सहायक": "ਸੰਬੰਧਤ ਸਹਾਇਕ",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/": "ਅਧਿ./ਸਹਾ. ਰਜਿਸਟਰਾਰ/ਸੈਕਸ਼ਨ ਮੁਖੀ/",
+    कुलसचिव: "ਰਜਿਸਟਰਾਰ",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "ਛੁੱਟੀ ਮਨਜ਼ੂਰ ਕਰਨ ਲਈ ਯੋਗ ਅਧਿਕਾਰੀ ਦੀ ਟਿੱਪਣੀ: ਮਨਜ਼ੂਰ / ਅਸਵੀਕਾਰ",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "ਰਜਿਸਟਰਾਰ/ ਡੀਨ (Faculty Affairs & Administration) / ਡਾਇਰੈਕਟਰ ਦੇ ਦਸਤਖ਼ਤ",
+    "अवकाश के दौरान पता": "ਛੁੱਟੀ ਦੌਰਾਨ ਪਤਾ",
+    "संपर्क नं.": "ਸੰਪਰਕ ਨੰ.",
+    पिन: "ਪਿਨ",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "ਕੀ ਸਟੇਸ਼ਨ ਛੁੱਟੀ ਦੀ ਲੋੜ ਹੈ",
+    हाँ: "ਹਾਂ",
+    नहीं: "ਨਹੀਂ",
+    "यदि हाँ": "ਜੇ ਹਾਂ",
+  },
+  MR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "भारतीय तंत्रज्ञान संस्था रोपड",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "नांगल रोड, रूपनगर, पंजाब-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "रजा किंवा रजा वाढीसाठी अर्ज",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(अर्जित रजा/अर्ध वेतन रजा/असाधारण रजा/कम्युटेड रजा/विश्राम रजा/मातृत्व रजा/पितृत्व रजा/बाल संगोपन रजा)",
+    "आवेदक का नाम": "अर्जदाराचे नाव",
+    "पद नाम": "पदनाम",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "विभाग/केंद्रीय कार्यालय/अनुभाग",
+    "अवकाश का प्रकार": "रजेचा प्रकार",
+    "छुट्टी की अवधि": "रजेचा कालावधी",
+    से: "पासून",
+    तक: "पर्यंत",
+    "दिनों की संख्या": "दिवसांची संख्या",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "असल्यास, रविवार आणि सुट्टी रजेच्या आधी किंवा नंतर घेतले जात आहेत",
+    "के पूर्व": "आधी",
+    "के पश्चात": "नंतर",
+    उद्देश्य: "उद्देश",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "कार्य, प्रशासकीय किंवा अन्य जबाबदाऱ्यांसाठी पर्यायी व्यवस्था (असल्यास)",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "अर्जदाराची सही दिनांकासह",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "नियंत्रक अधिकाऱ्याच्या टिप्पणी व शिफारसी",
+    "सिफारिश की गई": "शिफारस केली",
+    "या नहीं की गई": "किंवा शिफारस नाही",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "विभागाध्यक्ष व विभाग प्रमुखांची सही दिनांकासह",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "प्रशासकीय विभागासाठी वापरासाठी",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "प्रमाणित केले जाते की (प्रकार)",
+    "आज की तिथि तक शेष": "आजच्या तारखेपर्यंत शिल्लक",
+    "कुल दिनों के लिए अवकाश": "एकूण दिवसांसाठी रजा",
+    "संबंधित सहायक": "संबंधित सहाय्यक",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/": "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/",
+    कुलसचिव: "कुलसचिव",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "रजा मंजूर करण्यासाठी सक्षम प्राधिकाऱ्याची टिप्पणी: मंजूर / अमंजूर",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director ची सही",
+    "अवकाश के दौरान पता": "रजेच्या काळातील पत्ता",
+    "संपर्क नं.": "संपर्क क्र.",
+    पिन: "पिन",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "स्टेशन रजेची आवश्यकता आहे का",
+    हाँ: "हो",
+    नहीं: "नाही",
+    "यदि हाँ": "जर होय",
+  },
+  TA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "இந்திய தொழில்நுட்ப நிறுவனம் ரோபர்",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "நங்கல் சாலை, ரூப்நகர், பஞ்சாப்-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "விடுப்பு அல்லது விடுப்பு நீட்டிப்பிற்கான விண்ணப்பம்",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(சம்பாதித்த விடுப்பு/அரை சம்பள விடுப்பு/அசாதாரண விடுப்பு/கம்யூட்டட் விடுப்பு/விகேஷன் விடுப்பு/மகப்பேறு விடுப்பு/தந்தைத்துவ விடுப்பு/குழந்தை பராமரிப்பு விடுப்பு)",
+    "आवेदक का नाम": "விண்ணப்பதாரரின் பெயர்",
+    "पद नाम": "பதவி",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "துறை/மைய அலுவலகம்/பிரிவு",
+    "अवकाश का प्रकार": "விடுப்பு வகை",
+    "छुट्टी की अवधि": "விடுப்பு காலம்",
+    से: "இருந்து",
+    तक: "வரை",
+    "दिनों की संख्या": "நாட்களின் எண்ணிக்கை",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "இருந்தால், ஞாயிறு மற்றும் விடுமுறைகள் விடுப்புக்கு முன்பாக அல்லது பின்பாக சேர்க்கப்படுகின்றன",
+    "के पूर्व": "முன்",
+    "के पश्चात": "பின்",
+    उद्देश्य: "நோக்கம்",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "பணி, நிர்வாக அல்லது பிற பொறுப்புகளுக்கான மாற்று ஏற்பாடு (இருந்தால்)",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "விண்ணப்பதாரரின் கையொப்பம் தேதி உடன்",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "கட்டுப்பாட்டு அதிகாரியின் குறிப்புகள் மற்றும் பரிந்துரைகள்",
+    "सिफारिश की गई": "பரிந்துரைக்கப்பட்டது",
+    "या नहीं की गई": "அல்லது பரிந்துரைக்கப்படவில்லை",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "துறைத் தலைவர் மற்றும் துறை முதல்வரின் கையொப்பம் தேதி உடன்",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "நிர்வாக பிரிவு பயன்பாட்டிற்காக",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "(வகை) என சான்றளிக்கப்படுகிறது",
+    "आज की तिथि तक शेष": "இன்றைய தேதி வரை இருப்பு",
+    "कुल दिनों के लिए अवकाश": "மொத்த நாட்களுக்கு விடுப்பு",
+    "संबंधित सहायक": "சம்பந்தப்பட்ட உதவியாளர்",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/": "அதி./சஹா. பதிவாளர்/பிரிவு தலைவர்/",
+    कुलसचिव: "பதிவாளர்",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "விடுப்பு அனுமதிக்கத் தகுதியான அதிகாரியின் கருத்து: அனுமதிக்கப்பட்டது / அனுமதிக்கப்படவில்லை",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "பதிவாளர்/ டீன் (Faculty Affairs & Administration) / இயக்குநர் கையொப்பம்",
+    "अवकाश के दौरान पता": "விடுப்பு காலத்திலுள்ள முகவரி",
+    "संपर्क नं.": "தொடர்பு எண்",
+    पिन: "பின்",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "ஸ்டேஷன் விடுப்பு தேவையா",
+    हाँ: "ஆம்",
+    नहीं: "இல்லை",
+    "यदि हाँ": "ஆம் என்றால்",
+  },
+  ML: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ഇന്ത്യൻ സാങ്കേതിക സ്ഥാപനമായ റോപ്പർ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "നങ്ങൽ റോഡ്, രൂപ്‌നഗർ, പഞ്ചാബ്-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "അവധി അല്ലെങ്കിൽ അവധി നീട്ടുന്നതിനുള്ള അപേക്ഷ",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(അർജിത അവധി/അർദ്ധ വേതന അവധി/അസാധാരണ അവധി/കമ്യൂട്ടഡ് അവധി/വിക്കേഷൻ അവധി/മാതൃത്വ അവധി/പിതൃത്വ അവധി/കുട്ടി പരിചരണ അവധി)",
+    "आवेदक का नाम": "അപേക്ഷകന്റെ പേര്",
+    "पद नाम": "പദവി",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "വകുപ്പ്/കേന്ദ്ര ഓഫീസ്സ്/വിഭാഗം",
+    "अवकाश का प्रकार": "അവധി തരം",
+    "छुट्टी की अवधि": "അവധി കാലയളവ്",
+    से: "മുതൽ",
+    तक: "വരെ",
+    "दिनों की संख्या": "ദിവസങ്ങളുടെ എണ്ണം",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "ഉണ്ടെങ്കിൽ, ഞായറാഴ്ചയും അവധികളും അവധിക്ക് മുമ്പോ ശേഷമോ ഉൾപ്പെടുത്തുന്നു",
+    "के पूर्व": "മുൻപ്",
+    "के पश्चात": "ശേഷം",
+    उद्देश्य: "ഉദ്ദേശ്യം",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "പ്രവർത്തന, ഭരണകൂടമോ മറ്റു ബാധ്യതകളോ (ഉണ്ടെങ്കിൽ) പകരം ക്രമീകരണം",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "അപേക്ഷകന്റെ ഒപ്പ് തീയതിയോടെ",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "നിയന്ത്രണ ഓഫീസറുടെ അഭിപ്രായങ്ങളും ശുപാർശകളും",
+    "सिफारिश की गई": "ശുപാർശ ചെയ്തു",
+    "या नहीं की गई": "അല്ലെങ്കിൽ ശുപാർശ ചെയ്തില്ല",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "വകുപ്പ് തലവന്റെയും വിഭാഗ മേധാവിയുടെയും ഒപ്പ് തീയതിയോടെ",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "ഭരണ വിഭാഗം ഉപയോഗത്തിനായി",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "(തരം) എന്ന് സാക്ഷ്യപ്പെടുത്തുന്നു",
+    "आज की तिथि तक शेष": "ഇന്നത്തെ തീയതി വരെ ബാക്കി",
+    "कुल दिनों के लिए अवकाश": "മൊത്തം ദിവസങ്ങൾക്ക് അവധി",
+    "संबंधित सहायक": "ബന്ധപ്പെട്ട സഹായി",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/": "അധി./സഹാ. രജിസ്ട്രാർ/വിഭാഗ തലവൻ/",
+    कुलसचिव: "റജിസ്ട്രാർ",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "അവധി അനുവദിക്കാൻ യോഗ്യനായ അധികാരിയുടെ അഭിപ്രായം: അംഗീകരിച്ചു / അംഗീകരിച്ചില്ല",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "റജിസ്ട്രാർ/ ഡീൻ (Faculty Affairs & Administration) / ഡയറക്ടറുടെ ഒപ്പ്",
+    "अवकाश के दौरान पता": "അവധി സമയത്തെ വിലാസം",
+    "संपर्क नं.": "ബന്ധപ്പെടാനുള്ള നമ്പർ",
+    पिन: "പിൻ",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "സ്റ്റേഷൻ അവധി ആവശ്യമാണ്",
+    हाँ: "അതെ",
+    नहीं: "അല്ല",
+    "यदि हाँ": "അതെ ആണെങ്കിൽ",
+  },
+  UR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "انڈین انسٹی ٹیوٹ آف ٹیکنالوجی روپڑ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "ننگل روڈ، روپ نگر، پنجاب-140001",
+    "छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन":
+      "چھٹی کے لیے یا چھٹی بڑھانے کے لیے درخواست",
+    "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)":
+      "(حاصل شدہ چھٹی/نصف تنخواہ چھٹی/غیر معمولی چھٹی/کمیوٹڈ چھٹی/ویکیشن چھٹی/زچگی چھٹی/پدرانہ چھٹی/بچے کی نگہداشت چھٹی)",
+    "आवेदक का नाम": "درخواست گزار کا نام",
+    "पद नाम": "عہدہ",
+    "विभाग/केन्द्रीय कार्यालय/अनुभाग": "شعبہ/مرکزی دفتر/سیکشن",
+    "अवकाश का प्रकार": "چھٹی کی قسم",
+    "छुट्टी की अवधि": "چھٹی کی مدت",
+    से: "سے",
+    तक: "تک",
+    "दिनों की संख्या": "دنوں کی تعداد",
+    "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं":
+      "اگر کوئی ہو تو، اتوار اور تعطیلات چھٹی سے پہلے یا بعد میں شامل کی جا رہی ہیں",
+    "के पूर्व": "سے پہلے",
+    "के पश्चात": "کے بعد",
+    उद्देश्य: "مقصد",
+    "कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था":
+      "کام، انتظامی یا دیگر ذمہ داریوں کے لیے متبادل انتظام (اگر کوئی ہو)",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "درخواست گزار کے دستخط تاریخ کے ساتھ",
+    "नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें":
+      "نگران افسر کے تبصرے اور سفارشات",
+    "सिफारिश की गई": "سفارش کی گئی",
+    "या नहीं की गई": "یا سفارش نہیں کی گئی",
+    "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित":
+      "سربراہِ شعبہ اور شعبہ سربراہ کے دستخط تاریخ کے ساتھ",
+    "प्रशासनिक अनुभाग द्वारा प्रयोग हेतु": "انتظامی شعبہ کے استعمال کے لیے",
+    "प्रमाणित किया जाता है कि (प्रकृति)": "تصدیق کی جاتی ہے کہ (قسم)",
+    "आज की तिथि तक शेष": "آج کی تاریخ تک باقی",
+    "कुल दिनों के लिए अवकाश": "کل دنوں کے لیے چھٹی",
+    "संबंधित सहायक": "متعلقہ معاون",
+    "अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/": "ایڈمن/اسسٹنٹ رجسٹرار/سیکشن اِنچارج/",
+    कुलसचिव: "رجسٹرار",
+    "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत":
+      "چھٹی منظور کرنے کے لیے مجاز افسر کی رائے: منظور / نامنظور",
+    "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर":
+      "رجسٹرار/ ڈین (Faculty Affairs & Administration) / ڈائریکٹر کے دستخط",
+    "अवकाश के दौरान पता": "چھٹی کے دوران پتہ",
+    "संपर्क नं.": "رابطہ نمبر",
+    पिन: "پن",
+    "क्या स्टेशन अवकाश की आवश्यकता है": "کیا اسٹیشن لیو کی ضرورت ہے",
+    हाँ: "ہاں",
+    नहीं: "نہیں",
+    "यदि हाँ": "اگر ہاں",
+  },
+};
+
 const calculateInclusiveDays = (fromValue?: string, toValue?: string) => {
   if (!fromValue || !toValue) return "";
 
@@ -124,6 +431,7 @@ function EarnedLeavePageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
   const [ltcChoice, setLtcChoice] = useState<string>("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -150,6 +458,14 @@ function EarnedLeavePageContent() {
     handleVerifyOtp,
     resetAfterSubmit,
   } = useSignatureOtp({ enableTyped: true });
+
+  const translateHindi = useCallback(
+    (text: string) => {
+      if (formLanguage === "HI") return text;
+      return HINDI_TRANSLATIONS[formLanguage]?.[text] ?? text;
+    },
+    [formLanguage],
+  );
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -547,6 +863,27 @@ function EarnedLeavePageContent() {
 
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           <SurfaceCard className="mx-auto max-w-4xl space-y-5 border border-slate-300 bg-white p-4 md:p-6">
+            <div className="flex justify-end">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                Language
+                <select
+                  id="formLanguage"
+                  name="formLanguage"
+                  value={formLanguage}
+                  onChange={(event) =>
+                    setFormLanguage(event.target.value as FormLanguage)
+                  }
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
+                >
+                  {FORM_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <header className="space-y-1 text-center text-slate-900">
               <div className="flex items-center justify-center gap-4">
                 <Image
@@ -558,25 +895,25 @@ function EarnedLeavePageContent() {
                 />
                 <div className="space-y-1">
                   <p className="text-base font-semibold">
-                    भारतीय प्रौद्योगिकी संस्थान रोपड़
+                    {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                   </p>
                   <p className="text-base font-semibold uppercase">
                     INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                   </p>
                   <p className="text-[11px] text-slate-700">
-                    नंगल रोड, रूपनगर, पंजाब-140001 / Nangal Road, Rupnagar,
-                    Punjab-140001
+                    {translateHindi("नंगल रोड, रूपनगर, पंजाब-140001")} / Nangal
+                    Road, Rupnagar, Punjab-140001
                   </p>
                 </div>
               </div>
               <p className="text-[12px] font-semibold">
-                छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन / Application for
-                Leave or Extension of Leave
+                {translateHindi("छुट्टी के लिए अथवा छुट्टी बढ़ाने हेतु आवेदन")}{" "}
+                / Application for Leave or Extension of Leave
               </p>
               <p className="text-[11px]">
-                (अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड
-                छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल
-                देखभाल छुट्टी)
+                {translateHindi(
+                  "(अर्जित छुट्टी/अर्ध वेतन छुट्टी/असाधारण छुट्टी/कम्यूटेड छुट्टी/विश्राम की छुट्टी/मातृत्व छुट्टी/पितृत्व छुट्टी/बाल देखभाल छुट्टी)",
+                )}
               </p>
               <p className="text-[11px]">
                 (Earned Leave/Half Pay Leave/Extra Ordinary Leave/Commuted
@@ -592,16 +929,19 @@ function EarnedLeavePageContent() {
                 </colgroup>
                 <tbody>
                   <Row
-                    label="1. आवेदक का नाम / Name of the applicant"
+                    label={`1. ${translateHindi("आवेदक का नाम")} / Name of the applicant`}
                     inputId="name"
                   />
-                  <Row label="2. पद नाम / Post held" inputId="post" />
                   <Row
-                    label="3. विभाग/केन्द्रीय कार्यालय/अनुभाग / Department/Office/Section"
+                    label={`2. ${translateHindi("पद नाम")} / Post held`}
+                    inputId="post"
+                  />
+                  <Row
+                    label={`3. ${translateHindi("विभाग/केन्द्रीय कार्यालय/अनुभाग")} / Department/Office/Section`}
                     inputId="department"
                   />
                   <Row
-                    label="4. अवकाश का प्रकार / Nature of Leave applied for"
+                    label={`4. ${translateHindi("अवकाश का प्रकार")} / Nature of Leave applied for`}
                     inputId="leaveType"
                   />
                   <RowPeriod
@@ -614,26 +954,31 @@ function EarnedLeavePageContent() {
                     onToDateChange={handlePeriodDateChange("toDate")}
                     onFromSessionChange={setFromSession}
                     onToSessionChange={setToSession}
+                    translateHindi={translateHindi}
                   />
-                  <RowPrefixSuffix />
-                  <Row label="7. उद्देश्य / Purpose" inputId="purpose" />
+                  <RowPrefixSuffix translateHindi={translateHindi} />
                   <Row
-                    label="8. कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था / Alternative arrangements"
+                    label={`7. ${translateHindi("उद्देश्य")} / Purpose`}
+                    inputId="purpose"
+                  />
+                  <Row
+                    label={`8. ${translateHindi("कार्य, प्रशासनिक या अन्य उत्तरदायित्व (यदि कोई हो) के लिए वैकल्पिक व्यवस्था")} / Alternative arrangements`}
                     inputId="arrangements"
                   />
                   <RowLtc ltcChoice={ltcChoice} setLtcChoice={setLtcChoice} />
-                  <RowAddress />
+                  <RowAddress translateHindi={translateHindi} />
                   <RowStation
                     stationLeaveRequired={stationLeaveRequired}
                     setStationLeaveRequired={setStationLeaveRequired}
+                    translateHindi={translateHindi}
                   />
                 </tbody>
               </table>
             </div>
 
             <p className="text-right text-[12px] text-slate-900">
-              आवेदक के हस्ताक्षर दिनांक सहित / Signature of the applicant with
-              date:{" "}
+              {translateHindi("आवेदक के हस्ताक्षर दिनांक सहित")} / Signature of
+              the applicant with date:{" "}
               <input
                 type="hidden"
                 id="applicantSignature"
@@ -671,16 +1016,19 @@ function EarnedLeavePageContent() {
 
             <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
               <p className="font-semibold text-center">
-                नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें / Remarks and
-                Recommendations of the controlling officer
+                {translateHindi("नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें")}{" "}
+                / Remarks and Recommendations of the controlling officer
               </p>
               <p>
-                सिफारिश की गई / Recommended या नहीं की गई / not recommended:{" "}
+                {translateHindi("सिफारिश की गई")} / Recommended{" "}
+                {translateHindi("या नहीं की गई")} / not recommended:{" "}
                 <UnderlineInput id="recommended" width="w-44" readOnly />
               </p>
               <p>
-                विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature
-                with date Head of Department/Section In-charge:
+                {translateHindi(
+                  "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित",
+                )}{" "}
+                / Signature with date Head of Department/Section In-charge:
                 <UnderlineInput
                   id="hodSignature"
                   width="w-60"
@@ -692,40 +1040,43 @@ function EarnedLeavePageContent() {
 
             <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
               <p className="text-center font-semibold">
-                प्रशासनिक अनुभाग द्वारा प्रयोग हेतु / For use by the
-                Administration Section
+                {translateHindi("प्रशासनिक अनुभाग द्वारा प्रयोग हेतु")} / For
+                use by the Administration Section
               </p>
               <p>
-                प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of
-                leave) for period, from
+                {translateHindi("प्रमाणित किया जाता है कि (प्रकृति)")} /
+                Certified that (nature of leave) for period, from
                 <UnderlineInput id="adminFrom" width="w-32" readOnly /> to{" "}
                 <UnderlineInput id="adminTo" width="w-32" readOnly /> is
                 available as per following details:
               </p>
               <p>
-                अवकाश का प्रकार / Nature of leave applied for{" "}
-                <UnderlineInput id="adminLeaveType" width="w-44" readOnly /> आज
-                की तिथि तक शेष / Balance as on date
+                {translateHindi("अवकाश का प्रकार")} / Nature of leave applied
+                for <UnderlineInput id="adminLeaveType" width="w-44" readOnly />{" "}
+                आज
+                {translateHindi("आज की तिथि तक शेष")} / Balance as on date
                 <UnderlineInput id="balance" width="w-28" readOnly /> कुल दिनों
-                के लिए अवकाश / Leave applied for (No. of days)
+                {translateHindi("कुल दिनों के लिए अवकाश")} / Leave applied for
+                (No. of days)
                 <UnderlineInput id="adminDays" width="w-24" readOnly />
               </p>
               <p>
-                संबंधित सहायक / Dealing Assistant{" "}
+                {translateHindi("संबंधित सहायक")} / Dealing Assistant{" "}
                 <UnderlineInput
                   id="assistant"
                   width="w-44"
                   className="ml-2"
                   readOnly
                 />{" "}
-                अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
+                {translateHindi("अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/")}{" "}
+                Supdt./AR/DR
                 <UnderlineInput
                   id="arDr"
                   width="w-44"
                   className="ml-2"
                   readOnly
                 />{" "}
-                कुलसचिव / Registrar
+                {translateHindi("कुलसचिव")} / Registrar
                 <UnderlineInput
                   id="registrar"
                   width="w-44"
@@ -734,13 +1085,17 @@ function EarnedLeavePageContent() {
                 />
               </p>
               <p>
-                छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत
-                / अस्वीकृत / Comments of the competent authority to grant leave:
-                Sanctioned / Not Sanctioned
+                {translateHindi(
+                  "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत",
+                )}
+                / Comments of the competent authority to grant leave: Sanctioned
+                / Not Sanctioned
               </p>
               <p>
-                कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के
-                हस्ताक्षर / Signature of Registrar / Dean (Faculty Affairs &
+                {translateHindi(
+                  "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर",
+                )}
+                / Signature of Registrar / Dean (Faculty Affairs &
                 Administration) / Director:
                 <UnderlineInput
                   id="authoritySign"
@@ -929,6 +1284,7 @@ const RowPeriod = ({
   onToDateChange,
   onFromSessionChange,
   onToSessionChange,
+  translateHindi,
 }: {
   fromDate: string;
   toDate: string;
@@ -939,14 +1295,15 @@ const RowPeriod = ({
   onToDateChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onFromSessionChange: (value: DaySession) => void;
   onToSessionChange: (value: DaySession) => void;
+  translateHindi: (text: string) => string;
 }) => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      5. छुट्टी की अवधि/ Period of Leave
+      5. {translateHindi("छुट्टी की अवधि")}/ Period of Leave
     </td>
     <td className="px-3 py-2 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
-        <span>से / From:</span>
+        <span>{translateHindi("से")} / From:</span>
         <DateUnderlineInput
           id="fromDate"
           width="w-32"
@@ -959,7 +1316,7 @@ const RowPeriod = ({
           value={fromSession}
           onChange={(value) => onFromSessionChange(value)}
         />
-        <span>तक/To:</span>
+        <span>{translateHindi("तक")}/To:</span>
         <DateUnderlineInput
           id="toDate"
           width="w-32"
@@ -972,7 +1329,7 @@ const RowPeriod = ({
           value={toSession}
           onChange={(value) => onToSessionChange(value)}
         />
-        <span>दिनों की संख्या/No. of days:</span>
+        <span>{translateHindi("दिनों की संख्या")}/No. of days:</span>
         <UnderlineInput
           id="days"
           width="w-20"
@@ -1006,31 +1363,38 @@ const SessionSelect = ({
   </select>
 );
 
-const RowPrefixSuffix = () => (
+const RowPrefixSuffix = ({
+  translateHindi,
+}: {
+  translateHindi: (text: string) => string;
+}) => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      6. यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं
+      6.{" "}
+      {translateHindi(
+        "यदि कोई, रविवार और अवकाश, छुट्टी से पूर्व या पश्चात में लिए जा रहे हैं",
+      )}
       <div className="text-[11px] font-normal">
         Sunday and holiday, if any, proposed to be prefixed/suffixed to leave
       </div>
     </td>
     <td className="px-3 py-2 text-[12px] space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span>के पूर्व Prefix</span>
-        <span>से/From:</span>
+        <span>{translateHindi("के पूर्व")} Prefix</span>
+        <span>{translateHindi("से")}/From:</span>
         <DateUnderlineInput id="prefixFromDate" width="w-28" />
-        <span>तक/To:</span>
+        <span>{translateHindi("तक")}/To:</span>
         <DateUnderlineInput id="prefixToDate" width="w-28" />
-        <span>दिनों की संख्या/No. of days:</span>
+        <span>{translateHindi("दिनों की संख्या")}/No. of days:</span>
         <UnderlineInput id="prefixDays" width="w-20" readOnly />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span>के पश्चात Suffix</span>
-        <span>से/From:</span>
+        <span>{translateHindi("के पश्चात")} Suffix</span>
+        <span>{translateHindi("से")}/From:</span>
         <DateUnderlineInput id="suffixFromDate" width="w-28" />
-        <span>तक/To:</span>
+        <span>{translateHindi("तक")}/To:</span>
         <DateUnderlineInput id="suffixToDate" width="w-28" />
-        <span>दिनों की संख्या/No. of days:</span>
+        <span>{translateHindi("दिनों की संख्या")}/No. of days:</span>
         <UnderlineInput id="suffixDays" width="w-20" readOnly />
       </div>
     </td>
@@ -1094,15 +1458,19 @@ const RowLtc = ({
   );
 };
 
-const RowAddress = () => (
+const RowAddress = ({
+  translateHindi,
+}: {
+  translateHindi: (text: string) => string;
+}) => (
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-      10. अवकाश के दौरान पता / Address during the leave
+      10. {translateHindi("अवकाश के दौरान पता")} / Address during the leave
     </td>
     <td className="px-3 py-2 space-y-2 text-[12px]">
       <UnderlineInput id="address" className="w-full" />
       <div className="flex flex-wrap items-center gap-3">
-        <span>संपर्क नं. / Contact No.</span>
+        <span>{translateHindi("संपर्क नं.")} / Contact No.</span>
         <UnderlineInput
           id="contactNo"
           width="w-40"
@@ -1110,7 +1478,7 @@ const RowAddress = () => (
           pattern="\d{10}"
           inputMode="numeric"
         />
-        <span>पिन / PIN:</span>
+        <span>{translateHindi("पिन")} / PIN:</span>
         <UnderlineInput
           id="pin"
           width="w-24"
@@ -1126,9 +1494,11 @@ const RowAddress = () => (
 const RowStation = ({
   stationLeaveRequired,
   setStationLeaveRequired,
+  translateHindi,
 }: {
   stationLeaveRequired: string;
   setStationLeaveRequired: (value: string) => void;
+  translateHindi: (text: string) => string;
 }) => {
   const handleYesNoChange = (value: string) => {
     setStationLeaveRequired(value);
@@ -1144,11 +1514,12 @@ const RowStation = ({
   return (
     <tr className="border-t border-slate-400">
       <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
-        11. क्या स्टेशन अवकाश की आवश्यकता है / Whether Station leave is required
+        11. {translateHindi("क्या स्टेशन अवकाश की आवश्यकता है")} / Whether
+        Station leave is required
       </td>
       <td className="px-3 py-2 space-y-2 text-[12px]">
         <div className="flex flex-wrap items-center gap-3">
-          <span>हाँ / Yes / No :</span>
+          <span>{translateHindi("हाँ")} / Yes / No :</span>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -1159,7 +1530,7 @@ const RowStation = ({
                 onChange={(e) => handleYesNoChange(e.target.value)}
                 className="w-3.5 h-3.5 text-slate-600 border-slate-300 focus:ring-slate-500"
               />
-              <span>हाँ / Yes</span>
+              <span>{translateHindi("हाँ")} / Yes</span>
             </label>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -1170,7 +1541,7 @@ const RowStation = ({
                 onChange={(e) => handleYesNoChange(e.target.value)}
                 className="w-3.5 h-3.5 text-slate-600 border-slate-300 focus:ring-slate-500"
               />
-              <span>नहीं / No</span>
+              <span>{translateHindi("नहीं")} / No</span>
             </label>
           </div>
           <input
@@ -1182,10 +1553,10 @@ const RowStation = ({
         </div>
         {stationLeaveRequired === "Yes" && (
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            <span>यदि हाँ / If yes :</span>
-            <span>से / From :</span>
+            <span>{translateHindi("यदि हाँ")} / If yes :</span>
+            <span>{translateHindi("से")} / From :</span>
             <DateUnderlineInput id="stationFrom" width="w-28" />
-            <span>तक / To :</span>
+            <span>{translateHindi("तक")} / To :</span>
             <DateUnderlineInput id="stationTo" width="w-28" />
           </div>
         )}

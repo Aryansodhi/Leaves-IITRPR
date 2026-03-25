@@ -45,6 +45,8 @@ type JoiningReportHistoryItem = {
   approver: string;
 };
 
+type FormLanguage = "HI" | "TE" | "PA" | "MR" | "TA" | "ML" | "UR";
+
 const ROLE_KEYS = {
   FACULTY: "FACULTY",
   STAFF: "STAFF",
@@ -52,6 +54,220 @@ const ROLE_KEYS = {
   DEAN: "DEAN",
   REGISTRAR: "REGISTRAR",
 } as const;
+
+const FORM_LANGUAGE_OPTIONS = [
+  { value: "HI", label: "Hindi" },
+  { value: "TE", label: "Telugu" },
+  { value: "PA", label: "Punjabi" },
+  { value: "MR", label: "Marathi" },
+  { value: "TA", label: "Tamil" },
+  { value: "ML", label: "Malayalam" },
+  { value: "UR", label: "Urdu" },
+] as const;
+
+const HINDI_TRANSLATIONS: Record<
+  Exclude<FormLanguage, "HI">,
+  Record<string, string>
+> = {
+  TE: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "భారత సాంకేతిక సంస్థ రోపర్",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "నంగళ్ రోడ్, రూపనగర్, పంజాబ్-140001",
+    "सेवा में": "సేవలో",
+    निदेशक: "నిర్దేశకుడు",
+    कुलसचिव: "రిజిస్ట్రార్",
+    "भा.प्रौ.सं.रोपड़": "భా.ప్రౌ.సం.రోపర్",
+    विभागाध्यक्ष: "విభాగాధ్యక్షుడు",
+    "रिपोर्टिंग अधिकारी द्वारा": "నివేదికాధికారి ద్వారా",
+    विषय: "విషయం",
+    "कार्यग्रहण प्रतिवेदन": "చేరిక నివేదిక",
+    महोदय: "మహాశయా",
+    मैं: "నేను",
+    दिनांक: "తేదీ",
+    से: "నుంచి",
+    तक: "వరకు",
+    "दिन की": "రోజుల",
+    "आज दिनांक": "ఈరోజు తేదీ",
+    को: "న",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "తేదీ న నేను నా చేరిక నివేదిక సమర్పిస్తున్నాను, ఇది కార్యాలయ ఉత్తర్వు నం.",
+    "के द्वारा स्वीकृत किया था।": "ద్వారా ఆమోదించబడింది.",
+    भवदीय: "వినయపూర్వకంగా",
+    हस्ताक्षर: "హస్తాక్షరం",
+    नाम: "పేరు",
+    पदनाम: "పదవి",
+    पूर्वाह्न: "పూర్వాహ్నం",
+    अपराह्न: "అపరాహ్నం",
+    "अर्जित छुट्टी": "ఆర్జిత సెలవు",
+    "अर्ध वेतन छुट्टी": "అర్ధ వేతన సెలవు",
+    "चिकित्सक छुट्टी": "వైద్య సెలవు",
+    "असाधारण छुट्टी": "అసాధారణ సెలవు",
+  },
+  PA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ਭਾਰਤੀ ਪ੍ਰੌਧੋਗਿਕੀ ਸੰਸਥਾਨ ਰੋਪੜ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "ਨੰਗਲ ਰੋਡ, ਰੂਪਨਗਰ, ਪੰਜਾਬ-140001",
+    "सेवा में": "ਸੇਵਾ ਵਿੱਚ",
+    निदेशक: "ਡਾਇਰੈਕਟਰ",
+    कुलसचिव: "ਰਜਿਸਟਰਾਰ",
+    "भा.प्रौ.सं.रोपड़": "ਭਾ.ਪ੍ਰੌ.ਸੰ.ਰੋਪੜ",
+    विभागाध्यक्ष: "ਵਿਭਾਗ ਮੁਖੀ",
+    "रिपोर्टिंग अधिकारी द्वारा": "ਰਿਪੋਰਟਿੰਗ ਅਫਸਰ ਦੁਆਰਾ",
+    विषय: "ਵਿਸ਼ਾ",
+    "कार्यग्रहण प्रतिवेदन": "ਕਾਰਜਗ੍ਰਹਣ ਰਿਪੋਰਟ",
+    महोदय: "ਮਹੋਦਯ",
+    मैं: "ਮੈਂ",
+    दिनांक: "ਤਾਰੀਖ",
+    से: "ਤੋਂ",
+    तक: "ਤੱਕ",
+    "दिन की": "ਦਿਨਾਂ ਦੀ",
+    "आज दिनांक": "ਅੱਜ ਤਾਰੀਖ",
+    को: "ਨੂੰ",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "ਤਾਰੀਖ ਨੂੰ ਮੈਂ ਆਪਣੀ ਕਾਰਜਗ੍ਰਹਣ ਰਿਪੋਰਟ ਜਮ੍ਹਾ ਕਰ ਰਿਹਾ/ਰਹੀ ਹਾਂ, ਜੋ ਦਫ਼ਤਰ ਆਦੇਸ਼ ਨੰ.",
+    "के द्वारा स्वीकृत किया था।": "ਦੇ ਦੁਆਰਾ ਮਨਜ਼ੂਰ ਕੀਤਾ ਗਿਆ ਸੀ।",
+    भवदीय: "ਆਪਕਾ ਵਿਸ਼ਵਾਸੀ",
+    हस्ताक्षर: "ਹਸਤਾਖਰ",
+    नाम: "ਨਾਮ",
+    पदनाम: "ਪਦ",
+    पूर्वाह्न: "ਪੂਰਵਾਹ্ন",
+    अपराह्न: "ਅਪਰਾਹ্ন",
+    "अर्जित छुट्टी": "ਅਰਜਿਤ ਛੁੱਟੀ",
+    "अर्ध वेतन छुट्टी": "ਅਰਧ ਵੇਤਨ ਛੁੱਟੀ",
+    "चिकित्सक छुट्टी": "ਚਿਕਿਤਸਾ ਛੁੱਟੀ",
+    "असाधारण छुट्टी": "ਅਸਾਧਾਰਣ ਛੁੱਟੀ",
+  },
+  MR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "भारतीय तंत्रज्ञान संस्था रोपड",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "नांगल रोड, रूपनगर, पंजाब-140001",
+    "सेवा में": "सेवेत",
+    निदेशक: "संचालक",
+    कुलसचिव: "कुलसचिव",
+    "भा.प्रौ.सं.रोपड़": "भा.प्रौ.सं.रोपड",
+    विभागाध्यक्ष: "विभागाध्यक्ष",
+    "रिपोर्टिंग अधिकारी द्वारा": "अहवाल अधिकारीमार्फत",
+    विषय: "विषय",
+    "कार्यग्रहण प्रतिवेदन": "कार्यग्रहण अहवाल",
+    महोदय: "महोदय",
+    मैं: "मी",
+    दिनांक: "दिनांक",
+    से: "पासून",
+    तक: "पर्यंत",
+    "दिन की": "दिवसांची",
+    "आज दिनांक": "आज दिनांक",
+    को: "रोजी",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "रोजी मी माझा कार्यग्रहण अहवाल सादर करत आहे, जो कार्यालय आदेश क्र.",
+    "के द्वारा स्वीकृत किया था।": "याद्वारे मंजूर करण्यात आला होता.",
+    भवदीय: "आपला विश्वासू",
+    हस्ताक्षर: "स्वाक्षरी",
+    नाम: "नाव",
+    पदनाम: "पदनाम",
+    पूर्वाह्न: "पूर्वाह्न",
+    अपराह्न: "अपराह्न",
+    "अर्जित छुट्टी": "अर्जित रजा",
+    "अर्ध वेतन छुट्टी": "अर्ध वेतन रजा",
+    "चिकित्सक छुट्टी": "वैद्यकीय रजा",
+    "असाधारण छुट्टी": "असाधारण रजा",
+  },
+  TA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "இந்திய தொழில்நுட்ப நிறுவனம் ரோபர்",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "நங்கல் சாலை, ரூப்நகர், பஞ்சாப்-140001",
+    "सेवा में": "சேவையில்",
+    निदेशक: "இயக்குநர்",
+    कुलसचिव: "பதிவாளர்",
+    "भा.प्रौ.सं.रोपड़": "பா.தொ.நி.ரோபர்",
+    विभागाध्यक्ष: "துறைத் தலைவர்",
+    "रिपोर्टिंग अधिकारी द्वारा": "அறிக்கை அலுவலர் மூலம்",
+    विषय: "பொருள்",
+    "कार्यग्रहण प्रतिवेदन": "பதவி ஏற்கும் அறிக்கை",
+    महोदय: "மதிப்பிற்குரியவருக்கு",
+    मैं: "நான்",
+    दिनांक: "தேதி",
+    से: "இருந்து",
+    तक: "வரை",
+    "दिन की": "நாட்களின்",
+    "आज दिनांक": "இன்றைய தேதி",
+    को: "அன்று",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "அன்று நான் எனது பதவி ஏற்கும் அறிக்கையை சமர்ப்பிக்கிறேன், இது அலுவலக ஆணை எண்",
+    "के द्वारा स्वीकृत किया था।": "மூலம் அங்கீகரிக்கப்பட்டது.",
+    भवदीय: "உங்கள் நம்பிக்கையுடன்",
+    हस्ताक्षर: "கையொப்பம்",
+    नाम: "பெயர்",
+    पदनाम: "பதவி",
+    पूर्वाह्न: "முற்பகல்",
+    अपराह्न: "பிற்பகல்",
+    "अर्जित छुट्टी": "சம்பாதித்த விடுப்பு",
+    "अर्ध वेतन छुट्टी": "அரை சம்பள விடுப்பு",
+    "चिकित्सक छुट्टी": "மருத்துவ விடுப்பு",
+    "असाधारण छुट्टी": "அசாதாரண விடுப்பு",
+  },
+  ML: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ഇന്ത്യൻ സാങ്കേതിക സ്ഥാപനമായ റോപ്പർ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "നങ്ങൽ റോഡ്, രൂപ്‌നഗർ, പഞ്ചാബ്-140001",
+    "सेवा में": "സേവയിൽ",
+    निदेशक: "ഡയറക്ടർ",
+    कुलसचिव: "റജിസ്ട്രാർ",
+    "भा.प्रौ.सं.रोपड़": "ഭാ.പ്രൗ.സം.റോപ്പർ",
+    विभागाध्यक्ष: "വകുപ്പുതലവൻ",
+    "रिपोर्टिंग अधिकारी द्वारा": "റിപ്പോർട്ടിംഗ് ഓഫീസർ മുഖേന",
+    विषय: "വിഷയം",
+    "कार्यग्रहण प्रतिवेदन": "ചുമതല ഏറ്റെടുക്കൽ റിപ്പോർട്ട്",
+    महोदय: "മഹോദയാ",
+    मैं: "ഞാൻ",
+    दिनांक: "തീയതി",
+    से: "മുതൽ",
+    तक: "വരെ",
+    "दिन की": "ദിവസങ്ങളുടെ",
+    "आज दिनांक": "ഇന്നത്തെ തീയതി",
+    को: "നു",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "നു ഞാൻ എന്റെ ചുമതല ഏറ്റെടുക്കൽ റിപ്പോർട്ട് സമർപ്പിക്കുന്നു, ഇത് ഓഫീസ് ഉത്തരവ് നമ്പർ",
+    "के द्वारा स्वीकृत किया था।": "മൂലം അംഗീകരിച്ചതാണ്.",
+    भवदीय: "വിശ്വസ്തതയോടെ",
+    हस्ताक्षर: "ഒപ്പ്",
+    नाम: "പേര്",
+    पदनाम: "പദവി",
+    पूर्वाह्न: "പൂർവ്വാഹ്നം",
+    अपराह्न: "അപരാഹ്നം",
+    "अर्जित छुट्टी": "അർജിത അവധി",
+    "अर्ध वेतन छुट्टी": "അർദ്ധ വേതന അവധി",
+    "चिकित्सक छुट्टी": "ചികിത്സാ അവധി",
+    "असाधारण छुट्टी": "അസാധാരണ അവധി",
+  },
+  UR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "انڈین انسٹی ٹیوٹ آف ٹیکنالوجی روپڑ",
+    "नंगल रोड, रूपनगर, पंजाब-140001": "ننگل روڈ، روپ نگر، پنجاب-140001",
+    "सेवा में": "بخدمت",
+    निदेशक: "ڈائریکٹر",
+    कुलसचिव: "رجسٹرار",
+    "भा.प्रौ.सं.रोपड़": "بھارت ٹیکنالوجی انسٹی ٹیوٹ روپڑ",
+    विभागाध्यक्ष: "سربراہِ شعبہ",
+    "रिपोर्टिंग अधिकारी द्वारा": "رپورٹنگ افسر کے ذریعے",
+    विषय: "موضوع",
+    "कार्यग्रहण प्रतिवेदन": "رپورٹِ جوائننگ",
+    महोदय: "محترم",
+    मैं: "میں",
+    दिनांक: "تاریخ",
+    से: "سے",
+    तक: "تک",
+    "दिन की": "دنوں کی",
+    "आज दिनांक": "آج کی تاریخ",
+    को: "کو",
+    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.":
+      "کو میں اپنی رپورٹِ جوائننگ جمع کر رہا/رہی ہوں، جو دفتر کے حکم نمبر",
+    "के द्वारा स्वीकृत किया था।": "کے ذریعے منظور کیا گیا تھا۔",
+    भवदीय: "خاکسار",
+    हस्ताक्षर: "دستخط",
+    नाम: "نام",
+    पदनाम: "عہدہ",
+    पूर्वाह्न: "قبل از دوپہر",
+    अपराह्न: "بعد از دوپہر",
+    "अर्जित छुट्टी": "حاصل شدہ چھٹی",
+    "अर्ध वेतन छुट्टी": "نصف تنخواہ چھٹی",
+    "चिकित्सक छुट्टी": "طبی چھٹی",
+    "असाधारण छुट्टी": "غیر معمولی چھٹی",
+  },
+};
 
 const requiredInputIds = [
   "name",
@@ -102,19 +318,28 @@ const UnderlineInput = ({
 );
 
 const DUTY_SESSION_OPTIONS = [
-  { value: "Forenoon", label: "पूर्वाह्न / Forenoon" },
-  { value: "Afternoon", label: "अपराह्न / Afternoon" },
+  { value: "Forenoon", hindi: "पूर्वाह्न", english: "Forenoon" },
+  { value: "Afternoon", hindi: "अपराह्न", english: "Afternoon" },
 ] as const;
 
 const LEAVE_CATEGORY_OPTIONS = [
-  { value: "Earned Leave", label: "अर्जित छुट्टी / Earned Leave" },
-  { value: "Half Pay Leave", label: "अर्ध वेतन छुट्टी / Half Pay Leave" },
-  { value: "Medical Leave", label: "चिकित्सक छुट्टी / Medical Leave" },
+  { value: "Earned Leave", hindi: "अर्जित छुट्टी", english: "Earned Leave" },
+  {
+    value: "Half Pay Leave",
+    hindi: "अर्ध वेतन छुट्टी",
+    english: "Half Pay Leave",
+  },
+  {
+    value: "Medical Leave",
+    hindi: "चिकित्सक छुट्टी",
+    english: "Medical Leave",
+  },
   {
     value: "Extra Ordinary Leave",
-    label: "असाधारण छुट्टी / Extra Ordinary Leave",
+    hindi: "असाधारण छुट्टी",
+    english: "Extra Ordinary Leave",
   },
-  { value: "Vacation Leave", label: "Vacation Leave" },
+  { value: "Vacation Leave", hindi: "", english: "Vacation Leave" },
 ] as const;
 
 const PERIOD_SESSION_OPTIONS = [
@@ -146,6 +371,7 @@ function JoiningReportPageContent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<JoiningReportHistoryItem[]>([]);
+  const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
   const {
     otpEmail,
     setOtpEmail,
@@ -178,6 +404,28 @@ function JoiningReportPageContent() {
   const [workflowMessage, setWorkflowMessage] = useState(
     "This joining report will be routed automatically after submission.",
   );
+
+  const translateHindi = useCallback(
+    (text: string) => {
+      if (formLanguage === "HI") return text;
+      return HINDI_TRANSLATIONS[formLanguage]?.[text] ?? text;
+    },
+    [formLanguage],
+  );
+
+  const dutySessionOptions = DUTY_SESSION_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.hindi
+      ? `${translateHindi(option.hindi)} / ${option.english}`
+      : option.english,
+  }));
+
+  const leaveCategoryOptions = LEAVE_CATEGORY_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.hindi
+      ? `${translateHindi(option.hindi)} / ${option.english}`
+      : option.english,
+  }));
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -650,6 +898,27 @@ function JoiningReportPageContent() {
 
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           <SurfaceCard className="mx-auto max-w-3xl space-y-5 border-slate-200/80 bg-white p-6 md:p-10">
+            <div className="flex justify-end">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                Language
+                <select
+                  id="formLanguage"
+                  name="formLanguage"
+                  value={formLanguage}
+                  onChange={(event) =>
+                    setFormLanguage(event.target.value as FormLanguage)
+                  }
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
+                >
+                  {FORM_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <div className="flex flex-col items-center gap-3 text-center md:text-left">
               <div className="flex flex-wrap items-center justify-center gap-4 md:flex-nowrap md:justify-start">
                 <div
@@ -667,41 +936,46 @@ function JoiningReportPageContent() {
                 </div>
                 <div className="space-y-1 text-slate-900">
                   <p className="text-lg font-semibold">
-                    भारतीय प्रौद्योगिकी संस्थान रोपड़
+                    {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                   </p>
                   <p className="text-lg font-semibold uppercase">
                     INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                   </p>
                   <p className="text-xs text-slate-700">
-                    नंगल रोड, रूपनगर, पंजाब-140001 / Nangal Road, Rupnagar,
-                    Punjab-140001
+                    {translateHindi("नंगल रोड, रूपनगर, पंजाब-140001")} / Nangal
+                    Road, Rupnagar, Punjab-140001
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-1 text-sm text-slate-800">
-              <p>सेवा में / To,</p>
-              <p>निदेशक / कुलसचिव / Director / Registrar</p>
-              <p>भा.प्रौ.सं.रोपड़ / IIT Ropar</p>
+              <p>{translateHindi("सेवा में")} / To,</p>
+              <p>
+                {translateHindi("निदेशक")} / {translateHindi("कुलसचिव")} /
+                Director / Registrar
+              </p>
+              <p>{translateHindi("भा.प्रौ.सं.रोपड़")} / IIT Ropar</p>
             </div>
 
             <p className="text-center text-sm font-semibold text-slate-900">
-              विभागाध्यक्ष / रिपोर्टिंग अधिकारी द्वारा / Through HOD/Reporting
-              Officer
+              {translateHindi("विभागाध्यक्ष")} /{" "}
+              {translateHindi("रिपोर्टिंग अधिकारी द्वारा")} / Through
+              HOD/Reporting Officer
             </p>
 
             <div className="text-center text-sm font-semibold text-slate-900">
-              विषय / Sub : कार्यग्रहण प्रतिवेदन / JOINING REPORT
+              {translateHindi("विषय")} / Sub :{" "}
+              {translateHindi("कार्यग्रहण प्रतिवेदन")} / JOINING REPORT
             </div>
 
             <div className="space-y-4 text-sm leading-relaxed text-slate-900">
-              <p>महोदय / Sir,</p>
+              <p>{translateHindi("महोदय")} / Sir,</p>
 
               <p className="flex flex-wrap items-center gap-2 leading-relaxed">
-                <span>मैं,</span>
+                <span>{translateHindi("मैं")},</span>
                 <UnderlineInput id="name" width="w-56" />
-                <span>दिनांक</span>
+                <span>{translateHindi("दिनांक")}</span>
                 <DateUnderlineInput
                   id="fromDate"
                   width="w-36"
@@ -715,7 +989,7 @@ function JoiningReportPageContent() {
                   value={fromSession}
                   onChange={handlePeriodSessionChange("fromSession")}
                 />
-                <span>से</span>
+                <span>{translateHindi("से")}</span>
                 <DateUnderlineInput
                   id="toDate"
                   width="w-36"
@@ -729,45 +1003,46 @@ function JoiningReportPageContent() {
                   value={toSession}
                   onChange={handlePeriodSessionChange("toSession")}
                 />
-                <span>तक</span>
+                <span>{translateHindi("तक")}</span>
                 <UnderlineInput id="totalDays" width="w-16" readOnly />
-                <span>दिन की</span>
+                <span>{translateHindi("दिन की")}</span>
                 <InlineSelect
                   id="leaveCategory"
                   width="w-72"
-                  options={LEAVE_CATEGORY_OPTIONS}
+                  options={leaveCategoryOptions}
                   value={choiceValues.leaveCategory}
                   onChange={handleChoiceChange("leaveCategory")}
                 />
               </p>
 
               <p className="flex flex-wrap items-center gap-2 leading-relaxed">
-                <span>आज दिनांक</span>
+                <span>{translateHindi("आज दिनांक")}</span>
                 <DateUnderlineInput
                   id="rejoinDate"
                   width="w-36"
                   onChange={handleMirroredDateChange("englishRejoin")}
                 />
-                <span>को</span>
+                <span>{translateHindi("को")}</span>
                 <InlineSelect
                   id="dutySession"
                   width="w-52"
-                  options={DUTY_SESSION_OPTIONS}
+                  options={dutySessionOptions}
                   value={choiceValues.dutySession}
                   onChange={handleChoiceChange("dutySession")}
                 />
                 <span>
-                  को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की
-                  कार्यालय आदेश सं.
+                  {translateHindi(
+                    "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.",
+                  )}
                 </span>
                 <UnderlineInput id="orderNo" width="w-48" />
-                <span>दिनांक</span>
+                <span>{translateHindi("दिनांक")}</span>
                 <DateUnderlineInput
                   id="orderDate"
                   width="w-36"
                   onChange={handleMirroredDateChange("englishOrderDate")}
                 />
-                <span>के द्वारा स्वीकृत किया था।</span>
+                <span>{translateHindi("के द्वारा स्वीकृत किया था।")}</span>
               </p>
 
               <p className="flex flex-wrap items-center gap-2 leading-relaxed">
@@ -824,9 +1099,9 @@ function JoiningReportPageContent() {
               </p>
 
               <div className="space-y-1 text-right">
-                <p>भवदीय / Yours faithfully</p>
+                <p>{translateHindi("भवदीय")} / Yours faithfully</p>
                 <p>
-                  हस्ताक्षर / Signature:{" "}
+                  {translateHindi("हस्ताक्षर")} / Signature:{" "}
                   <input
                     type="hidden"
                     id="signature"
@@ -856,16 +1131,17 @@ function JoiningReportPageContent() {
                   </span>
                 </p>
                 <p>
-                  नाम / Name : <UnderlineInput id="signName" width="w-48" />
+                  {translateHindi("नाम")} / Name :{" "}
+                  <UnderlineInput id="signName" width="w-48" />
                 </p>
                 <p>
-                  पदनाम / Designation:{" "}
+                  {translateHindi("पदनाम")} / Designation:{" "}
                   <UnderlineInput id="signDesignation" width="w-44" />
                 </p>
               </div>
 
               <p className="text-right">
-                दिनांक / Dated:{" "}
+                {translateHindi("दिनांक")} / Dated:{" "}
                 <DateUnderlineInput id="signedDate" width="w-40" />
               </p>
             </div>
