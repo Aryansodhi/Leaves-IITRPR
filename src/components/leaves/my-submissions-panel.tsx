@@ -11,12 +11,16 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 
 type SubmissionItem = LeaveRequestDetails & {
   id: string;
+  canWithdraw?: boolean;
 };
 
 const isPendingStatus = (status: string) =>
   status === "SUBMITTED" || status === "UNDER_REVIEW";
 
 const isApprovedStatus = (status: string) => status === "APPROVED";
+
+const displayStatus = (status: string) =>
+  status === "CANCELLED" ? "WITHDRAWN" : status;
 
 const matchesDateFilters = (
   submittedAt: string,
@@ -44,48 +48,85 @@ export const MySubmissionsPanel = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SubmissionItem | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [showPending, setShowPending] = useState(true);
   const [showApproved, setShowApproved] = useState(true);
   const [showOther, setShowOther] = useState(true);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+  const load = async () => {
+    setLoading(true);
+    setError(null);
 
-      try {
-        const response = await fetch("/api/leaves/my-submissions", {
-          method: "GET",
-          cache: "no-store",
-        });
-        const result = (await response.json()) as {
-          ok?: boolean;
-          message?: string;
-          data?: { items?: SubmissionItem[] };
-        };
+    try {
+      const response = await fetch("/api/leaves/my-submissions", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        data?: { items?: SubmissionItem[] };
+      };
 
-        if (!response.ok || !result.ok) {
-          throw new Error(
-            result.message ?? "Unable to load leave submissions.",
-          );
-        }
-
-        setItems(result.data?.items ?? []);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load leave submissions.",
-        );
-      } finally {
-        setLoading(false);
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to load leave submissions.");
       }
-    };
 
+      setItems(result.data?.items ?? []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load leave submissions.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     void load();
   }, []);
+
+  const handleWithdraw = async (applicationId: string) => {
+    setWithdrawingId(applicationId);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const response = await fetch(
+        `/api/leaves/my-submissions/${applicationId}/withdraw`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message ?? "Unable to withdraw leave request.");
+      }
+
+      setFeedback(result.message ?? "Leave request withdrawn.");
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to withdraw leave request.",
+      );
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
 
   const filteredItems = useMemo(
     () =>
@@ -141,7 +182,7 @@ export const MySubmissionsPanel = () => {
             {entry.totalDays} days)
           </p>
           <p>
-            Status: {entry.status}
+            Status: {displayStatus(entry.status)}
             {entry.currentApprover
               ? ` | Pending with: ${entry.currentApprover}`
               : ""}
@@ -226,6 +267,12 @@ export const MySubmissionsPanel = () => {
         </SurfaceCard>
       ) : null}
 
+      {feedback ? (
+        <SurfaceCard className="border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {feedback}
+        </SurfaceCard>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-3">
         {showPending ? (
           <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
@@ -264,7 +311,7 @@ export const MySubmissionsPanel = () => {
         {showOther ? (
           <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Rejected / old submissions
+              Rejected / withdrawn / old submissions
             </p>
             {loading ? (
               <p className="text-sm text-slate-500">
@@ -285,6 +332,15 @@ export const MySubmissionsPanel = () => {
         isOpen={selected !== null}
         onClose={() => setSelected(null)}
         request={selected}
+        canWithdraw={Boolean(selected?.canWithdraw)}
+        withdrawBusy={withdrawingId === selected?.id}
+        onWithdraw={
+          selected?.canWithdraw
+            ? () => {
+                void handleWithdraw(selected.id);
+              }
+            : undefined
+        }
       />
     </section>
   );

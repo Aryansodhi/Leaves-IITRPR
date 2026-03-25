@@ -187,10 +187,16 @@ export const LeaveRequestDetailsModal = ({
   isOpen,
   onClose,
   request,
+  onWithdraw,
+  canWithdraw = false,
+  withdrawBusy = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
   request: LeaveRequestDetails | null;
+  onWithdraw?: () => void;
+  canWithdraw?: boolean;
+  withdrawBusy?: boolean;
 }) => {
   const printableRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -242,6 +248,15 @@ export const LeaveRequestDetailsModal = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {canWithdraw && onWithdraw ? (
+              <Button
+                variant="secondary"
+                onClick={onWithdraw}
+                disabled={withdrawBusy}
+              >
+                {withdrawBusy ? "Withdrawing..." : "Withdraw"}
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               onClick={handleDownloadPdf}

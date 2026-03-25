@@ -39,6 +39,11 @@ export async function GET() {
       const currentStep = entry.approvalSteps.find(
         (step) => step.status === "PENDING" || step.status === "IN_REVIEW",
       );
+      const canWithdraw =
+        (entry.status === LeaveStatus.SUBMITTED ||
+          entry.status === LeaveStatus.UNDER_REVIEW) &&
+        Boolean(currentStep) &&
+        entry.endDate >= new Date();
       const metadata = entry.metadata as Prisma.JsonObject | null;
       const formData =
         metadata && typeof metadata.formData === "object"
@@ -51,6 +56,7 @@ export async function GET() {
 
       return {
         id: entry.id,
+        canWithdraw,
         referenceCode: entry.referenceCode,
         leaveType: entry.leaveType.name,
         leaveTypeCode: entry.leaveType.code,
