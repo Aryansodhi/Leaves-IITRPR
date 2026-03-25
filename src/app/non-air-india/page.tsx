@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import type { FormEvent, InputHTMLAttributes } from "react";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -34,6 +34,213 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+type FormLanguage = "HI" | "TE" | "PA" | "MR" | "TA" | "ML" | "UR";
+
+const FORM_LANGUAGE_OPTIONS = [
+  { value: "HI", label: "Hindi" },
+  { value: "TE", label: "Telugu" },
+  { value: "PA", label: "Punjabi" },
+  { value: "MR", label: "Marathi" },
+  { value: "TA", label: "Tamil" },
+  { value: "ML", label: "Malayalam" },
+  { value: "UR", label: "Urdu" },
+] as const;
+
+const HINDI_TRANSLATIONS: Record<
+  Exclude<FormLanguage, "HI">,
+  Record<string, string>
+> = {
+  TE: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "భారత సాంకేతిక సంస్థ రోపర్",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "నంగళ్ రోడ్, రూపనగర్, పంజాబ్-140001",
+    दूरभाष: "దూరవాణి",
+    फैक्स: "ఫ్యాక్స్",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "ఎయిర్ ఇండియా కాకుండా ఇతర ఎయిర్‌లైన్ ద్వారా ప్రయాణానికి అనుమతి కోసం దరఖాస్తు",
+    नाम: "పేరు",
+    पदनाम: "పదవి",
+    विभाग: "విభాగం",
+    "यात्रा की तिथियां": "ప్రయాణ తేదీలు",
+    "प्रस्थान यात्रा": "ప్రస్థాన ప్రయాణం",
+    "वापसी यात्रा": "తిరుగు ప్రయాణం",
+    "कुल दिन": "మొత్తం రోజులు",
+    "भ्रमण का स्थान": "సందర్శించాల్సిన స్థలం",
+    उद्देश्य: "ఉద్దేశ్యం",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है": "అనుమతి కోరుతున్న సెక్షన్‌లు",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "ఎయిర్ ఇండియా కాకుండా ఇతర ఎయిర్‌లైన్ ద్వారా ప్రయాణించే కారణం",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।":
+      "ఎంహెచ్ఆర్డీ నుండి అనుమతి పొందినదా.",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)":
+      "అవును/కాదు (అవును అయితే మెయిల్ జత చేయబడింది)",
+    "बजट मद: संस्थान/परियोजना": "బడ్జెట్ హెడ్: సంస్థ/ప్రాజెక్ట్",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "పై క్రమ సంఖ్య 8లో పేర్కొన్న కారణాల ఆధారంగా ఎయిర్ ఇండియా కాకుండా ఇతర ఎయిర్‌లైన్ ద్వారా ప్రయాణానికి అనుమతి ఇవ్వగలరని వినమ్రంగా అభ్యర్థిస్తున్నాము.",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "దరఖాస్తుదారుడి సంతకం తేదీతో",
+    "विभागाध्यक्ष की अनुशंसा": "విభాగాధ్యక్షుడి సిఫారసు",
+    "डीन (Faculty Affairs and Administration)":
+      "డీన్ (Faculty Affairs and Administration)",
+    निदेशक: "నిర్దేశకుడు",
+  },
+  PA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ਭਾਰਤੀ ਪ੍ਰੌਧੋਗਿਕੀ ਸੰਸਥਾਨ ਰੋਪੜ",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "ਨੰਗਲ ਰੋਡ, ਰੂਪਨਗਰ, ਪੰਜਾਬ-140001",
+    दूरभाष: "ਟੈਲੀਫੋਨ",
+    फैक्स: "ਫੈਕਸ",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "ਏਅਰ ਇੰਡੀਆ ਤੋਂ ਇਲਾਵਾ ਹੋਰ ਏਅਰਲਾਈਨ ਨਾਲ ਯਾਤਰਾ ਦੀ ਇਜਾਜ਼ਤ ਲਈ ਅਰਜ਼ੀ",
+    नाम: "ਨਾਮ",
+    पदनाम: "ਪਦ",
+    विभाग: "ਵਿਭਾਗ",
+    "यात्रा की तिथियां": "ਯਾਤਰਾ ਦੀਆਂ ਤਰੀਖਾਂ",
+    "प्रस्थान यात्रा": "ਜਾਣ ਵਾਲੀ ਯਾਤਰਾ",
+    "वापसी यात्रा": "ਵਾਪਸੀ ਯਾਤਰਾ",
+    "कुल दिन": "ਕੁੱਲ ਦਿਨ",
+    "भ्रमण का स्थान": "ਦੌਰੇ ਦਾ ਸਥਾਨ",
+    उद्देश्य: "ਉਦੇਸ਼",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है":
+      "ਜਿਨ੍ਹਾਂ ਸੈਕਟਰਾਂ ਲਈ ਇਜਾਜ਼ਤ ਮੰਗੀ ਗਈ ਹੈ",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "ਏਅਰ ਇੰਡੀਆ ਤੋਂ ਇਲਾਵਾ ਹੋਰ ਏਅਰਲਾਈਨ ਨਾਲ ਯਾਤਰਾ ਦਾ ਕਾਰਨ",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।": "ਐਮਐਚਆਰਡੀ ਤੋਂ ਇਜਾਜ਼ਤ ਲਈ ਗਈ ਹੈ।",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)": "ਹਾਂ/ਨਹੀਂ (ਜੇ ਹਾਂ ਤਾਂ ਈਮੇਲ ਲਗਾਈ ਹੈ)",
+    "बजट मद: संस्थान/परियोजना": "ਬਜਟ ਹੈਡ: ਸੰਸਥਾਨ/ਪ੍ਰੋਜੈਕਟ",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "ਕਿਰਪਾ ਕਰਕੇ ਉਪਰੋਕਤ ਕ੍ਰ. 8 ਵਿੱਚ ਦਿੱਤੇ ਕਾਰਨ ਅਨੁਸਾਰ ਏਅਰ ਇੰਡੀਆ ਤੋਂ ਇਲਾਵਾ ਹੋਰ ਏਅਰਲਾਈਨ ਨਾਲ ਯਾਤਰਾ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ।",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "ਅਰਜ਼ੀਕਰਤਾ ਦੇ ਦਸਤਖ਼ਤ ਤਾਰੀਖ਼ ਸਮੇਤ",
+    "विभागाध्यक्ष की अनुशंसा": "ਵਿਭਾਗ ਮੁਖੀ ਦੀ ਸਿਫ਼ਾਰਸ਼",
+    "डीन (Faculty Affairs and Administration)":
+      "ਡੀਂ (Faculty Affairs and Administration)",
+    निदेशक: "ਡਾਇਰੈਕਟਰ",
+  },
+  MR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "भारतीय तंत्रज्ञान संस्था रोपड",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "नांगल रोड, रूपनगर, पंजाब-140001",
+    दूरभाष: "दूरध्वनी",
+    फैक्स: "फॅक्स",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "एअर इंडिया व्यतिरिक्त अन्य एअरलाइनने प्रवासासाठी परवानगीसाठी अर्ज",
+    नाम: "नाव",
+    पदनाम: "पदनाम",
+    विभाग: "विभाग",
+    "यात्रा की तिथियां": "प्रवासाच्या तारखा",
+    "प्रस्थान यात्रा": "प्रस्थान प्रवास",
+    "वापसी यात्रा": "वापसी प्रवास",
+    "कुल दिन": "एकूण दिवस",
+    "भ्रमण का स्थान": "भ्रमणाचे ठिकाण",
+    उद्देश्य: "उद्देश",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है":
+      "ज्या सेक्टरसाठी परवानगी मागितली आहे",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "एअर इंडिया व्यतिरिक्त अन्य एअरलाइनने प्रवासाचे कारण",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।": "एमएचआरडीकडून परवानगी घेतली आहे.",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)": "हो/नाही (हो असल्यास ईमेल संलग्न)",
+    "बजट मद: संस्थान/परियोजना": "बजेट हेड: संस्था/प्रकल्प",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "कृपया वरील क्र. 8 मध्ये दिलेल्या कारणावरून एअर इंडिया व्यतिरिक्त अन्य एअरलाइनने प्रवासाची परवानगी द्यावी.",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "अर्जदाराची सही दिनांकासह",
+    "विभागाध्यक्ष की अनुशंसा": "विभागाध्यक्षांची शिफारस",
+    "डीन (Faculty Affairs and Administration)":
+      "डीन (Faculty Affairs and Administration)",
+    निदेशक: "संचालक",
+  },
+  TA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "இந்திய தொழில்நுட்ப நிறுவனம் ரோபர்",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "நங்கல் சாலை, ரூப்நகர், பஞ்சாப்-140001",
+    दूरभाष: "தொலைபேசி",
+    फैक्स: "பேக்ஸ்",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "ஏர் இந்தியாவைத் தவிர மற்ற விமான சேவையில் பயண அனுமதி கோரும் விண்ணப்பு",
+    नाम: "பெயர்",
+    पदनाम: "பதவி",
+    विभाग: "துறை",
+    "यात्रा की तिथियां": "பயண தேதிகள்",
+    "प्रस्थान यात्रा": "புறப்பாட்டு பயணம்",
+    "वापसी यात्रा": "திரும்பும் பயணம்",
+    "कुल दिन": "மொத்த நாட்கள்",
+    "भ्रमण का स्थान": "பார்வையிட வேண்டிய இடம்",
+    उद्देश्य: "நோக்கம்",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है": "அனுமதி கோரும் செக்டர்கள்",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "ஏர் இந்தியாவைத் தவிர மற்ற விமான சேவையில் பயணிக்கக் காரணம்",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।":
+      "எம்எச்ஆர்டி அனுமதி பெறப்பட்டுள்ளது.",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)":
+      "ஆம்/இல்லை (ஆம் என்றால் மெயில் இணைக்கப்பட்டுள்ளது)",
+    "बजट मद: संस्थान/परियोजना": "பட்ஜெட் தலைப்பு: நிறுவனம்/திட்டம்",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "மேலே கூறிய எண் 8 காரணத்தின் அடிப்படையில் ஏர் இந்தியாவைத் தவிர மற்ற விமான சேவையில் பயண அனுமதி வழங்கவும்.",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "விண்ணப்பதாரரின் கையொப்பம் தேதி உடன்",
+    "विभागाध्यक्ष की अनुशंसा": "துறைத் தலைவர் பரிந்துரை",
+    "डीन (Faculty Affairs and Administration)":
+      "டீன் (Faculty Affairs and Administration)",
+    निदेशक: "இயக்குநர்",
+  },
+  ML: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ഇന്ത്യൻ സാങ്കേതിക സ്ഥാപനമായ റോപ്പർ",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "നങ്ങൽ റോഡ്, രൂപ്‌നഗർ, പഞ്ചാബ്-140001",
+    दूरभाष: "ടെലിഫോൺ",
+    फैक्स: "ഫാക്സ്",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "എയർ ഇന്ത്യയ്ക്ക് പുറമെ മറ്റൊരു എയർലൈൻ വഴി യാത്രാനുമതിക്ക് അപേക്ഷ",
+    नाम: "പേര്",
+    पदनाम: "പദവി",
+    विभाग: "വകുപ്പ്",
+    "यात्रा की तिथियां": "യാത്ര തീയതികൾ",
+    "प्रस्थान यात्रा": "പുറപ്പെടുന്ന യാത്ര",
+    "वापसी यात्रा": "മടങ്ങുന്ന യാത്ര",
+    "कुल दिन": "മൊത്തം ദിവസങ്ങൾ",
+    "भ्रमण का स्थान": "സന്ദർശിക്കാനുള്ള സ്ഥലം",
+    उद्देश्य: "ഉദ്ദേശ്യം",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है": "അനുമതി ആവശ്യപ്പെടുന്ന സെക്ടറുകൾ",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "എയർ ഇന്ത്യയ്ക്ക് പുറമെ മറ്റൊരു എയർലൈൻ വഴി യാത്രയുടെ കാരണം",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।":
+      "എംഎച്ച്ആർഡിയിൽ നിന്ന് അനുമതി ലഭിച്ചിട്ടുണ്ട്.",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)":
+      "അതെ/അല്ല (അതെ ആണെങ്കിൽ മെയിൽ ചേർത്തിരിക്കുന്നു)",
+    "बजट मद: संस्थान/परियोजना": "ബജറ്റ് ഹെഡ്: സ്ഥാപന/പ്രോജക്റ്റ്",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "മുകളിൽ ക്ര. 8ൽ പറയുന്ന കാരണത്തിന്റെ അടിസ്ഥാനത്തിൽ എയർ ഇന്ത്യയ്ക്ക് പുറമെ മറ്റൊരു എയർലൈൻ വഴി യാത്രാനുമതി നൽകുക.",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "അപേക്ഷകന്റെ ഒപ്പ് തീയതിയോടെ",
+    "विभागाध्यक्ष की अनुशंसा": "വകുപ്പ് തലവന്റെ ശുപാർശ",
+    "डीन (Faculty Affairs and Administration)":
+      "ഡീൻ (Faculty Affairs and Administration)",
+    निदेशक: "ഡയറക്ടർ",
+  },
+  UR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "انڈین انسٹی ٹیوٹ آف ٹیکنالوجی روپڑ",
+    "नंगल मार्ग, रूपनगर,पंजाब-140001": "ننگل روڈ، روپ نگر، پنجاب-140001",
+    दूरभाष: "ٹیلیفون",
+    फैक्स: "فیکس",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन":
+      "ایئر انڈیا کے علاوہ دیگر ایئر لائن سے سفر کی اجازت کے لیے درخواست",
+    नाम: "نام",
+    पदनाम: "عہدہ",
+    विभाग: "شعبہ",
+    "यात्रा की तिथियां": "سفر کی تاریخیں",
+    "प्रस्थान यात्रा": "روانہ ہونے کا سفر",
+    "वापसी यात्रा": "واپسی کا سفر",
+    "कुल दिन": "کل دن",
+    "भ्रमण का स्थान": "دورے کا مقام",
+    उद्देश्य: "مقصد",
+    "जिन सेक्टरों के लिए अनुमति मांगी गई है":
+      "جن سیکٹروں کے لیے اجازت مانگی گئی ہے",
+    "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण":
+      "ایئر انڈیا کے علاوہ دیگر ایئر لائن سے سفر کی وجہ",
+    "एमएचआरडी से अनुमति प्राप्त की गई है।":
+      "ایم ایچ آر ڈی سے اجازت حاصل کی گئی ہے۔",
+    "हाँ/नहीं (यदि हाँ तो मेल संलग्न)": "ہاں/نہیں (اگر ہاں تو ای میل منسلک ہے)",
+    "बजट मद: संस्थान/परियोजना": "بجٹ ہیڈ: ادارہ/پروجیکٹ",
+    "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।":
+      "براہ کرم اوپر نمبر 8 میں بیان کردہ وجہ کی بنیاد پر ایئر انڈیا کے علاوہ دیگر ایئر لائن سے سفر کی اجازت دیں۔",
+    "आवेदक के हस्ताक्षर दिनांक सहित": "درخواست گزار کے دستخط تاریخ کے ساتھ",
+    "विभागाध्यक्ष की अनुशंसा": "سربراہ شعبہ کی سفارش",
+    "डीन (Faculty Affairs and Administration)":
+      "ڈین (Faculty Affairs and Administration)",
+    निदेशक: "ڈائریکٹر",
+  },
+};
 
 interface UnderlineInputProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -85,6 +292,7 @@ function NonAirIndiaPageContent() {
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
   const [onwardJourney, setOnwardJourney] = useState("");
   const [returnJourney, setReturnJourney] = useState("");
   const [onwardSession, setOnwardSession] = useState<DaySession>("MORNING");
@@ -110,6 +318,14 @@ function NonAirIndiaPageContent() {
     handleVerifyOtp,
     resetAfterSubmit,
   } = useSignatureOtp({ enableTyped: false });
+
+  const translateHindi = useCallback(
+    (text: string) => {
+      if (formLanguage === "HI") return text;
+      return HINDI_TRANSLATIONS[formLanguage]?.[text] ?? text;
+    },
+    [formLanguage],
+  );
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -360,6 +576,27 @@ function NonAirIndiaPageContent() {
         </Button>
 
         <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
+          <div className="flex justify-end">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              Language
+              <select
+                id="formLanguage"
+                name="formLanguage"
+                value={formLanguage}
+                onChange={(event) =>
+                  setFormLanguage(event.target.value as FormLanguage)
+                }
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
+              >
+                {FORM_LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <header className="space-y-1 text-center text-slate-900">
             <div className="flex items-start justify-center gap-4">
               <Image
@@ -371,30 +608,46 @@ function NonAirIndiaPageContent() {
               />
               <div className="space-y-1 text-left">
                 <p className="text-base font-semibold">
-                  भारतीय प्रौद्योगिकी संस्थान रोपड़
+                  {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                 </p>
                 <p className="text-base font-semibold uppercase">
                   INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                 </p>
                 <p className="text-[11px] text-slate-700">
-                  नंगल मार्ग, रूपनगर,पंजाब-140001/Nangal Road, Rupnagar,
-                  Punjab-140001
+                  {translateHindi("नंगल मार्ग, रूपनगर,पंजाब-140001")} / Nangal
+                  Road, Rupnagar, Punjab-140001
                 </p>
                 <p className="text-[11px] text-slate-700">
-                  दूरभाष/Tele: +91-1881-227078,फैक्स /Fax : +91-1881-223395
+                  {translateHindi("दूरभाष")}/Tele: +91-1881-227078,
+                  {translateHindi("फैक्स")} /Fax : +91-1881-223395
                 </p>
               </div>
             </div>
             <p className="text-sm font-semibold uppercase">
               APPLICATION FOR PERMISSION TO TRAVEL BY AIRLINE OTHER THAN AIR
-              INDIA
+              INDIA /{" "}
+              {translateHindi(
+                "एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति हेतु आवेदन",
+              )}
             </p>
           </header>
 
           <div className="space-y-3 text-[13px] text-slate-900">
-            <LabeledLine number="1" label="Name" inputId="name" />
-            <LabeledLine number="2" label="Designation" inputId="designation" />
-            <LabeledLine number="3" label="Department" inputId="department" />
+            <LabeledLine
+              number="1"
+              label={`Name / ${translateHindi("नाम")}`}
+              inputId="name"
+            />
+            <LabeledLine
+              number="2"
+              label={`Designation / ${translateHindi("पदनाम")}`}
+              inputId="designation"
+            />
+            <LabeledLine
+              number="3"
+              label={`Department / ${translateHindi("विभाग")}`}
+              inputId="department"
+            />
             <VisitDates
               onwardJourney={onwardJourney}
               returnJourney={returnJourney}
@@ -405,38 +658,55 @@ function NonAirIndiaPageContent() {
               onReturnJourneyChange={setReturnJourney}
               onOnwardSessionChange={setOnwardSession}
               onReturnSessionChange={setReturnSession}
+              translateHindi={translateHindi}
             />
             <LabeledLine
               number="5"
-              label="Place to be Visited"
+              label={`Place to be Visited / ${translateHindi("भ्रमण का स्थान")}`}
               inputId="placeToVisit"
             />
-            <LabeledLine number="6" label="Purpose" inputId="purpose" />
+            <LabeledLine
+              number="6"
+              label={`Purpose / ${translateHindi("उद्देश्य")}`}
+              inputId="purpose"
+            />
             <LabeledLine
               number="7"
-              label="Sectors for which permission is sought"
+              label={`Sectors for which permission is sought / ${translateHindi(
+                "जिन सेक्टरों के लिए अनुमति मांगी गई है",
+              )}`}
               inputId="sectors"
             />
             <LabeledLine
               number="8"
-              label="Reason for travel by airline other than Air India"
+              label={`Reason for travel by airline other than Air India / ${translateHindi(
+                "एयर इंडिया के अलावा एयरलाइन से यात्रा का कारण",
+              )}`}
               inputId="reason"
             />
-            <PermissionMhrd />
+            <PermissionMhrd translateHindi={translateHindi} />
             <LabeledLine
               number="10"
-              label="Budget Head: Institute/Project"
+              label={`Budget Head: Institute/Project / ${translateHindi(
+                "बजट मद: संस्थान/परियोजना",
+              )}`}
               inputId="budgetHead"
             />
           </div>
 
           <p className="text-[12px] text-slate-900">
             May kindly consider and grant permission to travel by Airline other
-            than AirIndia as a special case as justified at Sr. No. 8 above.
+            than AirIndia as a special case as justified at Sr. No. 8 above. /{" "}
+            {translateHindi(
+              "कृपया उपरोक्त क्र. 8 में बताए गए कारण के आधार पर एयर इंडिया के अलावा एयरलाइन से यात्रा की अनुमति प्रदान करने की कृपा करें।",
+            )}
           </p>
 
           <div className="flex items-center justify-end text-[12px] text-slate-900">
-            <span>(Signature of Applicant’s with date)</span>
+            <span>
+              (Signature of Applicant’s with date) /{" "}
+              {translateHindi("आवेदक के हस्ताक्षर दिनांक सहित")}
+            </span>
             <input
               type="hidden"
               id="applicantSignature"
@@ -467,9 +737,15 @@ function NonAirIndiaPageContent() {
           </div>
 
           <div className="space-y-2 text-[12px] text-slate-900">
-            <p>Recommendation of the HoD</p>
-            <p>Dean (Faculty Affairs and Administration)</p>
-            <p>Director</p>
+            <p>
+              Recommendation of the HoD /{" "}
+              {translateHindi("विभागाध्यक्ष की अनुशंसा")}
+            </p>
+            <p>
+              Dean (Faculty Affairs and Administration) /{" "}
+              {translateHindi("डीन (Faculty Affairs and Administration)")}
+            </p>
+            <p>Director / {translateHindi("निदेशक")}</p>
           </div>
         </SurfaceCard>
 
@@ -649,6 +925,7 @@ const VisitDates = ({
   onReturnJourneyChange,
   onOnwardSessionChange,
   onReturnSessionChange,
+  translateHindi,
 }: {
   onwardJourney: string;
   returnJourney: string;
@@ -659,14 +936,19 @@ const VisitDates = ({
   onReturnJourneyChange: (value: string) => void;
   onOnwardSessionChange: (value: DaySession) => void;
   onReturnSessionChange: (value: DaySession) => void;
+  translateHindi: (text: string) => string;
 }) => (
   <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-4 text-right font-semibold">4</span>
-      <span className="flex-1 font-semibold">Visit Dates</span>
+      <span className="flex-1 font-semibold">
+        Visit Dates / {translateHindi("यात्रा की तिथियां")}
+      </span>
       <span>:</span>
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-xs">Onward Journey:</span>
+        <span className="font-semibold text-xs">
+          Onward Journey / {translateHindi("प्रस्थान यात्रा")}:
+        </span>
         <UnderlineInput
           id="onwardJourney"
           type="date"
@@ -685,13 +967,19 @@ const VisitDates = ({
           }
           className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
         >
-          <option value="MORNING">Morning</option>
-          <option value="AFTERNOON">Afternoon</option>
-          <option value="EVENING">Evening</option>
+          <option value="MORNING">
+            Morning / {translateHindi("पूर्वाह्न")}
+          </option>
+          <option value="AFTERNOON">
+            Afternoon / {translateHindi("अपराह्न")}
+          </option>
+          <option value="EVENING">Evening / {translateHindi("सायं")}</option>
         </select>
       </div>
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-xs">Return Journey:</span>
+        <span className="font-semibold text-xs">
+          Return Journey / {translateHindi("वापसी यात्रा")}:
+        </span>
         <UnderlineInput
           id="returnJourney"
           type="date"
@@ -710,13 +998,19 @@ const VisitDates = ({
           }
           className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
         >
-          <option value="MORNING">Morning</option>
-          <option value="AFTERNOON">Afternoon</option>
-          <option value="EVENING">Evening</option>
+          <option value="MORNING">
+            Morning / {translateHindi("पूर्वाह्न")}
+          </option>
+          <option value="AFTERNOON">
+            Afternoon / {translateHindi("अपराह्न")}
+          </option>
+          <option value="EVENING">Evening / {translateHindi("सायं")}</option>
         </select>
       </div>
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-xs">Total Days:</span>
+        <span className="font-semibold text-xs">
+          Total Days / {translateHindi("कुल दिन")}:
+        </span>
         <UnderlineInput
           id="travelDays"
           type="text"
@@ -730,12 +1024,22 @@ const VisitDates = ({
   </div>
 );
 
-const PermissionMhrd = () => (
+const PermissionMhrd = ({
+  translateHindi,
+}: {
+  translateHindi: (text: string) => string;
+}) => (
   <div className="flex flex-wrap items-center gap-2">
     <span className="w-4 text-right font-semibold">9</span>
-    <span className="flex-1 font-semibold">Permission sought from MHRD.</span>
+    <span className="flex-1 font-semibold">
+      Permission sought from MHRD. /{" "}
+      {translateHindi("एमएचआरडी से अनुमति प्राप्त की गई है।")}
+    </span>
     <span>:</span>
-    <span>Yes/No (If yes mail attached):</span>
+    <span>
+      Yes/No (If yes mail attached): /{" "}
+      {translateHindi("हाँ/नहीं (यदि हाँ तो मेल संलग्न)")}
+    </span>
     <UnderlineInput id="permissionMhrd" width="w-28" />
   </div>
 );

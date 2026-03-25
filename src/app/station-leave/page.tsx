@@ -3,7 +3,14 @@
 export const dynamic = "force-dynamic";
 
 import type { ChangeEvent, FormEvent, InputHTMLAttributes } from "react";
-import { Suspense, useEffect, useRef, useState, forwardRef } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  forwardRef,
+} from "react";
 import { ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -21,7 +28,186 @@ import { downloadFormAsPdf } from "@/lib/pdf-export";
 import { cn } from "@/lib/utils";
 
 type DialogState = "confirm" | "success" | null;
+type FormLanguage = "HI" | "TE" | "PA" | "MR" | "TA" | "ML" | "UR";
 type DaySession = "MORNING" | "AFTERNOON" | "EVENING";
+
+const FORM_LANGUAGE_OPTIONS = [
+  { value: "HI", label: "Hindi" },
+  { value: "TE", label: "Telugu" },
+  { value: "PA", label: "Punjabi" },
+  { value: "MR", label: "Marathi" },
+  { value: "TA", label: "Tamil" },
+  { value: "ML", label: "Malayalam" },
+  { value: "UR", label: "Urdu" },
+] as const;
+
+const HINDI_TRANSLATIONS: Record<
+  Exclude<FormLanguage, "HI">,
+  Record<string, string>
+> = {
+  TE: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "భారత సాంకేతిక సంస్థ రోపర్",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "నంగళ్ రోడ్, రూపనగర్, పంజాబ్-140001",
+    दूरभाष: "దూరవాణి",
+    फैक्स: "ఫ్యాక్స్",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "స్టేషన్ సెలవు అనుమతి (SLP)",
+    नाम: "పేరు",
+    पदनाम: "పదవి",
+    विभाग: "విభాగం",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)": "అనుమతించిన సెలవు రకం (వర్తిస్తే)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "స్టేషన్ సెలవు అనుమతి ఉద్దేశ్యం",
+    स्थान: "స్థలం",
+    दिनांक: "తేదీ",
+    "आवेदक के हस्ताक्षर": "దరఖాస్తుదారుడి సంతకం",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां": "స్టేషన్ సెలవు అనుమతికి తేదీలు",
+    से: "నుంచి",
+    तक: "వరకు",
+    "दिनों की संख्या": "రోజుల సంఖ్య",
+    पूर्वाह्न: "పూర్వాహ్నం",
+    अपराह्न: "అపరాహ్నం",
+    सायं: "సాయంత్రం",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "స్టేషన్ సెలవు సమయంలో సంప్రదింపు సంఖ్య మరియు చిరునామా",
+    "10-अंकीय मोबाइल": "10 అంకెల మొబైల్",
+    पता: "చిరునామా",
+  },
+  PA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ਭਾਰਤੀ ਪ੍ਰੌਧੋਗਿਕੀ ਸੰਸਥਾਨ ਰੋਪੜ",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "ਨੰਗਲ ਰੋਡ, ਰੂਪਨਗਰ, ਪੰਜਾਬ-140001",
+    दूरभाष: "ਟੈਲੀਫੋਨ",
+    फैक्स: "ਫੈਕਸ",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "ਸਟੇਸ਼ਨ ਛੁੱਟੀ ਅਨੁਮਤੀ (SLP)",
+    नाम: "ਨਾਮ",
+    पदनाम: "ਪਦ",
+    विभाग: "ਵਿਭਾਗ",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)":
+      "ਮਨਜ਼ੂਰ ਛੁੱਟੀ ਦੀ ਕਿਸਮ (ਜੇ ਲਾਗੂ ਹੋਵੇ)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "ਸਟੇਸ਼ਨ ਛੁੱਟੀ ਅਨੁਮਤੀ ਦਾ ਉਦੇਸ਼",
+    स्थान: "ਸਥਾਨ",
+    दिनांक: "ਤਾਰੀਖ",
+    "आवेदक के हस्ताक्षर": "ਅਰਜ਼ੀਕਰਤਾ ਦੇ ਦਸਤਖ਼ਤ",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां": "ਸਟੇਸ਼ਨ ਛੁੱਟੀ ਅਨੁਮਤੀ ਲਈ ਤਰੀਖਾਂ",
+    से: "ਤੋਂ",
+    तक: "ਤੱਕ",
+    "दिनों की संख्या": "ਦਿਨਾਂ ਦੀ ਗਿਣਤੀ",
+    पूर्वाह्न: "ਪੂਰਵਾਹਨ",
+    अपराह्न: "ਅਪਰਾਹਨ",
+    सायं: "ਸ਼ਾਮ",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "ਸਟੇਸ਼ਨ ਛੁੱਟੀ ਦੌਰਾਨ ਸੰਪਰਕ ਨੰਬਰ ਅਤੇ ਪਤਾ",
+    "10-अंकीय मोबाइल": "10 ਅੰਕਾਂ ਵਾਲਾ ਮੋਬਾਈਲ",
+    पता: "ਪਤਾ",
+  },
+  MR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "भारतीय तंत्रज्ञान संस्था रोपड",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "नांगल रोड, रूपनगर, पंजाब-140001",
+    दूरभाष: "दूरध्वनी",
+    फैक्स: "फॅक्स",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "स्टेशन रजा परवानगी (एसएलपी)",
+    नाम: "नाव",
+    पदनाम: "पदनाम",
+    विभाग: "विभाग",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)":
+      "मंजूर रजेचा प्रकार (लागू असल्यास)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "स्टेशन रजा परवानगीचा उद्देश",
+    स्थान: "स्थान",
+    दिनांक: "दिनांक",
+    "आवेदक के हस्ताक्षर": "अर्जदाराची सही",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां": "स्टेशन रजा परवानगीसाठी तारखा",
+    से: "पासून",
+    तक: "पर्यंत",
+    "दिनों की संख्या": "दिवसांची संख्या",
+    पूर्वाह्न: "पूर्वाह्न",
+    अपराह्न: "अपराह्न",
+    सायं: "सायंकाळ",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "स्टेशन रजा दरम्यान संपर्क क्रमांक आणि पत्ता",
+    "10-अंकीय मोबाइल": "10 अंकी मोबाइल",
+    पता: "पत्ता",
+  },
+  TA: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "இந்திய தொழில்நுட்ப நிறுவனம் ரோபர்",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "நங்கல் சாலை, ரூப்நகர், பஞ்சாப்-140001",
+    दूरभाष: "தொலைபேசி",
+    फैक्स: "பேக்ஸ்",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "ஸ்டேஷன் விடுப்பு அனுமதி (SLP)",
+    नाम: "பெயர்",
+    पदनाम: "பதவி",
+    विभाग: "துறை",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)":
+      "அனுமதிக்கப்பட்ட விடுப்பு வகை (பொருந்தினால்)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "ஸ்டேஷன் விடுப்பு அனுமதியின் நோக்கம்",
+    स्थान: "இடம்",
+    दिनांक: "தேதி",
+    "आवेदक के हस्ताक्षर": "விண்ணப்பதாரரின் கையொப்பம்",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां":
+      "ஸ்டேஷன் விடுப்பு அனுமதி தேவையான தேதிகள்",
+    से: "இருந்து",
+    तक: "வரை",
+    "दिनों की संख्या": "நாட்களின் எண்ணிக்கை",
+    पूर्वाह्न: "முற்பகல்",
+    अपराह्न: "பிற்பகல்",
+    सायं: "மாலை",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "ஸ்டேஷன் விடுப்பு காலத்தில் தொடர்பு எண் மற்றும் முகவரி",
+    "10-अंकीय मोबाइल": "10 இலக்க மொபைல்",
+    पता: "முகவரி",
+  },
+  ML: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "ഇന്ത്യൻ സാങ്കേതിക സ്ഥാപനമായ റോപ്പർ",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "നങ്ങൽ റോഡ്, രൂപ്‌നഗർ, പഞ്ചാബ്-140001",
+    दूरभाष: "ടെലിഫോൺ",
+    फैक्स: "ഫാക്സ്",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "സ്റ്റേഷൻ അവധി അനുമതി (SLP)",
+    नाम: "പേര്",
+    पदनाम: "പദവി",
+    विभाग: "വകുപ്പ്",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)":
+      "അംഗീകരിച്ച അവധി തരം (ലാഗൂ ആണെങ്കിൽ)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "സ്റ്റേഷൻ അവധി അനുമതിയുടെ ഉദ്ദേശ്യം",
+    स्थान: "സ്ഥലം",
+    दिनांक: "തീയതി",
+    "आवेदक के हस्ताक्षर": "അപേക്ഷകന്റെ ഒപ്പ്",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां": "സ്റ്റേഷൻ അവധി അനുമതിക്കുള്ള തീയതികൾ",
+    से: "മുതൽ",
+    तक: "വരെ",
+    "दिनों की संख्या": "ദിവസങ്ങളുടെ എണ്ണം",
+    पूर्वाह्न: "പൂർവ്വാഹ്നം",
+    अपराह्न: "അപരാഹ്നം",
+    सायं: "വൈകുന്നേരം",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "സ്റ്റേഷൻ അവധി സമയത്ത് ബന്ധപ്പെടാനുള്ള നമ്പറും വിലാസവും",
+    "10-अंकीय मोबाइल": "10 അക്ക മൊബൈൽ",
+    पता: "വിലാസം",
+  },
+  UR: {
+    "भारतीय प्रौद्योगिकी संस्थान रोपड़": "انڈین انسٹی ٹیوٹ آف ٹیکنالوجی روپڑ",
+    "नंगल रोड,रूपनगर,पंजाब-140001": "ننگل روڈ، روپ نگر، پنجاب-140001",
+    दूरभाष: "ٹیلیفون",
+    फैक्स: "فیکس",
+    "स्टेशन अवकाश अनुमति (एसएलपी)": "اسٹیشن رخصت اجازت (SLP)",
+    नाम: "نام",
+    पदनाम: "عہدہ",
+    विभाग: "شعبہ",
+    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)":
+      "منظور شدہ چھٹی کی قسم (اگر لاگو ہو)",
+    "स्टेशन अवकाश अनुमति का उद्देश्य": "اسٹیشن رخصت اجازت کا مقصد",
+    स्थान: "مقام",
+    दिनांक: "تاریخ",
+    "आवेदक के हस्ताक्षर": "درخواست گزار کے دستخط",
+    "स्टेशन अवकाश अनुमति हेतु तिथियां": "اسٹیشن رخصت اجازت کے لیے تاریخیں",
+    से: "سے",
+    तक: "تک",
+    "दिनों की संख्या": "دنوں کی تعداد",
+    पूर्वाह्न: "قبل از دوپہر",
+    अपराह्न: "بعد از دوپہر",
+    सायं: "شام",
+    "स्टेशन अवकाश के दौरान संपर्क संख्या और पता":
+      "اسٹیشن رخصت کے دوران رابطہ نمبر اور پتہ",
+    "10-अंकीय मोबाइल": "10 ہندسوں والا موبائل",
+    पता: "پتہ",
+  },
+};
 
 const SESSION_OFFSET: Record<DaySession, number> = {
   MORNING: 0,
@@ -152,6 +338,7 @@ function StationLeavePageContent() {
   const [isRoleLocked, setIsRoleLocked] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
   const [history, setHistory] = useState<StationLeaveHistoryItem[]>([]);
   const signature = useSignatureOtp({ enableTyped: true });
   const setOtpEmail = signature.setOtpEmail;
@@ -164,6 +351,14 @@ function StationLeavePageContent() {
     "On submit, this request is routed to your authority automatically.",
   );
   const [bootstrapRoutingPreview, setBootstrapRoutingPreview] = useState("");
+
+  const translateHindi = useCallback(
+    (text: string) => {
+      if (formLanguage === "HI") return text;
+      return HINDI_TRANSLATIONS[formLanguage]?.[text] ?? text;
+    },
+    [formLanguage],
+  );
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
     const inputs = Array.from(
@@ -573,6 +768,27 @@ function StationLeavePageContent() {
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           <div ref={printableRef}>
             <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
+              <div className="flex justify-end">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  Language
+                  <select
+                    id="formLanguage"
+                    name="formLanguage"
+                    value={formLanguage}
+                    onChange={(event) =>
+                      setFormLanguage(event.target.value as FormLanguage)
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
+                  >
+                    {FORM_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
               <header className="space-y-1 text-center text-slate-900">
                 <div className="flex items-start justify-center gap-4">
                   {/* html2canvas captures plain img more reliably for PDF export than next/image wrappers */}
@@ -588,34 +804,44 @@ function StationLeavePageContent() {
                   />
                   <div className="space-y-1 text-left">
                     <p className="text-base font-semibold">
-                      भारतीय प्रौद्योगिकी संस्थान रोपड़
+                      {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                     </p>
                     <p className="text-base font-semibold uppercase">
                       INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                     </p>
                     <p className="text-[11px] text-slate-700">
-                      नंगल रोड,रूपनगर,पंजाब-140001/ Nangal Road, Rupnagar,
-                      Punjab-140001
+                      {translateHindi("नंगल रोड,रूपनगर,पंजाब-140001")} / Nangal
+                      Road, Rupnagar, Punjab-140001
                     </p>
                     <p className="text-[11px] text-slate-700">
-                      दूरभाष/Tele: +91-1881-227078,फैक्स /Fax : +91-1881-223395
+                      {translateHindi("दूरभाष")}/Tele: +91-1881-227078,
+                      {translateHindi("फैक्स")} /Fax : +91-1881-223395
                     </p>
                   </div>
                 </div>
                 <div className="border-b border-slate-500" />
                 <p className="text-base font-semibold underline">
-                  STATION LEAVE PERMISSION (SLP)
+                  STATION LEAVE PERMISSION (SLP) /{" "}
+                  {translateHindi("स्टेशन अवकाश अनुमति (एसएलपी)")}
                 </p>
               </header>
 
               <div className="space-y-3 text-[13px] text-slate-900">
-                <LineItem number="1." label="Name" inputId="name" />
+                <LineItem
+                  number="1."
+                  label={`Name / ${translateHindi("नाम")}`}
+                  inputId="name"
+                />
                 <LineItem
                   number="2."
-                  label="Designation"
+                  label={`Designation / ${translateHindi("पदनाम")}`}
                   inputId="designation"
                 />
-                <LineItem number="3." label="Department" inputId="department" />
+                <LineItem
+                  number="3."
+                  label={`Department / ${translateHindi("विभाग")}`}
+                  inputId="department"
+                />
                 <StationLeaveDatesRow
                   fromDate={fromDate}
                   toDate={toDate}
@@ -626,32 +852,38 @@ function StationLeavePageContent() {
                   onToDateChange={setToDate}
                   onFromSessionChange={setFromSession}
                   onToSessionChange={setToSession}
+                  translateHindi={translateHindi}
                 />
                 <LineItem
                   number="5."
-                  label="Nature of Leave sanctioned (if applicable)"
+                  label={`Nature of Leave sanctioned (if applicable) / ${translateHindi(
+                    "स्वीकृत अवकाश का प्रकार (यदि लागू हो)",
+                  )}`}
                   inputId="nature"
                 />
                 <LineItem
                   number="6."
-                  label="Purpose of the Station Leave Permission"
+                  label={`Purpose of the Station Leave Permission / ${translateHindi(
+                    "स्टेशन अवकाश अनुमति का उद्देश्य",
+                  )}`}
                   inputId="purpose"
                 />
-                <StationLeaveContactRow />
+                <StationLeaveContactRow translateHindi={translateHindi} />
               </div>
 
               <div className="space-y-2 text-[13px] text-slate-900">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>Place:</span>
+                  <span>Place / {translateHindi("स्थान")}:</span>
                   <UnderlineInput id="place" width="w-44" />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span>Date:</span>
+                  <span>Date / {translateHindi("दिनांक")}:</span>
                   <UnderlineInput id="date" width="w-44" />
                 </div>
                 <div className="flex items-center justify-end gap-2 pt-2 text-right">
                   <span className="text-[12px] text-slate-800">
-                    (Signature of the applicant)
+                    (Signature of the applicant) / (
+                    {translateHindi("आवेदक के हस्ताक्षर")})
                   </span>
                   <input
                     type="hidden"
@@ -926,6 +1158,7 @@ const StationLeaveDatesRow = ({
   onToDateChange,
   onFromSessionChange,
   onToSessionChange,
+  translateHindi,
 }: {
   fromDate: string;
   toDate: string;
@@ -936,17 +1169,19 @@ const StationLeaveDatesRow = ({
   onToDateChange: (value: string) => void;
   onFromSessionChange: (value: DaySession) => void;
   onToSessionChange: (value: DaySession) => void;
+  translateHindi: (text: string) => string;
 }) => (
   <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-6">4.</span>
       <span className="flex-1">
-        Dates for which Station Leave Permission is required
+        Dates for which Station Leave Permission is required /{" "}
+        {translateHindi("स्टेशन अवकाश अनुमति हेतु तिथियां")}
       </span>
     </div>
     <div className="flex flex-wrap items-center gap-3 pl-8">
       <div className="flex items-center gap-2">
-        <span>From</span>
+        <span>From / {translateHindi("से")}</span>
         <DateUnderlineInput
           id="from"
           value={fromDate}
@@ -959,10 +1194,11 @@ const StationLeaveDatesRow = ({
           onChange={(event) =>
             onFromSessionChange(event.target.value as DaySession)
           }
+          translateHindi={translateHindi}
         />
       </div>
       <div className="flex items-center gap-2">
-        <span>To</span>
+        <span>To / {translateHindi("तक")}</span>
         <DateUnderlineInput
           id="to"
           value={toDate}
@@ -975,10 +1211,11 @@ const StationLeaveDatesRow = ({
           onChange={(event) =>
             onToSessionChange(event.target.value as DaySession)
           }
+          translateHindi={translateHindi}
         />
       </div>
       <div className="flex items-center gap-2">
-        <span>No. of days</span>
+        <span>No. of days / {translateHindi("दिनों की संख्या")}</span>
         <UnderlineInput
           id="days"
           type="text"
@@ -1018,10 +1255,12 @@ const SessionSelect = ({
   id,
   value,
   onChange,
+  translateHindi,
 }: {
   id: string;
   value: DaySession;
   onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  translateHindi: (text: string) => string;
 }) => (
   <select
     id={id}
@@ -1030,18 +1269,23 @@ const SessionSelect = ({
     onChange={onChange}
     className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
   >
-    <option value="MORNING">Morning</option>
-    <option value="AFTERNOON">Afternoon</option>
-    <option value="EVENING">Evening</option>
+    <option value="MORNING">Morning / {translateHindi("पूर्वाह्न")}</option>
+    <option value="AFTERNOON">Afternoon / {translateHindi("अपराह्न")}</option>
+    <option value="EVENING">Evening / {translateHindi("सायं")}</option>
   </select>
 );
 
-const StationLeaveContactRow = () => (
+const StationLeaveContactRow = ({
+  translateHindi,
+}: {
+  translateHindi: (text: string) => string;
+}) => (
   <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
       <span className="w-6">7.</span>
       <span className="flex-1">
-        Contact number and address during station leave
+        Contact number and address during station leave /{" "}
+        {translateHindi("स्टेशन अवकाश के दौरान संपर्क संख्या और पता")}
       </span>
     </div>
     <div className="flex flex-wrap items-center gap-3 pl-8">
@@ -1064,7 +1308,7 @@ const StationLeaveContactRow = () => (
         inputMode="numeric"
         pattern="[0-9]{10}"
         maxLength={10}
-        placeholder="10-digit mobile"
+        placeholder={`10-digit mobile / ${translateHindi("10-अंकीय मोबाइल")}`}
         onInput={(event) => {
           const target = event.currentTarget;
           target.value = target.value.replace(/\D/g, "").slice(0, 10);
@@ -1072,7 +1316,7 @@ const StationLeaveContactRow = () => (
       />
     </div>
     <div className="flex flex-wrap items-center gap-2 pl-8">
-      <span>Address</span>
+      <span>Address / {translateHindi("पता")}</span>
       <UnderlineInput id="contactAddress" className="flex-1" />
     </div>
   </div>
