@@ -1,17 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --canvas: radial-gradient(
-    circle at 10% 20%,
-    #fcfcff 0%,
-    #f7f4ef 35%,
-    #fdf7ee 70%
-  );
+  --canvas:
+    radial-gradient(
+      1200px circle at 12% 8%,
+      rgba(14, 165, 233, 0.12),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px circle at 88% 12%,
+      rgba(244, 114, 182, 0.12),
+      transparent 52%
+    ),
+    radial-gradient(
+      800px circle at 55% 105%,
+      rgba(251, 191, 36, 0.1),
+      transparent 48%
+    ),
+    radial-gradient(circle at 10% 20%, #fcfcff 0%, #f7f4ef 42%, #fdf7ee 100%);
   --surface: #ffffff;
   --ink: #0f172a;
   --muted: #6b7280;
   --brand: #111827;
-  --grid-color: rgba(15, 23, 42, 0.08);
+  --grid-color: rgba(15, 23, 42, 0.06);
   --font-sans: var(--font-app-sans, "Space Grotesk", system-ui, sans-serif);
   --font-mono: var(--font-app-mono, "IBM Plex Mono", ui-monospace);
 }
@@ -31,7 +42,29 @@ body {
   min-height: 100vh;
   font-family: var(--font-sans);
   background-image: var(--canvas);
+  background-attachment: fixed;
   color: var(--ink);
+}
+
+@layer base {
+  a {
+    color: inherit;
+    text-decoration-color: rgba(15, 23, 42, 0.35);
+    text-underline-offset: 3px;
+    transition:
+      color 180ms ease,
+      text-decoration-color 180ms ease;
+  }
+
+  a:hover {
+    text-decoration-color: rgba(15, 23, 42, 0.55);
+  }
+
+  a:focus-visible {
+    outline: 2px solid rgba(15, 23, 42, 0.55);
+    outline-offset: 3px;
+    border-radius: 10px;
+  }
 }
 
 .bg-canvas {
@@ -43,8 +76,8 @@ body {
   background-image:
     linear-gradient(var(--grid-color) 1px, transparent 0),
     linear-gradient(90deg, var(--grid-color) 1px, transparent 0);
-  background-size: 60px 60px;
-  background-position: -10px -10px;
+  background-size: 72px 72px;
+  background-position: -14px -14px;
 }
 
 .bg-grid::before {
@@ -53,16 +86,68 @@ body {
   inset: 0;
   background:
     radial-gradient(
-      circle at 25% 20%,
-      rgba(14, 165, 233, 0.12),
-      transparent 50%
+      1000px circle at 18% 18%,
+      rgba(14, 165, 233, 0.1),
+      transparent 60%
     ),
     radial-gradient(
-      circle at 75% 0%,
-      rgba(244, 114, 182, 0.16),
-      transparent 45%
+      900px circle at 82% 8%,
+      rgba(244, 114, 182, 0.12),
+      transparent 58%
     );
   z-index: 0;
+  pointer-events: none;
+  will-change: filter;
+  animation: lf-mesh-shift 4s ease-in-out infinite;
+}
+
+.bg-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(255, 255, 255, 0.75),
+      rgba(255, 255, 255, 0) 55%
+    ),
+    radial-gradient(
+      circle at 50% 100%,
+      rgba(15, 23, 42, 0.06),
+      rgba(15, 23, 42, 0) 55%
+    );
+  z-index: 0;
+  pointer-events: none;
+  will-change: opacity;
+  animation: lf-vignette-shift 4s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+@keyframes lf-mesh-shift {
+  0% {
+    filter: hue-rotate(0deg) saturate(1) brightness(1);
+    opacity: 1;
+  }
+  50% {
+    filter: hue-rotate(10deg) saturate(1.06) brightness(1.02);
+    opacity: 0.96;
+  }
+  100% {
+    filter: hue-rotate(-8deg) saturate(1.1) brightness(1.03);
+    opacity: 1;
+  }
+}
+
+@keyframes lf-vignette-shift {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .bg-grid > * {
@@ -73,4 +158,26 @@ body {
 ::selection {
   background: #0f172a;
   color: #fefce8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+
+  a,
+  button,
+  [role="button"],
+  input,
+  textarea,
+  select {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+
+  button,
+  [role="button"],
+  input {
+    transform: none !important;
+  }
 }

@@ -13,7 +13,7 @@ export const SurfaceCard = ({
 }) => (
   <div
     className={cn(
-      "rounded-3xl border border-slate-200/70 bg-white/90 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,.8)] backdrop-blur",
+      "rounded-3xl border border-slate-200/70 bg-white/90 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,.8)] backdrop-blur transition-[border-color,background-color,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-slate-300/80 hover:bg-white",
       spotlight &&
         "border-slate-900/10 bg-linear-to-br from-white via-white to-slate-50",
       className,
