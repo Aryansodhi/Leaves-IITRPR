@@ -116,7 +116,16 @@ const verifySessionToken = (token: string): SessionPayload => {
 
 export const sessionCookieConfig = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: (() => {
+    const override = process.env.AUTH_COOKIE_SECURE;
+    if (override === "true") return true;
+    if (override === "false") return false;
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    return (
+      process.env.NODE_ENV === "production" && appUrl.startsWith("https://")
+    );
+  })(),
   sameSite: "lax" as const,
   path: "/",
   maxAge: SESSION_TTL_SECONDS,

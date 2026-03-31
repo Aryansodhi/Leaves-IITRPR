@@ -107,6 +107,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     profile?.roleSlug ??
     resolveRoleSlug(pathname, searchParams.get("returnTo"), roleKey);
 
+  const isAdminShell = roleSlug === "admin" || roleKey === "ADMIN";
   const leavesActive = pathname.startsWith(`/dashboard/${roleSlug}/leaves`);
 
   const userName = profile?.name ?? null;
@@ -115,32 +116,40 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
     searchParams.get("section") === "acting-hod";
 
-  const navItems = [
-    {
-      label: "Leaves",
-      href: `/dashboard/${roleSlug}/leaves`,
-      active: leavesActive,
-    },
-    {
-      label: "My Applications",
-      href: `/dashboard/${roleSlug}/my-applications`,
-      active: pathname.startsWith(`/dashboard/${roleSlug}/my-applications`),
-    },
-    {
-      label: "Approve Leaves",
-      href: `/dashboard/${roleSlug}/approvals`,
-      active:
-        pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
-        !isActingHodNavSelected,
-    },
-    {
-      label: "Profile",
-      href: `/dashboard/${roleSlug}/profile`,
-      active: pathname.startsWith(`/dashboard/${roleSlug}/profile`),
-    },
-  ];
+  const navItems = isAdminShell
+    ? [
+        {
+          label: "Add Users",
+          href: "/dashboard/admin",
+          active: pathname.startsWith("/dashboard/admin"),
+        },
+      ]
+    : [
+        {
+          label: "Leaves",
+          href: `/dashboard/${roleSlug}/leaves`,
+          active: leavesActive,
+        },
+        {
+          label: "My Applications",
+          href: `/dashboard/${roleSlug}/my-applications`,
+          active: pathname.startsWith(`/dashboard/${roleSlug}/my-applications`),
+        },
+        {
+          label: "Approve Leaves",
+          href: `/dashboard/${roleSlug}/approvals`,
+          active:
+            pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
+            !isActingHodNavSelected,
+        },
+        {
+          label: "Profile",
+          href: `/dashboard/${roleSlug}/profile`,
+          active: pathname.startsWith(`/dashboard/${roleSlug}/profile`),
+        },
+      ];
 
-  if (roleKey === "HOD" && showActingHodNav) {
+  if (!isAdminShell && roleKey === "HOD" && showActingHodNav) {
     navItems.splice(3, 0, {
       label: "Appoint Acting HoD",
       href: `/dashboard/${roleSlug}/approvals?section=acting-hod`,

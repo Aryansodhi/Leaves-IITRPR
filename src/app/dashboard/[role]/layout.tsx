@@ -30,6 +30,10 @@ export default async function RoleDashboardLayout({
     if (actor.roleSlug !== role) {
       redirect(`/dashboard/${actor.roleSlug}`);
     }
+
+    if (role === "admin") {
+      redirect("/dashboard/admin");
+    }
   } catch {
     redirect("/login");
   }

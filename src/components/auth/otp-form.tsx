@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Mail, ShieldCheck, TimerReset } from "lucide-react";
@@ -45,6 +44,7 @@ const fetcher = async (url: string, body: Record<string, unknown>) => {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(body),
   });
   const data = (await response.json()) as ApiResponse;
@@ -61,7 +61,6 @@ export const OtpForm = () => {
   const [email, setEmail] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
   const emailForm = useForm<EmailFormValues>({
     resolver: zodResolver(emailSchema),
@@ -113,9 +112,11 @@ export const OtpForm = () => {
         email,
         code: values.code,
       });
+      const roleSlug: RoleSlug = result.role ?? "faculty";
       const destination =
-        result.redirectTo ??
-        (result.role ? `/dashboard/${result.role}` : "/dashboard/faculty");
+        roleSlug === "admin"
+          ? "/dashboard/admin"
+          : `/dashboard/${roleSlug}/leaves`;
 
       if (typeof window !== "undefined" && result.user) {
         window.localStorage.setItem("lf-user-email", result.user.email);
@@ -127,7 +128,7 @@ export const OtpForm = () => {
       otpForm.reset();
       setEmail("");
       window.setTimeout(() => {
-        router.push(destination);
+        window.location.assign(destination);
       }, 200);
     } catch (error) {
       setStatusMessage(
