@@ -756,7 +756,7 @@ function StationLeavePageContent() {
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <Button
           variant="ghost"
           onClick={handleBack}
@@ -765,9 +765,13 @@ function StationLeavePageContent() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="space-y-3 sm:space-y-4"
+        >
           <div ref={printableRef}>
-            <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
+            <SurfaceCard className="mx-auto max-w-3xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-5 sm:p-4 md:p-7">
               <div className="flex justify-end">
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                   Language
@@ -790,23 +794,23 @@ function StationLeavePageContent() {
               </div>
 
               <header className="space-y-1 text-center text-slate-900">
-                <div className="flex items-start justify-center gap-4">
+                <div className="flex items-start justify-center gap-3 sm:gap-4">
                   {/* html2canvas captures plain img more reliably for PDF export than next/image wrappers */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/iit_ropar.png"
                     alt="IIT Ropar"
-                    width={64}
-                    height={64}
+                    width={48}
+                    height={48}
                     loading="eager"
                     decoding="async"
-                    className="object-contain"
+                    className="h-12 w-12 object-contain sm:h-16 sm:w-16"
                   />
                   <div className="space-y-1 text-left">
-                    <p className="text-base font-semibold">
+                    <p className="text-sm font-semibold sm:text-base">
                       {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                     </p>
-                    <p className="text-base font-semibold uppercase">
+                    <p className="text-sm font-semibold uppercase sm:text-base">
                       INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                     </p>
                     <p className="text-[11px] text-slate-700">
@@ -820,13 +824,13 @@ function StationLeavePageContent() {
                   </div>
                 </div>
                 <div className="border-b border-slate-500" />
-                <p className="text-base font-semibold underline">
+                <p className="text-sm font-semibold underline sm:text-base">
                   STATION LEAVE PERMISSION (SLP) /{" "}
                   {translateHindi("स्टेशन अवकाश अनुमति (एसएलपी)")}
                 </p>
               </header>
 
-              <div className="space-y-3 text-[13px] text-slate-900">
+              <div className="space-y-3 text-[12px] text-slate-900 sm:text-[13px]">
                 <LineItem
                   number="1."
                   label={`Name / ${translateHindi("नाम")}`}
@@ -871,57 +875,67 @@ function StationLeavePageContent() {
                 <StationLeaveContactRow translateHindi={translateHindi} />
               </div>
 
-              <div className="space-y-2 text-[13px] text-slate-900">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>Place / {translateHindi("स्थान")}:</span>
-                  <UnderlineInput id="place" width="w-44" />
+              <div className="space-y-2 text-[12px] text-slate-900 sm:text-[13px]">
+                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-2 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <span className="leading-snug">
+                    Place / {translateHindi("स्थान")}:
+                  </span>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="place" width="w-full" />
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>Date / {translateHindi("दिनांक")}:</span>
-                  <UnderlineInput id="date" width="w-44" />
+                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-2 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <span className="leading-snug">
+                    Date / {translateHindi("दिनांक")}:
+                  </span>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="date" width="w-full" />
+                  </div>
                 </div>
-                <div className="flex items-center justify-end gap-2 pt-2 text-right">
-                  <span className="text-[12px] text-slate-800">
+                <div className="grid gap-1.5 pt-2 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <span className="text-[12px] leading-snug text-slate-800">
                     (Signature of the applicant) / (
                     {translateHindi("आवेदक के हस्ताक्षर")})
                   </span>
-                  <input
-                    type="hidden"
-                    id="applicantSign"
-                    name="applicantSign"
-                    value={
-                      signature.signatureMode === "typed"
-                        ? signature.typedSignature
-                        : DIGITAL_SIGNATURE_VALUE
-                    }
-                    readOnly
-                  />
-                  <div className="relative flex h-10 w-64 items-end border-b border-dashed border-slate-500 px-1 pb-0.5 text-left text-[13px] text-slate-900">
-                    {signature.signatureMode === "typed" ? (
-                      <span className="truncate">
-                        {signature.typedSignature}
-                      </span>
-                    ) : signature.signatureCapture?.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={signature.signatureCapture.image}
-                        alt="Applicant signature"
-                        className="h-9 w-full object-contain object-left"
-                      />
-                    ) : null}
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <input
+                      type="hidden"
+                      id="applicantSign"
+                      name="applicantSign"
+                      value={
+                        signature.signatureMode === "typed"
+                          ? signature.typedSignature
+                          : DIGITAL_SIGNATURE_VALUE
+                      }
+                      readOnly
+                    />
+                    <div className="relative flex h-8 w-full items-end border-b border-dashed border-slate-500 px-1 pb-0.5 text-left text-[12px] text-slate-900 sm:h-10 sm:text-[13px]">
+                      {signature.signatureMode === "typed" ? (
+                        <span className="truncate">
+                          {signature.typedSignature}
+                        </span>
+                      ) : signature.signatureCapture?.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={signature.signatureCapture.image}
+                          alt="Applicant signature"
+                          className="h-9 w-full object-contain object-left"
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
             </SurfaceCard>
           </div>
 
-          <SurfaceCard className="space-y-2 border-slate-200/80 p-4">
+          <SurfaceCard className="space-y-2 border-slate-200/80 p-3 sm:p-4">
             <p className="text-sm font-semibold text-slate-900">Routing</p>
             <p className="text-sm text-slate-600">{workflowMessage}</p>
           </SurfaceCard>
 
           {history.length > 0 ? (
-            <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+            <SurfaceCard className="space-y-3 border-slate-200/80 p-3 sm:p-4">
               <p className="text-sm font-semibold text-slate-900">
                 Recent station leave history
               </p>
@@ -1121,28 +1135,45 @@ const LineItem = ({
   thirdId?: string;
 }) => (
   <div className="space-y-1">
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_9rem] items-start gap-1.5 text-[11px] sm:grid-cols-[2rem_minmax(0,1fr)_12rem] sm:text-[12px] lg:grid-cols-[2rem_minmax(0,1fr)_22rem] lg:gap-3 lg:text-[13px]">
       <span className="w-6">{number}</span>
-      <span className="flex-1">{label}</span>
-      <span>:</span>
-      <UnderlineInput id={inputId} className="flex-1" />
-      {suffix ? (
-        <>
-          <span>{suffix}</span>
-          <UnderlineInput id={suffixId ?? `${inputId}Suffix`} width="w-28" />
-        </>
-      ) : null}
+      <span className="leading-snug">{label}</span>
+      <div className="w-full lg:w-[22rem] lg:justify-self-end">
+        <div className="flex flex-wrap items-center gap-2">
+          <UnderlineInput id={inputId} width="w-full" />
+          {suffix ? (
+            <>
+              <span>{suffix}</span>
+              <UnderlineInput
+                id={suffixId ?? `${inputId}Suffix`}
+                width="w-full lg:w-28"
+              />
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
     {secondLine ? (
-      <div className="flex flex-wrap items-center gap-2 pl-8">
-        <span>{secondLine}</span>
-        <UnderlineInput id={secondId ?? `${inputId}Second`} width="w-36" />
-        {thirdLabel ? (
-          <>
-            <span>{thirdLabel}</span>
-            <UnderlineInput id={thirdId ?? `${inputId}Third`} width="w-36" />
-          </>
-        ) : null}
+      <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_9rem] items-start gap-1.5 text-[11px] sm:grid-cols-[2rem_minmax(0,1fr)_12rem] sm:text-[12px] lg:grid-cols-[2rem_minmax(0,1fr)_22rem] lg:gap-3 lg:text-[13px]">
+        <span className="hidden lg:block" />
+        <span className="leading-snug">{secondLine}</span>
+        <div className="w-full lg:w-[22rem] lg:justify-self-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <UnderlineInput
+              id={secondId ?? `${inputId}Second`}
+              width="w-full"
+            />
+            {thirdLabel ? (
+              <>
+                <span>{thirdLabel}</span>
+                <UnderlineInput
+                  id={thirdId ?? `${inputId}Third`}
+                  width="w-full"
+                />
+              </>
+            ) : null}
+          </div>
+        </div>
       </div>
     ) : null}
   </div>
@@ -1172,58 +1203,92 @@ const StationLeaveDatesRow = ({
   translateHindi: (text: string) => string;
 }) => (
   <div className="space-y-2">
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-1.5 text-[11px] sm:grid-cols-[2rem_minmax(0,1fr)] sm:text-[12px] lg:gap-3 lg:text-[13px]">
       <span className="w-6">4.</span>
-      <span className="flex-1">
+      <span className="leading-snug">
         Dates for which Station Leave Permission is required /{" "}
         {translateHindi("स्टेशन अवकाश अनुमति हेतु तिथियां")}
       </span>
     </div>
-    <div className="flex flex-wrap items-center gap-3 pl-8">
-      <div className="flex items-center gap-2">
-        <span>From / {translateHindi("से")}</span>
-        <DateUnderlineInput
-          id="from"
-          value={fromDate}
-          min={getTodayIso()}
-          onChange={(event) => onFromDateChange(event.target.value)}
-        />
-        <SessionSelect
-          id="fromSession"
-          value={fromSession}
-          onChange={(event) =>
-            onFromSessionChange(event.target.value as DaySession)
-          }
-          translateHindi={translateHindi}
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <span>To / {translateHindi("तक")}</span>
-        <DateUnderlineInput
-          id="to"
-          value={toDate}
-          min={fromDate || getTodayIso()}
-          onChange={(event) => onToDateChange(event.target.value)}
-        />
-        <SessionSelect
-          id="toSession"
-          value={toSession}
-          onChange={(event) =>
-            onToSessionChange(event.target.value as DaySession)
-          }
-          translateHindi={translateHindi}
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <span>No. of days / {translateHindi("दिनों की संख्या")}</span>
-        <UnderlineInput
-          id="days"
-          type="text"
-          width="w-14"
-          value={computedLeaveDays}
-          readOnly
-          className="text-center"
-        />
+    <div className="space-y-2 pl-6 sm:pl-8">
+      <div className="w-full space-y-2 lg:max-w-none">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 lg:hidden">
+          <span>From / {translateHindi("से")}</span>
+          <DateUnderlineInput
+            id="from"
+            value={fromDate}
+            min={getTodayIso()}
+            onChange={(event) => onFromDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="fromSession"
+            value={fromSession}
+            onChange={(event) =>
+              onFromSessionChange(event.target.value as DaySession)
+            }
+            translateHindi={translateHindi}
+          />
+        </div>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 lg:hidden">
+          <span>To / {translateHindi("तक")}</span>
+          <DateUnderlineInput
+            id="to"
+            value={toDate}
+            min={fromDate || getTodayIso()}
+            onChange={(event) => onToDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="toSession"
+            value={toSession}
+            onChange={(event) =>
+              onToSessionChange(event.target.value as DaySession)
+            }
+            translateHindi={translateHindi}
+          />
+        </div>
+        <div className="hidden items-center gap-2 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto_auto_minmax(0,1fr)_auto]">
+          <span>From / {translateHindi("से")}</span>
+          <DateUnderlineInput
+            id="from"
+            value={fromDate}
+            min={getTodayIso()}
+            onChange={(event) => onFromDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="fromSession"
+            value={fromSession}
+            onChange={(event) =>
+              onFromSessionChange(event.target.value as DaySession)
+            }
+            translateHindi={translateHindi}
+          />
+          <span>To / {translateHindi("तक")}</span>
+          <DateUnderlineInput
+            id="to"
+            value={toDate}
+            min={fromDate || getTodayIso()}
+            onChange={(event) => onToDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="toSession"
+            value={toSession}
+            onChange={(event) =>
+              onToSessionChange(event.target.value as DaySession)
+            }
+            translateHindi={translateHindi}
+          />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-2">
+          <span>No. of days / {translateHindi("दिनों की संख्या")}</span>
+          <UnderlineInput
+            id="days"
+            type="text"
+            width="w-full"
+            value={computedLeaveDays}
+            readOnly
+            className="text-center"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -1243,7 +1308,7 @@ const DateUnderlineInput = ({
   <UnderlineInput
     id={id}
     type="date"
-    width="w-40"
+    width="w-full"
     className="scheme-light"
     value={value}
     min={min}
@@ -1281,43 +1346,82 @@ const StationLeaveContactRow = ({
   translateHindi: (text: string) => string;
 }) => (
   <div className="space-y-2">
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-1.5 text-[11px] sm:grid-cols-[2rem_minmax(0,1fr)] sm:text-[12px] lg:gap-3 lg:text-[13px]">
       <span className="w-6">7.</span>
-      <span className="flex-1">
+      <span className="leading-snug">
         Contact number and address during station leave /{" "}
         {translateHindi("स्टेशन अवकाश के दौरान संपर्क संख्या और पता")}
       </span>
     </div>
-    <div className="flex flex-wrap items-center gap-3 pl-8">
-      <select
-        id="contactPrefix"
-        name="contactPrefix"
-        defaultValue="+91"
-        className="rounded-full border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none"
-      >
-        {COUNTRY_CODE_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <UnderlineInput
-        id="contactNumber"
-        type="tel"
-        width="w-40"
-        inputMode="numeric"
-        pattern="[0-9]{10}"
-        maxLength={10}
-        placeholder={`10-digit mobile / ${translateHindi("10-अंकीय मोबाइल")}`}
-        onInput={(event) => {
-          const target = event.currentTarget;
-          target.value = target.value.replace(/\D/g, "").slice(0, 10);
-        }}
-      />
-    </div>
-    <div className="flex flex-wrap items-center gap-2 pl-8">
-      <span>Address / {translateHindi("पता")}</span>
-      <UnderlineInput id="contactAddress" className="flex-1" />
+    <div className="space-y-2 pl-6 sm:pl-8">
+      <div className="w-full space-y-2 lg:max-w-none">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 lg:hidden">
+          <span>Country code</span>
+          <select
+            id="contactPrefix"
+            name="contactPrefix"
+            defaultValue="+91"
+            className="rounded-full border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none"
+          >
+            {COUNTRY_CODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 lg:hidden">
+          <span>Phone</span>
+          <UnderlineInput
+            id="contactNumber"
+            type="tel"
+            width="w-full"
+            inputMode="numeric"
+            pattern="[0-9]{10}"
+            maxLength={10}
+            placeholder={`10-digit mobile / ${translateHindi("10-अंकीय मोबाइल")}`}
+            onInput={(event) => {
+              const target = event.currentTarget;
+              target.value = target.value.replace(/\D/g, "").slice(0, 10);
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 lg:hidden">
+          <span>Address / {translateHindi("पता")}</span>
+          <UnderlineInput id="contactAddress" width="w-full" />
+        </div>
+        <div className="hidden items-center gap-2 lg:grid lg:grid-cols-[auto_8.5rem_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+          <span>Code</span>
+          <select
+            id="contactPrefix"
+            name="contactPrefix"
+            defaultValue="+91"
+            className="rounded-full border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-800 focus:outline-none"
+          >
+            {COUNTRY_CODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span>Phone</span>
+          <UnderlineInput
+            id="contactNumber"
+            type="tel"
+            width="w-full"
+            inputMode="numeric"
+            pattern="[0-9]{10}"
+            maxLength={10}
+            placeholder={`10-digit mobile / ${translateHindi("10-अंकीय मोबाइल")}`}
+            onInput={(event) => {
+              const target = event.currentTarget;
+              target.value = target.value.replace(/\D/g, "").slice(0, 10);
+            }}
+          />
+          <span>Address / {translateHindi("पता")}</span>
+          <UnderlineInput id="contactAddress" width="w-full" />
+        </div>
+      </div>
     </div>
   </div>
 );

@@ -25,14 +25,22 @@ const highlights = [
 
 export default function Home() {
   return (
-    <div className="space-y-12">
-      <SurfaceCard className="grid gap-10 bg-gradient-to-br from-white via-white to-slate-50 p-8 lg:grid-cols-2">
+    <div className="space-y-10 sm:space-y-12">
+      <div className="fixed right-3 top-3 z-30 md:hidden">
+        <Button asChild className="px-4 py-2 text-xs">
+          <Link href="/login" className="flex items-center gap-2">
+            <LogIn className="h-3.5 w-3.5" /> Login
+          </Link>
+        </Button>
+      </div>
+
+      <SurfaceCard className="grid gap-6 bg-gradient-to-br from-white via-white to-slate-50 p-4 sm:gap-8 sm:p-6 lg:gap-10 lg:p-8 lg:grid-cols-2">
         <div className="space-y-6">
           <div className="space-y-3">
-            <h1 className="text-4xl font-semibold leading-tight text-slate-900">
+            <h1 className="text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl lg:text-4xl">
               Sign in to continue to your IIT Ropar leave dashboard.
             </h1>
-            <p className="text-base text-slate-500">
+            <p className="text-sm text-slate-500 sm:text-base">
               Every stakeholder needs to authenticate before viewing approvals
               or raising a request. Use the shared institute email login below;
               once verified we will route you to the dashboard associated with
@@ -58,7 +66,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-4">
+        <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-2 sm:rounded-3xl sm:p-4">
           <OtpForm />
         </div>
       </SurfaceCard>
@@ -68,10 +76,10 @@ export default function Home() {
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
             Before you sign in
           </p>
-          <h2 className="text-3xl font-semibold text-slate-900">
+          <h2 className="text-2xl font-semibold text-slate-900 sm:text-3xl">
             What to expect after authentication
           </h2>
-          <p className="text-base text-slate-500">
+          <p className="text-sm text-slate-500 sm:text-base">
             Once the OTP is verified we will take you straight to the experience
             configured for your role. These cards outline what each persona can
             do after logging in. More institute-specific information will appear

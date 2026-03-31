@@ -295,8 +295,12 @@ function ExIndiaLeavePageContent() {
 
   return (
     <DashboardShell>
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex items-center gap-3">
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className="space-y-3 sm:space-y-4"
+      >
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             onClick={handleBackNav}
@@ -347,7 +351,7 @@ function ExIndiaLeavePageContent() {
           isOtpVerified={isOtpVerified}
         />
 
-        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
           {confirmed
             ? "Submission confirmed. You can still edit and resubmit if needed."
             : missingFields.length > 0
@@ -355,7 +359,7 @@ function ExIndiaLeavePageContent() {
               : "Fill all fields, then submit."}
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+        <div className="flex items-center justify-between border-t border-slate-200 pt-2.5 sm:pt-3">
           <Button
             type="button"
             variant="ghost"
@@ -500,12 +504,12 @@ const FormPage = ({
   onFromSessionChange: (value: DaySession) => void;
   onToSessionChange: (value: DaySession) => void;
 }) => (
-  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
+  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:p-4 md:p-6">
     <header className="space-y-1 text-center text-slate-900">
-      <p className="text-base font-semibold">
+      <p className="text-sm font-semibold sm:text-base">
         भारतीय प्रौद्योगिकी संस्थान रोपड़
       </p>
-      <p className="text-base font-semibold uppercase">
+      <p className="text-sm font-semibold uppercase sm:text-base">
         INDIAN INSTITUTE OF TECHNOLOGY ROPAR
       </p>
       <p className="text-[11px] text-slate-700">
@@ -522,7 +526,7 @@ const FormPage = ({
     </header>
 
     <div className="overflow-x-auto">
-      <table className="w-full border border-slate-400 text-[12px] text-slate-900">
+      <table className="w-full border border-slate-400 text-[11px] text-slate-900 sm:text-[12px]">
         <colgroup>
           <col className="w-[36%]" />
           <col />
@@ -566,63 +570,129 @@ const FormPage = ({
       <UnderlineInput id="applicantSignature" width="w-60" />
     </p>
 
-    <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+    <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
       <p className="font-semibold text-center">
         नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें / Remarks and
         Recommendations of the controlling officer
       </p>
-      <p>
-        सिफारिश की गई / Recommended या नहीं की गई / not recommended:{" "}
-        <UnderlineInput id="recommended" width="w-44" />
-      </p>
-      <p>
-        विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature with
-        date Head of Department/Section In-charge:
-        <UnderlineInput id="hodSignature" width="w-60" className="ml-2" />
-      </p>
+      <div className="space-y-2">
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            सिफारिश की गई / Recommended या नहीं की गई / not recommended:
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="recommended" width="w-full" />
+          </div>
+        </div>
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature
+            with date Head of Department/Section In-charge:
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="hodSignature" width="w-full" />
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+    <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
       <p className="text-center font-semibold">
         प्रशासनिक अनुभाग द्वारा प्रयोग हेतु / For use by the Administration
         Section
       </p>
-      <p>
-        प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of leave)
-        for period, from
-        <UnderlineInput id="adminFrom" width="w-32" /> to{" "}
-        <UnderlineInput id="adminTo" width="w-32" /> is available as per
-        following details:
-      </p>
-      <p>
-        अवकाश का प्रकार / Nature of leave applied for{" "}
-        <UnderlineInput id="adminLeaveType" width="w-44" /> आज की तिथि तक शेष /
-        Balance as on date
-        <UnderlineInput id="balance" width="w-28" /> कुल दिनों के लिए अवकाश /
-        Leave applied for (No. of days)
-        <UnderlineInput id="adminDays" width="w-24" />
-      </p>
-      <p>
-        संबंधित सहायक / Dealing Assistant{" "}
-        <UnderlineInput id="assistant" width="w-44" className="ml-2" /> Jr.
-        Supdt.
-        <UnderlineInput id="jrSupdt" width="w-36" className="ml-2" /> अधि./सहा.
-        कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
-        <UnderlineInput id="arDr" width="w-44" className="ml-2" />
-      </p>
-      <p className="flex flex-wrap items-center gap-2">
-        कुलसचिव/ अधिकारी (Faculty Affairs & Administration) के हस्ताक्षर /
-        Signature of Registrar / Dean (Faculty Affairs & Administration)
-        <UnderlineInput id="registrarSign" width="w-52" />
-        <span>
-          छुट्टी प्रदान करने के लिए सक्षम प्राधिकारी की टिप्पणी : स्वीकृत /
-          अस्वीकृत / Comments of the competent authority to grant leave:
-          Sanctioned / Not Sanctioned
-        </span>
-      </p>
-      <p>
-        निदेशक / Director: <UnderlineInput id="directorSign" width="w-52" />
-      </p>
+      <div className="space-y-2">
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <div className="space-y-1 leading-snug">
+            <p>
+              प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of
+              leave) for period:
+            </p>
+            <p>is available as per following details:</p>
+          </div>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+              <span>from</span>
+              <UnderlineInput id="adminFrom" width="w-full" />
+              <span>to</span>
+              <UnderlineInput id="adminTo" width="w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            अवकाश का प्रकार / Nature of leave applied for
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="adminLeaveType" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">आज की तिथि तक शेष / Balance as on date</p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="balance" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            कुल दिनों के लिए अवकाश / Leave applied for (No. of days)
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="adminDays" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">संबंधित सहायक / Dealing Assistant</p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="assistant" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">Jr. Supdt.</p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="jrSupdt" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="arDr" width="w-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p className="leading-snug">
+            कुलसचिव/ अधिकारी (Faculty Affairs & Administration) के हस्ताक्षर /
+            Signature of Registrar / Dean (Faculty Affairs & Administration)
+          </p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="registrarSign" width="w-full" />
+          </div>
+        </div>
+
+        <div className="space-y-1 leading-snug">
+          <p>
+            छुट्टी प्रदान करने के लिए सक्षम प्राधिकारी की टिप्पणी : स्वीकृत /
+            अस्वीकृत / Comments of the competent authority to grant leave:
+            Sanctioned / Not Sanctioned
+          </p>
+        </div>
+
+        <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+          <p>निदेशक / Director:</p>
+          <div className="w-full lg:w-[22rem] lg:justify-self-end">
+            <UnderlineInput id="directorSign" width="w-full" />
+          </div>
+        </div>
+      </div>
     </div>
   </SurfaceCard>
 );
@@ -662,37 +732,48 @@ const RowPeriod = ({
       5. छुट्टी की अवधि / Period of Leave
     </td>
     <td className="px-3 py-2 text-[12px]">
-      <div className="flex flex-wrap items-center gap-2">
-        <span>से / From:</span>
-        <UnderlineInput
-          id="fromDate"
-          type="date"
-          width="w-32"
-          min={getTodayIso()}
-          value={fromDate}
-          onChange={(event) => onFromDateChange(event.target.value)}
-        />
-        <SessionSelect
-          id="fromSession"
-          value={fromSession}
-          onChange={onFromSessionChange}
-        />
-        <span>तक / To:</span>
-        <UnderlineInput
-          id="toDate"
-          type="date"
-          width="w-32"
-          min={fromDate || getTodayIso()}
-          value={toDate}
-          onChange={(event) => onToDateChange(event.target.value)}
-        />
-        <SessionSelect
-          id="toSession"
-          value={toSession}
-          onChange={onToSessionChange}
-        />
-        <span>दिनों की संख्या / No. of days:</span>
-        <UnderlineInput id="days" width="w-20" readOnly value={computedDays} />
+      <div className="space-y-2">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <span>से / From:</span>
+          <UnderlineInput
+            id="fromDate"
+            type="date"
+            width="w-full"
+            min={getTodayIso()}
+            value={fromDate}
+            onChange={(event) => onFromDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="fromSession"
+            value={fromSession}
+            onChange={onFromSessionChange}
+          />
+        </div>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <span>तक / To:</span>
+          <UnderlineInput
+            id="toDate"
+            type="date"
+            width="w-full"
+            min={fromDate || getTodayIso()}
+            value={toDate}
+            onChange={(event) => onToDateChange(event.target.value)}
+          />
+          <SessionSelect
+            id="toSession"
+            value={toSession}
+            onChange={onToSessionChange}
+          />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-2">
+          <span>दिनों की संख्या / No. of days:</span>
+          <UnderlineInput
+            id="days"
+            width="w-full"
+            readOnly
+            value={computedDays}
+          />
+        </div>
       </div>
     </td>
   </tr>
@@ -793,8 +874,8 @@ const RowAddress = () => (
 );
 
 const LetterPage = () => (
-  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-6">
-    <div className="text-[13px] text-slate-900">
+  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:p-4 md:p-6">
+    <div className="text-[12px] text-slate-900 sm:text-[13px]">
       <p>The Director</p>
       <p>Indian Institute of Technology</p>
       <p>Ropar</p>
@@ -850,7 +931,7 @@ const LetterPage = () => (
         </li>
       </ol>
 
-      <div className="mt-6 text-right space-y-4">
+      <div className="mt-5 text-right space-y-3 sm:mt-6 sm:space-y-4">
         <p>Yours faithfully,</p>
         <div className="space-y-2">
           <p>
@@ -884,7 +965,7 @@ const LetterPage = () => (
         </div>
       </div>
 
-      <div className="mt-6 space-y-2 text-[13px] text-slate-900">
+      <div className="mt-5 space-y-2 text-[12px] text-slate-900 sm:mt-6 sm:text-[13px]">
         <p>
           Dated: <UnderlineInput id="letterDated" width="w-40" />
         </p>
@@ -895,14 +976,14 @@ const LetterPage = () => (
 );
 
 const UndertakingFormOne = () => (
-  <SurfaceCard className="mx-auto max-w-4xl space-y-6 border border-slate-300 bg-white p-6">
+  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-6 sm:p-4 md:p-6">
     <div className="flex justify-end text-[13px] font-semibold text-slate-900">
       Form - I
     </div>
     <div className="space-y-2 text-center text-[13px] text-slate-900">
       <p className="font-semibold underline">UNDERTAKING</p>
     </div>
-    <div className="space-y-4 text-[13px] text-slate-900">
+    <div className="space-y-3 text-[12px] text-slate-900 sm:space-y-4 sm:text-[13px]">
       <p>
         I, <UnderlineInput id="u1Name" width="w-60" />,{" "}
         <UnderlineInput id="u1Designation" width="w-60" /> (Designation) is
@@ -966,7 +1047,7 @@ const UndertakingFormOne = () => (
 );
 
 const UndertakingFormTwo = () => (
-  <SurfaceCard className="mx-auto max-w-4xl space-y-6 border border-slate-300 bg-white p-6">
+  <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-6 sm:p-4 md:p-6">
     <div className="flex justify-end text-[13px] font-semibold text-slate-900">
       Form - II
     </div>

@@ -869,8 +869,12 @@ function LtcPageContent() {
   );
   return (
     <DashboardShell>
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex items-center gap-3">
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className="space-y-3 sm:space-y-4"
+      >
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             onClick={handleBack}
@@ -930,7 +934,7 @@ function LtcPageContent() {
           isOtpVerified={signature.isOtpVerified}
         />
 
-        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 sm:px-4 sm:py-3">
           {submitError
             ? submitError
             : submitMessage
@@ -942,7 +946,7 @@ function LtcPageContent() {
                   : "Fill all fields, then submit."}
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+        <div className="flex items-center justify-between border-t border-slate-200 pt-2.5 sm:pt-3">
           <Button
             type="button"
             variant="ghost"
@@ -1109,7 +1113,7 @@ const LtcFormPage = ({
   onFormLanguageChange: (value: FormLanguage) => void;
   translateHindi: (text: string) => string;
 }) => (
-  <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
+  <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-3 sm:p-4 md:p-6">
     <div className="flex justify-end">
       <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
         Language
@@ -1132,19 +1136,19 @@ const LtcFormPage = ({
     </div>
 
     <header className="space-y-1 text-center text-slate-900">
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-3 sm:gap-4">
         <Image
           src="/iit_ropar.png"
           alt="IIT Ropar"
-          width={56}
-          height={56}
-          className="object-contain"
+          width={44}
+          height={44}
+          className="h-11 w-11 object-contain sm:h-14 sm:w-14"
         />
         <div className="space-y-1">
-          <p className="text-base font-semibold">
+          <p className="text-sm font-semibold sm:text-base">
             {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
           </p>
-          <p className="text-base font-semibold uppercase">
+          <p className="text-sm font-semibold uppercase sm:text-base">
             INDIAN INSTITUTE OF TECHNOLOGY ROPAR
           </p>
           <p className="text-[11px] text-slate-700">
@@ -1159,7 +1163,7 @@ const LtcFormPage = ({
     </header>
 
     <div className="overflow-x-auto">
-      <table className="w-full border border-slate-400 text-[12px] text-slate-900">
+      <table className="w-full border border-slate-400 text-[11px] text-slate-900 sm:text-[12px]">
         <tbody>
           <RowSimple
             number="1."
@@ -1255,7 +1259,7 @@ const OfficeSectionsPage = ({
 }: {
   viewerRoleKey: string | null;
 }) => (
-  <SurfaceCard className="mx-auto max-w-5xl space-y-6 border border-slate-300 bg-white p-4 md:p-6">
+  <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-6 sm:p-4 md:p-6">
     <EstablishmentSection viewerRoleKey={viewerRoleKey} />
     <AccountsSection viewerRoleKey={viewerRoleKey} />
     <AuditSection viewerRoleKey={viewerRoleKey} />

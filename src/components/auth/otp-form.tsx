@@ -140,14 +140,14 @@ export const OtpForm = () => {
   });
 
   return (
-    <SurfaceCard className="space-y-8" spotlight>
+    <SurfaceCard className="space-y-6 p-4 sm:space-y-8 sm:p-6" spotlight>
       <div className="space-y-3">
         <StatusPill label="Secure Access" tone="review" />
         <div>
-          <p className="text-3xl font-semibold text-slate-900">
+          <p className="text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
             Sign in with your institute email
           </p>
-          <p className="mt-2 text-base text-slate-500">
+          <p className="mt-2 text-sm text-slate-500 sm:text-base">
             We send a one-time passcode to verify every session. No passwords to
             remember and OTPs expire in {OTP_HINT_MINUTES} minutes.
           </p>
@@ -158,7 +158,7 @@ export const OtpForm = () => {
         <form className="space-y-4" onSubmit={requestOtp}>
           <div className="space-y-2">
             <Label htmlFor="email">Institute Email</Label>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <Mail className="h-5 w-5 text-slate-400" />
               <Input
                 id="email"
@@ -191,7 +191,7 @@ export const OtpForm = () => {
             <Label htmlFor="otp">
               Enter the 6-digit code sent to {maskedEmail}
             </Label>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <ShieldCheck className="h-5 w-5 text-slate-400" />
               <Input
                 id="otp"

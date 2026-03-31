@@ -48,9 +48,9 @@ const leaveCards: LeaveCard[] = [
 ];
 
 export const LeavesCatalog = ({ role }: { role: RoleSlug }) => (
-  <section className="space-y-4">
+  <section className="space-y-3 sm:space-y-4">
     <div className="space-y-1">
-      <p className="text-2xl font-semibold text-slate-900">Leaves</p>
+      <p className="text-xl font-semibold text-slate-900 sm:text-2xl">Leaves</p>
       <p className="text-sm text-slate-600">
         Choose one leave form to open a dedicated page.
       </p>
@@ -63,11 +63,11 @@ export const LeavesCatalog = ({ role }: { role: RoleSlug }) => (
         return (
           <SurfaceCard
             key={card.title}
-            className="h-full border-slate-200/80 p-5"
+            className="h-full border-slate-200/80 p-4 sm:p-5"
           >
-            <div className="flex h-full flex-col gap-4">
+            <div className="flex h-full flex-col gap-3 sm:gap-4">
               <div className="space-y-1">
-                <p className="text-lg font-semibold text-slate-900">
+                <p className="text-xl font-semibold text-slate-900 sm:text-lg">
                   {card.title}
                 </p>
                 <p className="text-sm text-slate-500">{card.description}</p>
@@ -82,12 +82,15 @@ export const LeavesCatalog = ({ role }: { role: RoleSlug }) => (
                 <Button
                   variant="secondary"
                   disabled
-                  className="w-full justify-center"
+                  className="w-full justify-center py-2 text-sm sm:py-2.5"
                 >
                   Not available
                 </Button>
               ) : (
-                <Button asChild className="w-full justify-center">
+                <Button
+                  asChild
+                  className="w-full justify-center py-2 text-sm sm:py-2.5"
+                >
                   <Link
                     href={`${card.href}?returnTo=/dashboard/${role}/leaves`}
                   >

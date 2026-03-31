@@ -309,7 +309,7 @@ const UnderlineInput = ({
     name={id}
     type={type}
     className={cn(
-      "inline-block align-baseline border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-sm leading-[1.05rem] text-slate-900 focus:border-slate-800 focus:outline-none",
+      "inline-block align-baseline border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-[13px] leading-[1rem] text-slate-900 focus:border-slate-800 focus:outline-none sm:text-sm sm:leading-[1.05rem]",
       width,
       className,
     )}
@@ -893,7 +893,7 @@ function JoiningReportPageContent() {
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <Button
           variant="ghost"
           onClick={handleBack}
@@ -902,8 +902,12 @@ function JoiningReportPageContent() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          <SurfaceCard className="mx-auto max-w-3xl space-y-5 border-slate-200/80 bg-white p-6 md:p-10">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="space-y-3 sm:space-y-4"
+        >
+          <SurfaceCard className="mx-auto max-w-3xl space-y-4 border-slate-200/80 bg-white p-4 sm:space-y-5 sm:p-6 md:p-10">
             <div className="flex justify-end">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 Language
@@ -925,11 +929,11 @@ function JoiningReportPageContent() {
               </label>
             </div>
 
-            <div className="flex flex-col items-center gap-3 text-center md:text-left">
+            <div className="flex flex-col items-center gap-2 text-center md:text-left">
               <div className="flex flex-wrap items-center justify-center gap-4 md:flex-nowrap md:justify-start">
                 <div
                   className="flex items-center justify-center bg-white rounded-full border border-slate-200 p-2"
-                  style={{ minWidth: 120, minHeight: 120 }}
+                  style={{ minWidth: 84, minHeight: 84 }}
                 >
                   <Image
                     src="/iit_ropar.png"
@@ -941,10 +945,10 @@ function JoiningReportPageContent() {
                   />
                 </div>
                 <div className="space-y-1 text-slate-900">
-                  <p className="text-lg font-semibold">
+                  <p className="text-base font-semibold sm:text-lg">
                     {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                   </p>
-                  <p className="text-lg font-semibold uppercase">
+                  <p className="text-base font-semibold uppercase sm:text-lg">
                     INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                   </p>
                   <p className="text-xs text-slate-700">
@@ -955,7 +959,30 @@ function JoiningReportPageContent() {
               </div>
             </div>
 
-            <div className="space-y-1 text-sm text-slate-800">
+            <details className="rounded-xl border border-slate-200/80 p-3 text-xs text-slate-700 sm:hidden">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
+                Official header details
+              </summary>
+              <div className="mt-2 space-y-1">
+                <p>{translateHindi("सेवा में")} / To,</p>
+                <p>
+                  {translateHindi("निदेशक")} / {translateHindi("कुलसचिव")} /
+                  Director / Registrar
+                </p>
+                <p>{translateHindi("भा.प्रौ.सं.रोपड़")} / IIT Ropar</p>
+                <p className="pt-1 font-semibold text-slate-900">
+                  {translateHindi("विभागाध्यक्ष")} /{" "}
+                  {translateHindi("रिपोर्टिंग अधिकारी द्वारा")} / Through
+                  HOD/Reporting Officer
+                </p>
+                <p className="font-semibold text-slate-900">
+                  {translateHindi("विषय")} / Sub :{" "}
+                  {translateHindi("कार्यग्रहण प्रतिवेदन")} / JOINING REPORT
+                </p>
+              </div>
+            </details>
+
+            <div className="hidden space-y-1 text-sm text-slate-800 sm:block">
               <p>{translateHindi("सेवा में")} / To,</p>
               <p>
                 {translateHindi("निदेशक")} / {translateHindi("कुलसचिव")} /
@@ -964,33 +991,33 @@ function JoiningReportPageContent() {
               <p>{translateHindi("भा.प्रौ.सं.रोपड़")} / IIT Ropar</p>
             </div>
 
-            <p className="text-center text-sm font-semibold text-slate-900">
+            <p className="hidden text-center text-sm font-semibold text-slate-900 sm:block">
               {translateHindi("विभागाध्यक्ष")} /{" "}
               {translateHindi("रिपोर्टिंग अधिकारी द्वारा")} / Through
               HOD/Reporting Officer
             </p>
 
-            <div className="text-center text-sm font-semibold text-slate-900">
+            <div className="hidden text-center text-sm font-semibold text-slate-900 sm:block">
               {translateHindi("विषय")} / Sub :{" "}
               {translateHindi("कार्यग्रहण प्रतिवेदन")} / JOINING REPORT
             </div>
 
-            <div className="space-y-4 text-sm leading-relaxed text-slate-900">
+            <div className="space-y-3 text-sm leading-normal text-slate-900 sm:space-y-4 sm:leading-relaxed">
               <p>{translateHindi("महोदय")} / Sir,</p>
 
-              <p className="flex flex-wrap items-center gap-2 leading-relaxed">
+              <p className="flex flex-wrap items-center gap-1.5 leading-relaxed sm:gap-2">
                 <span>{translateHindi("मैं")},</span>
                 <UnderlineInput id="name" width="w-56" />
                 <span>{translateHindi("दिनांक")}</span>
                 <DateUnderlineInput
                   id="fromDate"
-                  width="w-36"
+                  width="w-28 sm:w-36"
                   min={getTodayIso()}
                   onChange={handlePeriodDateChange("fromDate", "englishFrom")}
                 />
                 <InlineSelect
                   id="fromSession"
-                  width="w-32"
+                  width="w-28 sm:w-32"
                   options={PERIOD_SESSION_OPTIONS}
                   value={fromSession}
                   onChange={handlePeriodSessionChange("fromSession")}
@@ -998,13 +1025,13 @@ function JoiningReportPageContent() {
                 <span>{translateHindi("से")}</span>
                 <DateUnderlineInput
                   id="toDate"
-                  width="w-36"
+                  width="w-28 sm:w-36"
                   min={fromDateValue || getTodayIso()}
                   onChange={handlePeriodDateChange("toDate", "englishTo")}
                 />
                 <InlineSelect
                   id="toSession"
-                  width="w-32"
+                  width="w-28 sm:w-32"
                   options={PERIOD_SESSION_OPTIONS}
                   value={toSession}
                   onChange={handlePeriodSessionChange("toSession")}
@@ -1014,24 +1041,24 @@ function JoiningReportPageContent() {
                 <span>{translateHindi("दिन की")}</span>
                 <InlineSelect
                   id="leaveCategory"
-                  width="w-72"
+                  width="w-full sm:w-72"
                   options={leaveCategoryOptions}
                   value={choiceValues.leaveCategory}
                   onChange={handleChoiceChange("leaveCategory")}
                 />
               </p>
 
-              <p className="flex flex-wrap items-center gap-2 leading-relaxed">
+              <p className="flex flex-wrap items-center gap-1.5 leading-relaxed sm:gap-2">
                 <span>{translateHindi("आज दिनांक")}</span>
                 <DateUnderlineInput
                   id="rejoinDate"
-                  width="w-36"
+                  width="w-28 sm:w-36"
                   onChange={handleMirroredDateChange("englishRejoin")}
                 />
                 <span>{translateHindi("को")}</span>
                 <InlineSelect
                   id="dutySession"
-                  width="w-52"
+                  width="w-44 sm:w-52"
                   options={dutySessionOptions}
                   value={choiceValues.dutySession}
                   onChange={handleChoiceChange("dutySession")}
@@ -1045,7 +1072,7 @@ function JoiningReportPageContent() {
                 <span>{translateHindi("दिनांक")}</span>
                 <DateUnderlineInput
                   id="orderDate"
-                  width="w-36"
+                  width="w-28 sm:w-36"
                   onChange={handleMirroredDateChange("englishOrderDate")}
                 />
                 <span>{translateHindi("के द्वारा स्वीकृत किया था।")}</span>
@@ -1281,7 +1308,7 @@ const InlineSelect = ({
     name={id}
     value={value}
     className={cn(
-      "inline-block rounded-none border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-sm leading-[1.05rem] text-slate-900 focus:border-slate-800 focus:outline-none",
+      "inline-block rounded-none border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-[13px] leading-[1rem] text-slate-900 focus:border-slate-800 focus:outline-none sm:text-sm sm:leading-[1.05rem]",
       width,
       className,
     )}

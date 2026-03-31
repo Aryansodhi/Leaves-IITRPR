@@ -169,25 +169,47 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
   }, [mobileNavOpen]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 py-4 sm:py-8">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              className="sm:hidden px-3 py-2"
-              aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
-              aria-expanded={mobileNavOpen}
-              aria-controls="dashboard-mobile-nav"
-              onClick={() => setMobileNavOpen((open) => !open)}
-            >
-              {mobileNavOpen ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
-            </Button>
+    <div className="mx-auto max-w-5xl space-y-4 py-3 sm:space-y-6 sm:py-8">
+      <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-sm sm:p-3">
+        <div className="sm:hidden space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                className="px-2.5 py-2"
+                aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+                aria-expanded={mobileNavOpen}
+                aria-controls="dashboard-mobile-nav"
+                onClick={() => setMobileNavOpen((open) => !open)}
+              >
+                {mobileNavOpen ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Menu className="h-5 w-5" />
+                )}
+              </Button>
 
+              <Image
+                src="/iit_ropar.png"
+                alt="IIT Ropar Logo"
+                width={48}
+                height={48}
+                className="h-10 w-10 object-contain"
+                priority
+              />
+            </div>
+
+            <DashboardLogoutButton />
+          </div>
+
+          <div className="pl-11 text-[11px] font-semibold leading-tight tracking-normal text-slate-500">
+            {userName ? `Welcome, ${userName}` : "Leave Workspace"}
+            {userRole ? ` (${userRole})` : ""}
+          </div>
+        </div>
+
+        <div className="hidden items-center justify-between gap-3 sm:flex">
+          <div className="flex min-w-0 items-center gap-3">
             <Image
               src="/iit_ropar.png"
               alt="IIT Ropar Logo"
@@ -197,13 +219,13 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
               priority
             />
 
-            <div className="space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="min-w-0 space-y-2">
+              <div className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {userName ? `Welcome, ${userName}` : "Leave Workspace"}
                 {userRole ? ` (${userRole})` : ""}
               </div>
 
-              <nav className="hidden sm:flex flex-1 flex-wrap items-center gap-2">
+              <nav className="flex flex-1 flex-wrap items-center gap-2">
                 {navItems.map((item) => (
                   <Link
                     key={item.href}
@@ -239,7 +261,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           />
           <aside
             id="dashboard-mobile-nav"
-            className="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-white border-r border-slate-200 shadow-sm"
+            className="absolute left-0 top-0 flex h-full w-72 max-w-[85vw] flex-col bg-white border-r border-slate-200 shadow-sm"
             role="dialog"
             aria-modal="true"
             aria-label="Dashboard navigation"
@@ -255,7 +277,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <nav className="p-3 space-y-2">
+            <nav className="flex-1 overflow-y-auto p-3 space-y-2">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
@@ -272,6 +294,20 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
                 </Link>
               ))}
             </nav>
+            <div className="border-t border-slate-200 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Signed in as
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {userName ?? "IIT Ropar User"}
+              </p>
+              {userRole ? (
+                <p className="text-xs text-slate-500">{userRole}</p>
+              ) : null}
+              <div className="mt-3">
+                <DashboardLogoutButton />
+              </div>
+            </div>
           </aside>
         </div>
       )}

@@ -852,7 +852,7 @@ function EarnedLeavePageContent() {
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <Button
           variant="ghost"
           onClick={handleBack}
@@ -861,8 +861,12 @@ function EarnedLeavePageContent() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          <SurfaceCard className="mx-auto max-w-4xl space-y-5 border border-slate-300 bg-white p-4 md:p-6">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="space-y-3 sm:space-y-4"
+        >
+          <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-5 sm:p-4 md:p-6">
             <div className="flex justify-end">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 Language
@@ -885,19 +889,19 @@ function EarnedLeavePageContent() {
             </div>
 
             <header className="space-y-1 text-center text-slate-900">
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex items-center justify-center gap-3 sm:gap-4">
                 <Image
                   src="/iit_ropar.png"
                   alt="IIT Ropar"
-                  width={56}
-                  height={56}
-                  className="object-contain"
+                  width={44}
+                  height={44}
+                  className="h-11 w-11 object-contain sm:h-14 sm:w-14"
                 />
                 <div className="space-y-1">
-                  <p className="text-base font-semibold">
+                  <p className="text-sm font-semibold sm:text-base">
                     {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                   </p>
-                  <p className="text-base font-semibold uppercase">
+                  <p className="text-sm font-semibold uppercase sm:text-base">
                     INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                   </p>
                   <p className="text-[11px] text-slate-700">
@@ -922,7 +926,7 @@ function EarnedLeavePageContent() {
             </header>
 
             <div className="overflow-x-auto">
-              <table className="w-full border border-slate-400 text-[12px] text-slate-900">
+              <table className="w-full border border-slate-400 text-[11px] text-slate-900 sm:text-[12px]">
                 <colgroup>
                   <col className="w-[36%]" />
                   <col />
@@ -990,7 +994,7 @@ function EarnedLeavePageContent() {
                 }
                 readOnly
               />{" "}
-              <span className="inline-flex h-9 w-40 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[13px] text-slate-900">
+              <span className="inline-flex h-8 w-32 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[12px] text-slate-900 sm:h-9 sm:w-40 sm:text-[13px]">
                 {signatureMode === "typed" ? (
                   typedSignature
                 ) : signatureCapture ? (
@@ -1014,106 +1018,157 @@ function EarnedLeavePageContent() {
               />
             </p>
 
-            <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+            <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
               <p className="font-semibold text-center">
                 {translateHindi("नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें")}{" "}
                 / Remarks and Recommendations of the controlling officer
               </p>
-              <p>
-                {translateHindi("सिफारिश की गई")} / Recommended{" "}
-                {translateHindi("या नहीं की गई")} / not recommended:{" "}
-                <UnderlineInput id="recommended" width="w-44" readOnly />
-              </p>
-              <p>
-                {translateHindi(
-                  "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित",
-                )}{" "}
-                / Signature with date Head of Department/Section In-charge:
-                <UnderlineInput
-                  id="hodSignature"
-                  width="w-60"
-                  className="ml-2"
-                  readOnly
-                />
-              </p>
+              <div className="space-y-2">
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("सिफारिश की गई")} / Recommended{" "}
+                    {translateHindi("या नहीं की गई")} / not recommended:
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="recommended" width="w-full" readOnly />
+                  </div>
+                </div>
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi(
+                      "विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित",
+                    )}{" "}
+                    / Signature with date Head of Department/Section In-charge:
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="hodSignature" width="w-full" readOnly />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-400 pt-2 text-[12px] text-slate-900">
+            <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
               <p className="text-center font-semibold">
                 {translateHindi("प्रशासनिक अनुभाग द्वारा प्रयोग हेतु")} / For
                 use by the Administration Section
               </p>
-              <p>
-                {translateHindi("प्रमाणित किया जाता है कि (प्रकृति)")} /
-                Certified that (nature of leave) for period, from
-                <UnderlineInput id="adminFrom" width="w-32" readOnly /> to{" "}
-                <UnderlineInput id="adminTo" width="w-32" readOnly /> is
-                available as per following details:
-              </p>
-              <p>
-                {translateHindi("अवकाश का प्रकार")} / Nature of leave applied
-                for <UnderlineInput id="adminLeaveType" width="w-44" readOnly />{" "}
-                आज
-                {translateHindi("आज की तिथि तक शेष")} / Balance as on date
-                <UnderlineInput id="balance" width="w-28" readOnly /> कुल दिनों
-                {translateHindi("कुल दिनों के लिए अवकाश")} / Leave applied for
-                (No. of days)
-                <UnderlineInput id="adminDays" width="w-24" readOnly />
-              </p>
-              <p>
-                {translateHindi("संबंधित सहायक")} / Dealing Assistant{" "}
-                <UnderlineInput
-                  id="assistant"
-                  width="w-44"
-                  className="ml-2"
-                  readOnly
-                />{" "}
-                {translateHindi("अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/")}{" "}
-                Supdt./AR/DR
-                <UnderlineInput
-                  id="arDr"
-                  width="w-44"
-                  className="ml-2"
-                  readOnly
-                />{" "}
-                {translateHindi("कुलसचिव")} / Registrar
-                <UnderlineInput
-                  id="registrar"
-                  width="w-44"
-                  className="ml-2"
-                  readOnly
-                />
-              </p>
-              <p>
-                {translateHindi(
-                  "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत",
-                )}
-                / Comments of the competent authority to grant leave: Sanctioned
-                / Not Sanctioned
-              </p>
-              <p>
-                {translateHindi(
-                  "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर",
-                )}
-                / Signature of Registrar / Dean (Faculty Affairs &
-                Administration) / Director:
-                <UnderlineInput
-                  id="authoritySign"
-                  width="w-60"
-                  className="ml-2"
-                  readOnly
-                />
-              </p>
+              <div className="space-y-2">
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <div className="space-y-1 leading-snug">
+                    <p>
+                      {translateHindi("प्रमाणित किया जाता है कि (प्रकृति)")} /
+                      Certified that (nature of leave) for period:
+                    </p>
+                    <p>is available as per following details:</p>
+                  </div>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                      <span>from</span>
+                      <UnderlineInput id="adminFrom" width="w-full" readOnly />
+                      <span>to</span>
+                      <UnderlineInput id="adminTo" width="w-full" readOnly />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("अवकाश का प्रकार")} / Nature of leave
+                    applied for
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput
+                      id="adminLeaveType"
+                      width="w-full"
+                      readOnly
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("आज की तिथि तक शेष")} / Balance as on date
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="balance" width="w-full" readOnly />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("कुल दिनों के लिए अवकाश")} / Leave applied
+                    for (No. of days)
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="adminDays" width="w-full" readOnly />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("संबंधित सहायक")} / Dealing Assistant
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="assistant" width="w-full" readOnly />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/")}{" "}
+                    Supdt./AR/DR
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="arDr" width="w-full" readOnly />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi("कुलसचिव")} / Registrar
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput id="registrar" width="w-full" readOnly />
+                  </div>
+                </div>
+
+                <div className="space-y-1 leading-snug">
+                  <p>
+                    {translateHindi(
+                      "छुट्टी स्वीकृत करने के लिए सक्षम प्राधिकारी की टिप्पणी: स्वीकृत / अस्वीकृत",
+                    )}
+                    / Comments of the competent authority to grant leave:
+                    Sanctioned / Not Sanctioned
+                  </p>
+                </div>
+
+                <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+                  <p className="leading-snug">
+                    {translateHindi(
+                      "कुलसचिव/ डीन (Faculty Affairs & Administration) / Director के हस्ताक्षर",
+                    )}
+                    / Signature of Registrar / Dean (Faculty Affairs &
+                    Administration) / Director:
+                  </p>
+                  <div className="w-full lg:w-[22rem] lg:justify-self-end">
+                    <UnderlineInput
+                      id="authoritySign"
+                      width="w-full"
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </SurfaceCard>
 
           {submitError && (
-            <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 sm:px-4 sm:py-3 sm:text-sm">
               {submitError}
             </div>
           )}
           {submitMessage && (
-            <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 sm:px-4 sm:py-3 sm:text-sm">
               {submitMessage}
             </div>
           )}
@@ -1139,7 +1194,7 @@ function EarnedLeavePageContent() {
             isOtpVerified={isOtpVerified}
           />
 
-          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
             <div className="text-xs text-slate-600">
               {confirmed
                 ? "Submission confirmed. You can still edit and resubmit if needed."

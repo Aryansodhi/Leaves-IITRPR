@@ -565,7 +565,11 @@ function NonAirIndiaPageContent() {
 
   return (
     <DashboardShell>
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className="space-y-3 sm:space-y-4"
+      >
         <Button
           variant="ghost"
           onClick={handleBack}
@@ -575,7 +579,7 @@ function NonAirIndiaPageContent() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
 
-        <SurfaceCard className="mx-auto max-w-3xl space-y-5 border border-slate-300 bg-white p-6 md:p-7">
+        <SurfaceCard className="mx-auto max-w-3xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-5 sm:p-4 md:p-7">
           <div className="flex justify-end">
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
               Language
@@ -598,19 +602,19 @@ function NonAirIndiaPageContent() {
           </div>
 
           <header className="space-y-1 text-center text-slate-900">
-            <div className="flex items-start justify-center gap-4">
+            <div className="flex items-start justify-center gap-3 sm:gap-4">
               <Image
                 src="/iit_ropar.png"
                 alt="IIT Ropar"
-                width={64}
-                height={64}
-                className="object-contain"
+                width={48}
+                height={48}
+                className="h-12 w-12 object-contain sm:h-16 sm:w-16"
               />
               <div className="space-y-1 text-left">
-                <p className="text-base font-semibold">
+                <p className="text-sm font-semibold sm:text-base">
                   {translateHindi("भारतीय प्रौद्योगिकी संस्थान रोपड़")}
                 </p>
-                <p className="text-base font-semibold uppercase">
+                <p className="text-sm font-semibold uppercase sm:text-base">
                   INDIAN INSTITUTE OF TECHNOLOGY ROPAR
                 </p>
                 <p className="text-[11px] text-slate-700">
@@ -632,7 +636,7 @@ function NonAirIndiaPageContent() {
             </p>
           </header>
 
-          <div className="space-y-3 text-[13px] text-slate-900">
+          <div className="space-y-3 text-[12px] text-slate-900 sm:text-[13px]">
             <LabeledLine
               number="1"
               label={`Name / ${translateHindi("नाम")}`}
@@ -702,7 +706,7 @@ function NonAirIndiaPageContent() {
             )}
           </p>
 
-          <div className="flex items-center justify-end text-[12px] text-slate-900">
+          <div className="flex items-center justify-end text-[11px] text-slate-900 sm:text-[12px]">
             <span>
               (Signature of Applicant’s with date) /{" "}
               {translateHindi("आवेदक के हस्ताक्षर दिनांक सहित")}
@@ -718,7 +722,7 @@ function NonAirIndiaPageContent() {
               }
               readOnly
             />
-            <span className="ml-2 inline-flex h-9 w-64 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[13px] text-slate-900">
+            <span className="ml-2 inline-flex h-8 w-40 items-end border-b border-dashed border-slate-400 px-1 pb-0.5 align-middle text-left text-[12px] text-slate-900 sm:h-9 sm:w-64 sm:text-[13px]">
               {signatureMode === "typed" ? (
                 typedSignature
               ) : signatureCapture ? (
@@ -736,7 +740,7 @@ function NonAirIndiaPageContent() {
             </span>
           </div>
 
-          <div className="space-y-2 text-[12px] text-slate-900">
+          <div className="space-y-2 text-[11px] text-slate-900 sm:text-[12px]">
             <p>
               Recommendation of the HoD /{" "}
               {translateHindi("विभागाध्यक्ष की अनुशंसा")}
