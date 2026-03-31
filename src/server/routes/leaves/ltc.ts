@@ -28,6 +28,24 @@ type SessionActor = {
   roleKey: RoleKey;
 };
 
+type ResolvedApprover = {
+  id: string;
+  name: string;
+  role: RoleKey;
+  rule: string;
+};
+
+const ensureAnyActiveUserByRole = async (role: RoleKey, message: string) => {
+  const exists = await prisma.user.findFirst({
+    where: { isActive: true, role: { key: role } },
+    select: { id: true },
+  });
+
+  if (!exists) {
+    throw new Error(message);
+  }
+};
+
 const withStatus = (message: string, status: number) =>
   Object.assign(new Error(message), { status });
 
@@ -183,13 +201,7 @@ const ltcPayloadSchema = z
     }
   });
 
-const resolveUserByRole = async (role: RoleKey) =>
-  prisma.user.findFirst({
-    where: { isActive: true, role: { key: role } },
-    include: { role: true },
-  });
-
-const resolveFacultyApprover = async (profile: {
+const resolveLtcControllingApprover = async (input: {
   departmentId: string | null;
   reportsTo?: {
     id: string;
@@ -197,10 +209,48 @@ const resolveFacultyApprover = async (profile: {
     isActive: boolean;
     role?: { key: RoleKey } | null;
   } | null;
-}) => {
+}): Promise<ResolvedApprover | null> => {
+  if (input.departmentId) {
+    const hod = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        departmentId: input.departmentId,
+        role: { key: RoleKey.HOD },
+      },
+      include: { role: true },
+    });
+
+    if (hod?.role) {
+      return {
+        id: hod.id,
+        name: hod.name,
+        role: hod.role.key,
+        rule: "ltc-routing:department-hod",
+      };
+    }
+
+    const associateHod = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        departmentId: input.departmentId,
+        role: { key: RoleKey.ASSOCIATE_HOD },
+      },
+      include: { role: true },
+    });
+
+    if (associateHod?.role) {
+      return {
+        id: associateHod.id,
+        name: associateHod.name,
+        role: associateHod.role.key,
+        rule: "ltc-routing:department-associate-hod",
+      };
+    }
+  }
+
   const reportsToRole =
-    profile.reportsTo?.isActive && profile.reportsTo.role
-      ? profile.reportsTo.role.key
+    input.reportsTo?.isActive && input.reportsTo.role
+      ? input.reportsTo.role.key
       : null;
 
   if (
@@ -208,28 +258,21 @@ const resolveFacultyApprover = async (profile: {
     reportsToRole === RoleKey.ASSOCIATE_HOD
   ) {
     return {
-      id: profile.reportsTo!.id,
-      name: profile.reportsTo!.name,
+      id: input.reportsTo!.id,
+      name: input.reportsTo!.name,
       role: reportsToRole,
       rule: "ltc-routing:reportsTo",
     };
   }
 
-  const hod = await prisma.user.findFirst({
-    where: {
-      isActive: true,
-      departmentId: profile.departmentId,
-      role: { key: RoleKey.HOD },
-    },
-    include: { role: true },
-  });
-
-  if (hod?.role) {
+  // Last-resort fallback: if reportsTo exists but role mapping is missing/misconfigured,
+  // still route to that user and treat them as the HoD workflow actor.
+  if (input.reportsTo?.isActive) {
     return {
-      id: hod.id,
-      name: hod.name,
-      role: hod.role.key,
-      rule: "ltc-routing:department-hod",
+      id: input.reportsTo.id,
+      name: input.reportsTo.name,
+      role: RoleKey.HOD,
+      rule: "ltc-routing:reportsTo-forced",
     };
   }
 
@@ -297,35 +340,38 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
 
   const totalDays = Math.max(Math.ceil(computedDays), 1);
 
-  // Resolve approvers needed by the 3 explicit flows
-  const dean = await resolveUserByRole(RoleKey.DEAN);
-  const registrar = await resolveUserByRole(RoleKey.REGISTRAR);
-  const establishment = await resolveUserByRole(RoleKey.ESTABLISHMENT);
-  const accounts = await resolveUserByRole(RoleKey.ACCOUNTS);
-
   const stepsToCreate: Prisma.ApprovalStepCreateWithoutLeaveApplicationInput[] =
     [];
   let workflowLabel = "";
 
   if (applicantRole === RoleKey.FACULTY) {
-    // Faculty -> HoD -> Dean
-    workflowLabel = "faculty-hod-dean";
-    const controlling = await resolveFacultyApprover({
+    // Faculty -> HoD (same department) -> Establishment -> Accounts -> Dean
+    workflowLabel = "faculty-hod-establishment-accounts-dean";
+    const controlling = await resolveLtcControllingApprover({
       departmentId: profile.departmentId,
       reportsTo: profile.reportsTo,
     });
 
     if (!controlling) {
       throw new Error(
-        "Unable to route LTC for faculty. Please ensure HoD is configured and active.",
+        "Unable to route LTC. Please ensure your department (or reporting officer) HoD/Associate HoD is configured and active.",
       );
     }
 
-    if (!dean?.role) {
-      throw new Error(
+    await Promise.all([
+      ensureAnyActiveUserByRole(
+        RoleKey.ESTABLISHMENT,
+        "Unable to route LTC. Establishment account is missing or inactive.",
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.ACCOUNTS,
+        "Unable to route LTC. Accounts account is missing or inactive.",
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.DEAN,
         "Unable to route LTC. Dean account is missing or inactive.",
-      );
-    }
+      ),
+    ]);
 
     stepsToCreate.push({
       sequence: 1,
@@ -337,44 +383,68 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
 
     stepsToCreate.push({
       sequence: 2,
+      actor: WorkflowActor.ESTABLISHMENT,
+      status: ApprovalStatus.PENDING,
+      metadata: { workflowRule: "ltc-routing:faculty-establishment" },
+    });
+
+    stepsToCreate.push({
+      sequence: 3,
+      actor: WorkflowActor.ACCOUNTS,
+      status: ApprovalStatus.PENDING,
+      metadata: {
+        workflowRule: "ltc-routing:faculty-accounts",
+        balanceRequired: true,
+      },
+    });
+
+    stepsToCreate.push({
+      sequence: 4,
       actor: WorkflowActor.DEAN,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: dean.id } },
       metadata: { workflowRule: "ltc-routing:faculty-dean" },
     });
   } else if (applicantRole === RoleKey.STAFF) {
-    // Staff -> Registrar -> Establishment -> Accounts -> Registrar
-    workflowLabel = "staff-registrar-establishment-accounts-registrar";
+    // Staff -> HoD (same department) -> Establishment -> Accounts -> Dean
+    workflowLabel = "staff-hod-establishment-accounts-dean";
+    const controlling = await resolveLtcControllingApprover({
+      departmentId: profile.departmentId,
+      reportsTo: profile.reportsTo,
+    });
 
-    if (!registrar?.role) {
+    if (!controlling) {
       throw new Error(
-        "Unable to route LTC for staff. Registrar account is missing or inactive.",
+        "Unable to route LTC. Please ensure your department (or reporting officer) HoD/Associate HoD is configured and active.",
       );
     }
-    if (!establishment?.role) {
-      throw new Error(
+
+    await Promise.all([
+      ensureAnyActiveUserByRole(
+        RoleKey.ESTABLISHMENT,
         "Unable to route LTC. Establishment account is missing or inactive.",
-      );
-    }
-    if (!accounts?.role) {
-      throw new Error(
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.ACCOUNTS,
         "Unable to route LTC. Accounts account is missing or inactive.",
-      );
-    }
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.DEAN,
+        "Unable to route LTC. Dean account is missing or inactive.",
+      ),
+    ]);
 
     stepsToCreate.push({
       sequence: 1,
-      actor: WorkflowActor.REGISTRAR,
+      actor: toWorkflowActor(controlling.role),
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: registrar.id } },
-      metadata: { workflowRule: "ltc-routing:staff-registrar-1" },
+      assignedTo: { connect: { id: controlling.id } },
+      metadata: { workflowRule: controlling.rule },
     });
 
     stepsToCreate.push({
       sequence: 2,
       actor: WorkflowActor.ESTABLISHMENT,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: establishment.id } },
       metadata: { workflowRule: "ltc-routing:staff-establishment" },
     });
 
@@ -382,7 +452,6 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
       sequence: 3,
       actor: WorkflowActor.ACCOUNTS,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: accounts.id } },
       metadata: {
         workflowRule: "ltc-routing:staff-accounts",
         balanceRequired: true,
@@ -391,55 +460,43 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
 
     stepsToCreate.push({
       sequence: 4,
-      actor: WorkflowActor.REGISTRAR,
+      actor: WorkflowActor.DEAN,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: registrar.id } },
-      metadata: { workflowRule: "ltc-routing:staff-registrar-2" },
+      metadata: { workflowRule: "ltc-routing:staff-dean" },
     });
   } else if (
     applicantRole === RoleKey.HOD ||
     applicantRole === RoleKey.ASSOCIATE_HOD
   ) {
-    // HoD -> Dean -> Establishment -> Accounts -> Dean
-    workflowLabel = "hod-dean-establishment-accounts-dean";
+    // HoD -> Establishment -> Accounts -> Dean
+    workflowLabel = "hod-establishment-accounts-dean";
 
-    if (!dean?.role) {
-      throw new Error(
+    await Promise.all([
+      ensureAnyActiveUserByRole(
+        RoleKey.DEAN,
         "Unable to route LTC for HoD. Dean account is missing or inactive.",
-      );
-    }
-    if (!establishment?.role) {
-      throw new Error(
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.ESTABLISHMENT,
         "Unable to route LTC. Establishment account is missing or inactive.",
-      );
-    }
-    if (!accounts?.role) {
-      throw new Error(
+      ),
+      ensureAnyActiveUserByRole(
+        RoleKey.ACCOUNTS,
         "Unable to route LTC. Accounts account is missing or inactive.",
-      );
-    }
+      ),
+    ]);
 
     stepsToCreate.push({
       sequence: 1,
-      actor: WorkflowActor.DEAN,
-      status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: dean.id } },
-      metadata: { workflowRule: "ltc-routing:hod-dean-1" },
-    });
-
-    stepsToCreate.push({
-      sequence: 2,
       actor: WorkflowActor.ESTABLISHMENT,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: establishment.id } },
       metadata: { workflowRule: "ltc-routing:hod-establishment" },
     });
 
     stepsToCreate.push({
-      sequence: 3,
+      sequence: 2,
       actor: WorkflowActor.ACCOUNTS,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: accounts.id } },
       metadata: {
         workflowRule: "ltc-routing:hod-accounts",
         balanceRequired: true,
@@ -447,11 +504,10 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
     });
 
     stepsToCreate.push({
-      sequence: 4,
+      sequence: 3,
       actor: WorkflowActor.DEAN,
       status: ApprovalStatus.PENDING,
-      assignedTo: { connect: { id: dean.id } },
-      metadata: { workflowRule: "ltc-routing:hod-dean-2" },
+      metadata: { workflowRule: "ltc-routing:hod-dean" },
     });
   } else {
     throw withStatus(

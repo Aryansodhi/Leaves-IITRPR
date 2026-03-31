@@ -4,7 +4,7 @@ import {
   LeaveStatus,
   RoleKey,
   WorkflowActor,
-  type Prisma,
+  Prisma,
 } from "@prisma/client";
 import { z } from "zod";
 

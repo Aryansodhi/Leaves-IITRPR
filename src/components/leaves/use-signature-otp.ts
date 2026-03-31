@@ -7,6 +7,7 @@ import type {
 
 type UseSignatureOtpOptions = {
   enableTyped?: boolean;
+  requireOtpForTyped?: boolean;
 };
 
 type ReadyMessages = {
@@ -18,6 +19,7 @@ export const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
 
 export const useSignatureOtp = ({
   enableTyped = true,
+  requireOtpForTyped = false,
 }: UseSignatureOtpOptions = {}) => {
   const [otpEmail, setOtpEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -41,11 +43,9 @@ export const useSignatureOtp = ({
       if (!enableTyped && mode === "typed") return;
       setSignatureMode(mode);
       clearOtpState();
-      if (mode === "typed") {
-        setSignatureCapture(null);
-      }
+      if (mode === "typed" && !requireOtpForTyped) setSignatureCapture(null);
     },
-    [clearOtpState, enableTyped],
+    [clearOtpState, enableTyped, requireOtpForTyped],
   );
 
   const onTypedSignatureChange = useCallback((value: string) => {
@@ -68,6 +68,15 @@ export const useSignatureOtp = ({
             messages?.typed ?? "Please type your signature before submitting."
           );
         }
+        if (!requireOtpForTyped) return null;
+
+        if (!isOtpVerified || !signatureCapture) {
+          return (
+            messages?.digital ??
+            "Please complete signature capture and OTP verification before submitting."
+          );
+        }
+
         return null;
       }
 
@@ -80,11 +89,17 @@ export const useSignatureOtp = ({
 
       return null;
     },
-    [isOtpVerified, signatureCapture, signatureMode, typedSignature],
+    [
+      isOtpVerified,
+      requireOtpForTyped,
+      signatureCapture,
+      signatureMode,
+      typedSignature,
+    ],
   );
 
   const handleVerifyOtp = useCallback(async () => {
-    if (signatureMode === "typed") {
+    if (signatureMode === "typed" && !requireOtpForTyped) {
       setOtpStatusMessage(
         "OTP verification is not required when using typed signature mode.",
       );
@@ -118,6 +133,7 @@ export const useSignatureOtp = ({
     try {
       const response = await fetch("/api/auth/verify-otp", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }),
       });
@@ -141,10 +157,10 @@ export const useSignatureOtp = ({
     } finally {
       setIsVerifyingOtp(false);
     }
-  }, [otpCode, otpEmail, signatureCapture, signatureMode]);
+  }, [otpCode, otpEmail, requireOtpForTyped, signatureCapture, signatureMode]);
 
   const handleSendOtp = useCallback(async () => {
-    if (signatureMode === "typed") {
+    if (signatureMode === "typed" && !requireOtpForTyped) {
       setOtpStatusMessage(
         "OTP is not required when using typed signature mode.",
       );
@@ -161,6 +177,7 @@ export const useSignatureOtp = ({
     try {
       const response = await fetch("/api/auth/request-otp", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: otpEmail }),
       });
@@ -182,7 +199,7 @@ export const useSignatureOtp = ({
     } finally {
       setIsSendingOtp(false);
     }
-  }, [otpEmail, signatureMode]);
+  }, [otpEmail, requireOtpForTyped, signatureMode]);
 
   const resetAfterSubmit = useCallback(
     (options?: { clearSignature?: boolean }) => {

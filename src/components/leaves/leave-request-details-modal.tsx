@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -19,6 +19,10 @@ export type LeaveApprovalTrailItem = {
   accountsSignature?: string | null;
   balance?: string | null;
   decisionDate?: string | null;
+  approverSignatureProof?: {
+    image?: string | null;
+    animation?: unknown[] | null;
+  } | null;
 };
 
 export type LeaveRequestDetails = {
@@ -93,6 +97,11 @@ const isEarnedLeaveType = (request: LeaveRequestDetails) =>
   (request.leaveTypeCode ?? "").toUpperCase() === "EL" ||
   request.leaveType.toLowerCase().includes("earned");
 
+const isLtcType = (request: LeaveRequestDetails) =>
+  (request.leaveTypeCode ?? "").toUpperCase() === "LTC" ||
+  request.leaveType.toLowerCase().includes("ltc") ||
+  request.leaveType.toLowerCase().includes("leave travel");
+
 const formatFormDate = (value?: string | null) => {
   if (!value) return "";
 
@@ -133,56 +142,6 @@ const buildProfessionalSummary = (request: LeaveRequestDetails) => {
   ];
 };
 
-const humanizeFormEntry = (key: string, value: string) => {
-  const label = formatFieldLabel(key);
-  const normalized = key.toLowerCase();
-
-  if (["fromdate", "englishfrom"].includes(normalized)) {
-    return `The leave period started on ${value}.`;
-  }
-  if (["todate", "englishto"].includes(normalized)) {
-    return `The leave period ended on ${value}.`;
-  }
-  if (["from"].includes(normalized)) {
-    return `The station leave starts on ${value}.`;
-  }
-  if (["to"].includes(normalized)) {
-    return `The station leave ends on ${value}.`;
-  }
-  if (["days"].includes(normalized)) {
-    return `The station leave duration entered in the form is ${value} day${value === "1" ? "" : "s"}.`;
-  }
-  if (["totaldays", "englishdays"].includes(normalized)) {
-    return `The duration recorded in the form is ${value} day${value === "1" ? "" : "s"}.`;
-  }
-  if (["contactprefix"].includes(normalized)) {
-    return `The selected country calling code is ${value}.`;
-  }
-  if (["contactnumber"].includes(normalized)) {
-    return `The contact number provided during leave is ${value}.`;
-  }
-  if (["contactaddress"].includes(normalized)) {
-    return `The address provided during station leave is ${value}.`;
-  }
-  if (["rejoindate", "englishrejoin"].includes(normalized)) {
-    return `The applicant reported rejoining duty on ${value}.`;
-  }
-  if (["dutysession"].includes(normalized)) {
-    return `The applicant reported for duty during the ${value.toLowerCase()}.`;
-  }
-  if (["leavecategory"].includes(normalized)) {
-    return `The leave category selected in the form is ${value}.`;
-  }
-  if (["orderno", "englishorder"].includes(normalized)) {
-    return `The office order reference noted in the form is ${value}.`;
-  }
-  if (["orderdate", "englishorderdate"].includes(normalized)) {
-    return `The office order date recorded in the form is ${value}.`;
-  }
-
-  return `${label}: ${value}.`;
-};
-
 export const LeaveRequestDetailsModal = ({
   isOpen,
   onClose,
@@ -190,6 +149,7 @@ export const LeaveRequestDetailsModal = ({
   onWithdraw,
   canWithdraw = false,
   withdrawBusy = false,
+  footer,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -197,6 +157,7 @@ export const LeaveRequestDetailsModal = ({
   onWithdraw?: () => void;
   canWithdraw?: boolean;
   withdrawBusy?: boolean;
+  footer?: ReactNode;
 }) => {
   const printableRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -218,19 +179,16 @@ export const LeaveRequestDetailsModal = ({
     }
   };
 
-  const formEntries = Object.entries(request.formData ?? {}).filter(
-    ([, value]) => value != null && `${value}`.trim() !== "",
-  );
   const professionalSummary = buildProfessionalSummary(request);
   const hasFormPreview =
     // show full form for station leave (SL), joining report (JR), or when request has
     // form data and has already been approved. Approved records are often reviewed
     // later by applicants or controllers so the original data should be visible.
     Boolean(request.formData && Object.keys(request.formData).length > 0) &&
-    (request.status === "APPROVED" ||
-      isEarnedLeaveType(request) ||
+    (isEarnedLeaveType(request) ||
       request.leaveTypeCode === "SL" ||
-      request.leaveTypeCode === "JR");
+      request.leaveTypeCode === "JR" ||
+      isLtcType(request));
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
@@ -364,19 +322,6 @@ export const LeaveRequestDetailsModal = ({
             </div>
           </section>
 
-          {!hasFormPreview && formEntries.length > 0 ? (
-            <section className="space-y-3">
-              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Submitted form narrative
-              </p>
-              <div className="space-y-3 rounded-2xl border border-slate-200/80 p-4 text-sm leading-7 text-slate-800">
-                {formEntries.map(([key, value]) => (
-                  <p key={key}>{humanizeFormEntry(key, value)}</p>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           {request.signatureProof ? (
             <section className="space-y-3">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -426,7 +371,8 @@ export const LeaveRequestDetailsModal = ({
                       step.hodSignature ||
                       step.accountsSignature ||
                       step.balance ||
-                      step.decisionDate) && (
+                      step.decisionDate ||
+                      step.approverSignatureProof?.image) && (
                       <div className="mt-2 space-y-2">
                         {step.recommended && (
                           <p className="text-sm">
@@ -443,6 +389,21 @@ export const LeaveRequestDetailsModal = ({
                             <strong>Signature:</strong> {step.hodSignature}
                           </p>
                         )}
+                        {step.approverSignatureProof?.image ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">
+                              Digital signature
+                            </p>
+                            <Image
+                              src={step.approverSignatureProof.image}
+                              alt="Approver signature"
+                              width={560}
+                              height={180}
+                              unoptimized
+                              className="h-24 w-full rounded-xl border border-slate-200 bg-white object-contain"
+                            />
+                          </div>
+                        ) : null}
                         {step.accountsSignature && !step.hodSignature && (
                           <p className="text-sm">
                             <strong>Certified by:</strong>{" "}
@@ -462,6 +423,15 @@ export const LeaveRequestDetailsModal = ({
             </section>
           ) : null}
         </div>
+
+        {footer ? (
+          <section className="space-y-3">
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Your action
+            </p>
+            {footer}
+          </section>
+        ) : null}
       </SurfaceCard>
     </div>
   );
@@ -689,11 +659,1053 @@ const FormPreview = ({ request }: { request: LeaveRequestDetails }) => {
     return <JoiningReportPreview request={request} />;
   }
 
+  if (isLtcType(request)) {
+    return <LtcPreview request={request} />;
+  }
+
   if (isEarnedLeaveType(request)) {
     return <EarnedLeavePreview request={request} />;
   }
 
   return null;
+};
+
+const LtcPreview = ({ request }: { request: LeaveRequestDetails }) => {
+  const form = request.formData ?? {};
+
+  const getValue = (key: string) => form[key] ?? "";
+
+  const getDate = (key: string) => formatFormDate(form[key]) || form[key] || "";
+
+  const hasAnyValue = (keys: string[]) =>
+    keys.some((key) => (form[key] ?? "").trim().length > 0);
+
+  const applicantKeys = [
+    "formLanguage",
+    "employeeName",
+    "designation",
+    "dateOfJoining",
+    "payLevel",
+    "leaveNature",
+    "leaveFrom",
+    "leaveFromSession",
+    "leaveTo",
+    "leaveToSession",
+    "leaveDays",
+    "prefixFrom",
+    "prefixTo",
+    "suffixFrom",
+    "suffixTo",
+    "spouseLtc",
+    "selfOutward",
+    "selfInward",
+    "familyOutward",
+    "familyInward",
+    "homeTown",
+    "ltcNature",
+    "placeToVisit",
+    "estimatedFare",
+    "advanceRequired",
+    "encashmentRequired",
+    "encashmentDays",
+    "blockYear",
+    "applicantSignature",
+  ];
+
+  const personsKeys = Array.from({ length: 5 }).flatMap((_, index) => {
+    const idx = index + 1;
+    return [
+      `person${idx}Name`,
+      `person${idx}Age`,
+      `person${idx}Relation`,
+      `person${idx}From`,
+      `person${idx}To`,
+      `person${idx}Back`,
+      `person${idx}Mode`,
+    ];
+  });
+
+  const establishmentKeys = [
+    "freshRecruitDate",
+    "estBlockYear",
+    "estNatureParticular",
+    "estNatureLast",
+    "estNatureCurrent",
+    "estPeriodFrom",
+    "estPeriodTo",
+    "estPeriodLast",
+    "estPeriodCurrent",
+    "estSelfFamilyParticular",
+    "estSelfFamilyLast",
+    "estSelfFamilyCurrent",
+    "estEncashParticular",
+    "estEncashLast",
+    "estEncashCurrent",
+    "estEarnedLeaveCreditOn",
+    "estEarnedLeaveStanding",
+    "estEarnedLeaveBalanceAfterEncashment",
+    "estEarnedLeaveEncashmentAdmissible",
+    "estLeaveLast",
+    "estLeaveCurrent",
+    "estPeriodNatureParticular",
+    "estPeriodNatureLast",
+    "estPeriodNatureCurrent",
+  ];
+
+  const accountsKeys = [
+    ...Array.from({ length: 4 }).flatMap((_, index) => {
+      const row = index + 1;
+      return [
+        `accountsFrom${row}`,
+        `accountsTo${row}`,
+        `accountsMode${row}`,
+        `accountsFares${row}`,
+        `accountsSingleFare${row}`,
+        `accountsAmount${row}`,
+      ];
+    }),
+    "accountsTotal",
+    "accountsAdmissible",
+    "accountsPassed",
+    "accountsInWords",
+    "accountsDebitable",
+  ];
+
+  const auditKeys = ["auditComments", "auditRecommended", "auditApproved"];
+
+  const officeKeys = [...establishmentKeys, ...accountsKeys, ...auditKeys];
+  const showOfficeSections = hasAnyValue(officeKeys);
+
+  const shownAllKeys = new Set<string>([
+    ...applicantKeys,
+    ...personsKeys,
+    ...officeKeys,
+  ]);
+
+  const remainingEntries = Object.entries(form)
+    .filter(([key, value]) => {
+      if (!value || !value.trim()) return false;
+      return !shownAllKeys.has(key);
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  const leaveFrom = getDate("leaveFrom");
+  const leaveTo = getDate("leaveTo");
+  const leaveFromSession = getValue("leaveFromSession");
+  const leaveToSession = getValue("leaveToSession");
+
+  return (
+    <div className="space-y-4">
+      <SurfaceCard className="mx-auto max-w-5xl space-y-4 border border-slate-300 bg-white p-4 md:p-6">
+        <div className="flex justify-end">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <span>Language</span>
+            <FilledUnderline value={getValue("formLanguage")} width="w-24" />
+          </div>
+        </div>
+
+        <PreviewHeader />
+        <p className="text-center text-[12px] font-semibold text-slate-900">
+          APPLICATION FOR LEAVE TRAVEL CONCESSION (LTC) /
+          <span className="ml-2">छुट्टी यात्रा रियायत हेतु आवेदन</span>
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border border-slate-400 text-[12px] text-slate-900">
+            <tbody>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  1.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Name of the Employee with Employee Code /
+                      <span className="ml-1">
+                        कर्मचारी का नाम एवं कर्मचारी कोड
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("employeeName")}
+                      width="w-80"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  2.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Designation and Department /
+                      <span className="ml-1">पदनाम और विभाग</span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("designation")}
+                      width="w-96"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  3.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Date of entering the Central Government Service/Date of
+                      joining with IIT Ropar /
+                      <span className="ml-1">
+                        केन्द्रीय सरकार सेवा में प्रवेश की तिथि/आईआईटी रोपड़ में
+                        जॉइनिंग की तिथि
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getDate("dateOfJoining")}
+                      width="w-52"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  4.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Pay Level / <span className="ml-1">वेतन स्तर</span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("payLevel")}
+                      width="w-48"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  5.
+                </td>
+                <td className="px-3 py-2">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">
+                        Leave required /{" "}
+                        <span className="ml-1">छुट्टी की आवश्यकता</span>
+                      </span>
+                      <span>Nature / प्रकृति:</span>
+                      <FilledUnderline
+                        value={getValue("leaveNature")}
+                        width="w-44"
+                      />
+                      <span>From / से</span>
+                      <FilledUnderline value={leaveFrom} width="w-36" />
+                      <FilledUnderline
+                        value={leaveFromSession}
+                        width="w-28"
+                        align="text-center"
+                      />
+                      <span>To / तक</span>
+                      <FilledUnderline value={leaveTo} width="w-36" />
+                      <FilledUnderline
+                        value={leaveToSession}
+                        width="w-28"
+                        align="text-center"
+                      />
+                      <span>No. of days / दिनों की संख्या</span>
+                      <FilledUnderline
+                        value={getValue("leaveDays")}
+                        width="w-20"
+                        align="text-center"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>Prefix / पूर्व:</span>
+                      <span>From</span>
+                      <FilledUnderline
+                        value={getDate("prefixFrom")}
+                        width="w-36"
+                      />
+                      <span>To</span>
+                      <FilledUnderline
+                        value={getDate("prefixTo")}
+                        width="w-36"
+                      />
+                      <span>Suffix / पश्च:</span>
+                      <span>From</span>
+                      <FilledUnderline
+                        value={getDate("suffixFrom")}
+                        width="w-36"
+                      />
+                      <span>To</span>
+                      <FilledUnderline
+                        value={getDate("suffixTo")}
+                        width="w-36"
+                      />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  6.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Whether spouse is employed, if yes whether entitled to LTC
+                      /
+                      <span className="ml-1">
+                        क्या जीवनसाथी नियोजित है, यदि हां तो क्या LTC के लिए
+                        पात्र है
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("spouseLtc")}
+                      width="w-72"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  7.
+                </td>
+                <td className="px-3 py-2">
+                  <div className="font-semibold">
+                    Proposed dates of Journey /{" "}
+                    <span className="ml-1">यात्रा की प्रस्तावित तिथियां</span>
+                  </div>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full border border-slate-400 text-[12px]">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            &nbsp;
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Date of Outward journey / बाह्य यात्रा की तिथि
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Date of Inward journey / आंतरिक यात्रा की तिथि
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-slate-400 px-2 py-1 font-semibold">
+                            Self / स्वयं
+                          </td>
+                          <td className="border border-slate-400 px-2 py-1">
+                            <FilledUnderline
+                              value={getDate("selfOutward")}
+                              width="w-full"
+                            />
+                          </td>
+                          <td className="border border-slate-400 px-2 py-1">
+                            <FilledUnderline
+                              value={getDate("selfInward")}
+                              width="w-full"
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border border-slate-400 px-2 py-1 font-semibold">
+                            Family / परिवार
+                          </td>
+                          <td className="border border-slate-400 px-2 py-1">
+                            <FilledUnderline
+                              value={getDate("familyOutward")}
+                              width="w-full"
+                            />
+                          </td>
+                          <td className="border border-slate-400 px-2 py-1">
+                            <FilledUnderline
+                              value={getDate("familyInward")}
+                              width="w-full"
+                            />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  8.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Home Town as recorded in the Service Book /
+                      <span className="ml-1">
+                        गृह नगर सेवा पुस्तिका में दर्ज
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("homeTown")}
+                      width="w-80"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  9.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Nature of LTC to be availed:- Home Town/ Anywhere in India
+                      /
+                      <span className="ml-1">
+                        एलटीसी का प्रकार: गृह नगर/भारत में कहीं भी
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("ltcNature")}
+                      width="w-80"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  10.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Place to be visited /{" "}
+                      <span className="ml-1">भ्रमण का स्थान</span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("placeToVisit")}
+                      width="w-80"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  11.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Total Estimated fare of entitled class for to and fro
+                      journey (proof need to be attached). /
+                      <span className="ml-1">
+                        आवक-जावक यात्रा के लिए पात्र श्रेणी का अनुमानित किराया
+                      </span>
+                    </span>
+                    <FilledUnderline
+                      value={getValue("estimatedFare")}
+                      width="w-72"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  12.
+                </td>
+                <td className="px-3 py-2">
+                  <div className="font-semibold">
+                    Person(s) in respect of whom LTC is proposed to be availed.
+                    /
+                    <span className="ml-1">
+                      जिन व्यक्तियों के लिए एलटीसी प्रस्तावित है
+                    </span>
+                  </div>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full border border-slate-400 text-[11px]">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="w-10 border border-slate-400 px-2 py-1 text-left">
+                            Sr.
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Name
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Age
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Relationship
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Travelling (Place) From
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            To
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Back (Yes/No)
+                          </th>
+                          <th className="border border-slate-400 px-2 py-1 text-left">
+                            Mode of Travel
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { key: "i", idx: 1 },
+                          { key: "ii", idx: 2 },
+                          { key: "iii", idx: 3 },
+                          { key: "iv", idx: 4 },
+                          { key: "v", idx: 5 },
+                        ].map((row) => (
+                          <tr key={row.key}>
+                            <td className="border border-slate-400 px-2 py-1 font-semibold">
+                              ({row.key})
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}Name`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}Age`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}Relation`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}From`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}To`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}Back`)}
+                                width="w-full"
+                              />
+                            </td>
+                            <td className="border border-slate-400 px-2 py-1">
+                              <FilledUnderline
+                                value={getValue(`person${row.idx}Mode`)}
+                                width="w-full"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  13.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Advance Required / अग्रिम आवश्यक
+                    </span>
+                    <FilledUnderline
+                      value={getValue("advanceRequired")}
+                      width="w-32"
+                    />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="w-12 bg-slate-50 px-2 py-2 font-semibold align-top">
+                  14.
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      Encashment of earned leave required. / अर्जित अवकाश
+                      नकदीकरण आवश्यक
+                    </span>
+                    <FilledUnderline
+                      value={getValue("encashmentRequired")}
+                      width="w-32"
+                    />
+                    <FilledUnderline
+                      value={getValue("encashmentDays")}
+                      width="w-20"
+                      align="text-center"
+                    />
+                    <span>days / दिन</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-3 border-t border-slate-200 pt-3 text-[12px] text-slate-900">
+          <p className="font-semibold">Undertaking / प्रतिज्ञा</p>
+          <p className="flex flex-wrap items-center gap-2">
+            <span>
+              Spouse LTC declaration for block year / जीवनसाथी घोषणा - Block
+              year:
+            </span>
+            <FilledUnderline value={getValue("blockYear")} width="w-32" />
+          </p>
+          <p className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold">
+              Forwarded please / कृपया अग्रेषित करें
+            </span>
+            <span className="flex items-center gap-2">
+              <span>Applicant signature / आवेदक हस्ताक्षर:</span>
+              <FilledUnderline
+                value={getValue("applicantSignature")}
+                width="w-64"
+              />
+            </span>
+          </p>
+        </div>
+      </SurfaceCard>
+
+      {showOfficeSections ? (
+        <SurfaceCard className="mx-auto max-w-5xl space-y-6 border border-slate-300 bg-white p-4 md:p-6">
+          <p className="text-center text-[12px] font-semibold text-slate-900">
+            Office sections (filled so far)
+          </p>
+
+          {hasAnyValue(establishmentKeys) ? (
+            <div className="space-y-3 text-[12px] text-slate-900">
+              <div className="text-center font-semibold">
+                (A) FOR USE OF ESTABLISHMENT SECTION
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Fresh Recruit / Date of joining:</span>
+                <FilledUnderline
+                  value={getDate("freshRecruitDate")}
+                  width="w-40"
+                />
+                <span>Block year:</span>
+                <FilledUnderline
+                  value={getValue("estBlockYear")}
+                  width="w-28"
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-slate-400 text-[11px]">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="w-14 border border-slate-400 px-2 py-1 text-left">
+                        Sl. No.
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Particulars
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Last availed
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Current LTC
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        01
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <div className="space-y-1">
+                          <div>
+                            Nature of LTC (Home Town/Anywhere in India-place
+                            visited/to be visited)
+                          </div>
+                          <FilledUnderline
+                            value={getValue("estNatureParticular")}
+                            width="w-full"
+                          />
+                        </div>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estNatureLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estNatureCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        02
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <span>Period (from </span>
+                        <FilledUnderline
+                          value={getValue("estPeriodFrom")}
+                          width="w-20"
+                        />
+                        <span> to </span>
+                        <FilledUnderline
+                          value={getValue("estPeriodTo")}
+                          width="w-20"
+                        />
+                        <span>)</span>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estPeriodLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estPeriodCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        03
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <div className="space-y-1">
+                          <div>LTC for Self/Family</div>
+                          <FilledUnderline
+                            value={getValue("estSelfFamilyParticular")}
+                            width="w-full"
+                          />
+                        </div>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estSelfFamilyLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estSelfFamilyCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        04
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <div className="space-y-1">
+                          <div>Earned leave encashment (No. of Days)</div>
+                          <FilledUnderline
+                            value={getValue("estEncashParticular")}
+                            width="w-full"
+                          />
+                        </div>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estEncashLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estEncashCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        05
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span>Earned Leave standing to his credit on</span>
+                            <FilledUnderline
+                              value={getValue("estEarnedLeaveCreditOn")}
+                              width="w-24"
+                            />
+                            <span>=</span>
+                            <FilledUnderline
+                              value={getValue("estEarnedLeaveStanding")}
+                              width="w-24"
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span>
+                              Balance Earned leave after this encashment
+                            </span>
+                            <span>=</span>
+                            <FilledUnderline
+                              value={getValue(
+                                "estEarnedLeaveBalanceAfterEncashment",
+                              )}
+                              width="w-28"
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span>Earned Leave encashment admissible</span>
+                            <span>=</span>
+                            <FilledUnderline
+                              value={getValue(
+                                "estEarnedLeaveEncashmentAdmissible",
+                              )}
+                              width="w-28"
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estLeaveLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estLeaveCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 px-2 py-1 font-semibold">
+                        06
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <div className="space-y-1">
+                          <div>
+                            Period and nature of leave applied for and need to
+                            be sanctioned
+                          </div>
+                          <FilledUnderline
+                            value={getValue("estPeriodNatureParticular")}
+                            width="w-full"
+                          />
+                        </div>
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estPeriodNatureLast")}
+                          width="w-full"
+                        />
+                      </td>
+                      <td className="border border-slate-400 px-2 py-1">
+                        <FilledUnderline
+                          value={getValue("estPeriodNatureCurrent")}
+                          width="w-full"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {hasAnyValue(accountsKeys) ? (
+            <div className="space-y-3 text-[12px] text-slate-900">
+              <div className="text-center font-semibold">
+                (B) For use by the Accounts Section
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border border-slate-400 text-[11px]">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        From
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        To
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Mode of Travel
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        No. of fares
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Single fare
+                      </th>
+                      <th className="border border-slate-400 px-2 py-1 text-left">
+                        Amount
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[1, 2, 3, 4].map((row) => (
+                      <tr key={row}>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsFrom${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsTo${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsMode${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsFares${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsSingleFare${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1">
+                          <FilledUnderline
+                            value={getValue(`accountsAmount${row}`)}
+                            width="w-full"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="space-y-2 text-[11px]">
+                <p>
+                  Total Rs.{" "}
+                  <FilledUnderline
+                    value={getValue("accountsTotal")}
+                    width="w-40"
+                  />
+                </p>
+                <p>
+                  Advance admissible (90% of above) = Rs.{" "}
+                  <FilledUnderline
+                    value={getValue("accountsAdmissible")}
+                    width="w-32"
+                  />{" "}
+                  Passed for Rs.{" "}
+                  <FilledUnderline
+                    value={getValue("accountsPassed")}
+                    width="w-32"
+                  />
+                </p>
+                <p>
+                  (in words); Rupees{" "}
+                  <FilledUnderline
+                    value={getValue("accountsInWords")}
+                    width="w-64"
+                  />
+                </p>
+                <p>
+                  Debitable to LTC advance Dr./Mr./Mrs./Ms{" "}
+                  <FilledUnderline
+                    value={getValue("accountsDebitable")}
+                    width="w-64"
+                  />
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {hasAnyValue(auditKeys) ? (
+            <div className="space-y-3 text-[12px] text-slate-900">
+              <div className="text-center font-semibold">
+                (C) For use by the Audit Section
+              </div>
+              <div className="border border-slate-400 p-3 text-[11px]">
+                <p>Comments/Observations:</p>
+                <FilledUnderline
+                  value={getValue("auditComments")}
+                  width="w-full"
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold">
+                <div className="flex items-center gap-2">
+                  <span>Recommended & Forwarded</span>
+                  <FilledUnderline
+                    value={getValue("auditRecommended")}
+                    width="w-40"
+                  />
+                  <span>Registrar</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>Approved/Not Approved</span>
+                  <FilledUnderline
+                    value={getValue("auditApproved")}
+                    width="w-40"
+                  />
+                  <span>Dean (F&A)</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </SurfaceCard>
+      ) : null}
+
+      {remainingEntries.length ? (
+        <SurfaceCard className="mx-auto max-w-5xl space-y-3 border border-slate-200 bg-white p-4 md:p-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Additional fields
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full border border-slate-200 text-[12px] text-slate-900">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="border border-slate-200 px-3 py-2 text-left">
+                    Field
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2 text-left">
+                    Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {remainingEntries.map(([key, value]) => (
+                  <tr key={key} className="border-t border-slate-200">
+                    <td className="w-60 bg-slate-50 px-3 py-2 align-top font-semibold">
+                      {formatFieldLabel(key)}
+                      <div className="mt-0.5 text-[11px] font-normal text-slate-500">
+                        {key}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top">{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SurfaceCard>
+      ) : null}
+    </div>
+  );
 };
 
 const EarnedLeavePreview = ({ request }: { request: LeaveRequestDetails }) => {

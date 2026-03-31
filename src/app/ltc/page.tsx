@@ -62,26 +62,25 @@ const LTC_WORKFLOW_PREVIEWS: Array<WorkflowPreview & { key: string }> = [
       { actor: "ACCOUNTS", label: "Accounts" },
       { actor: "DEAN", label: "Dean" },
     ],
-    note: "The HoD step is chosen from your reporting chain or department mapping.",
+    note: "The HoD step is chosen from your department mapping (fallback: reporting officer if configured).",
   },
   {
     key: "STAFF",
     label: "Staff",
     steps: [
-      { actor: "REGISTRAR", label: "Registrar" },
+      { actor: "HOD", label: "HoD / Associate HoD" },
       { actor: "ESTABLISHMENT", label: "Establishment" },
       { actor: "ACCOUNTS", label: "Accounts" },
-      { actor: "REGISTRAR", label: "Registrar (final)" },
+      { actor: "DEAN", label: "Dean" },
     ],
   },
   {
     key: "HOD",
     label: "HoD",
     steps: [
-      { actor: "DEAN", label: "Dean" },
       { actor: "ESTABLISHMENT", label: "Establishment" },
       { actor: "ACCOUNTS", label: "Accounts" },
-      { actor: "DEAN", label: "Dean (final)" },
+      { actor: "DEAN", label: "Dean" },
     ],
   },
 ];
@@ -795,6 +794,7 @@ function LtcPageContent() {
     try {
       const response = await fetch("/api/ltc", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           form: pendingDataRef.current,
@@ -809,10 +809,17 @@ function LtcPageContent() {
         }),
       });
 
-      const result = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
+      const rawText = await response.text();
+      const result = (() => {
+        try {
+          return JSON.parse(rawText) as { ok?: boolean; message?: string };
+        } catch {
+          return { ok: false, message: rawText } as {
+            ok?: boolean;
+            message?: string;
+          };
+        }
+      })();
 
       if (!response.ok || !result.ok) {
         throw new Error(result.message || "Failed to submit LTC application.");

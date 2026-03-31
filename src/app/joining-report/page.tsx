@@ -317,12 +317,18 @@ const UnderlineInput = ({
   />
 );
 
-const DUTY_SESSION_OPTIONS = [
+type LocalizedOption = {
+  value: string;
+  hindi: string;
+  english: string;
+};
+
+const DUTY_SESSION_OPTIONS: ReadonlyArray<LocalizedOption> = [
   { value: "Forenoon", hindi: "पूर्वाह्न", english: "Forenoon" },
   { value: "Afternoon", hindi: "अपराह्न", english: "Afternoon" },
-] as const;
+];
 
-const LEAVE_CATEGORY_OPTIONS = [
+const LEAVE_CATEGORY_OPTIONS: ReadonlyArray<LocalizedOption> = [
   { value: "Earned Leave", hindi: "अर्जित छुट्टी", english: "Earned Leave" },
   {
     value: "Half Pay Leave",
@@ -340,7 +346,7 @@ const LEAVE_CATEGORY_OPTIONS = [
     english: "Extra Ordinary Leave",
   },
   { value: "Vacation Leave", hindi: "", english: "Vacation Leave" },
-] as const;
+];
 
 const PERIOD_SESSION_OPTIONS = [
   { value: "MORNING", label: "Morning" },

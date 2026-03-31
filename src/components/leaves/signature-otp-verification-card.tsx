@@ -93,12 +93,45 @@ const buildPlaceholderAnimation = (): SignatureStroke[] => [
   },
 ];
 
+const renderTypedSignatureToCapture = (value: string): SignatureCapture => {
+  const canvas = document.createElement("canvas");
+  const width = 560;
+  const height = 180;
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return {
+      animation: buildPlaceholderAnimation(),
+      image:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5qU8cAAAAASUVORK5CYII=",
+    };
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#0f172a";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font =
+    "48px 'Segoe Script','Brush Script MT','Lucida Handwriting',cursive";
+  const safe = value.trim().slice(0, 80);
+  ctx.fillText(safe, width / 2, height / 2);
+
+  return {
+    animation: buildPlaceholderAnimation(),
+    image: canvas.toDataURL("image/png"),
+  };
+};
+
 export const SignatureOtpVerificationCard = ({
   storageScope,
   signatureMode,
   onSignatureModeChange,
   typedSignature,
   onTypedSignatureChange,
+  requireOtpForTyped = false,
   otpEmail,
   otpCode,
   onOtpCodeChange,
@@ -116,6 +149,7 @@ export const SignatureOtpVerificationCard = ({
   onSignatureModeChange: (mode: SignatureMode) => void;
   typedSignature: string;
   onTypedSignatureChange: (value: string) => void;
+  requireOtpForTyped?: boolean;
   otpEmail: string;
   otpCode: string;
   onOtpCodeChange: (value: string) => void;
@@ -139,7 +173,7 @@ export const SignatureOtpVerificationCard = ({
   const [encryptionPassword] = useState(() => getSessionEncryptionPassword());
 
   const isTypedMode = signatureMode === "typed";
-  const isDigitalLike = !isTypedMode;
+  const isDigitalLike = !isTypedMode || requireOtpForTyped;
   const isPadMode = signatureMode === "digital";
   const isUploadMode = signatureMode === "upload";
 
@@ -272,6 +306,12 @@ export const SignatureOtpVerificationCard = ({
       setShowSignaturePad(false);
     }
 
+    if (mode === "typed" && requireOtpForTyped) {
+      const next = typedSignature.trim();
+      handleSignatureChange(next ? renderTypedSignatureToCapture(next) : null);
+      return;
+    }
+
     handleSignatureChange(null);
   };
 
@@ -355,7 +395,14 @@ export const SignatureOtpVerificationCard = ({
             <input
               type="text"
               value={typedSignature}
-              onChange={(event) => onTypedSignatureChange(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                onTypedSignatureChange(next);
+                if (!requireOtpForTyped) return;
+                handleSignatureChange(
+                  next.trim() ? renderTypedSignatureToCapture(next) : null,
+                );
+              }}
               placeholder="Type your full name"
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-cyan-600 focus:outline-none"
               disabled={isSubmitting}

@@ -1,4 +1,10 @@
-import { ApprovalStatus, LeaveStatus, Prisma, RoleKey } from "@prisma/client";
+import {
+  ApprovalStatus,
+  LeaveStatus,
+  Prisma,
+  RoleKey,
+  WorkflowActor,
+} from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
@@ -18,13 +24,98 @@ const approvalActionSchema = z.object({
       image: z.string().trim().optional(),
     })
     .optional(),
+  formDataPatch: z.record(z.string(), z.string().trim().max(500)).optional(),
 });
+
+const DIGITAL_SIGNATURE_VALUE = "DIGITALLY_SIGNED";
+
+const LTC_ESTABLISHMENT_KEYS = new Set([
+  "freshRecruitDate",
+  "estBlockYear",
+  "estNatureParticular",
+  "estNatureLast",
+  "estNatureCurrent",
+  "estPeriodFrom",
+  "estPeriodTo",
+  "estPeriodLast",
+  "estPeriodCurrent",
+  "estSelfFamilyParticular",
+  "estSelfFamilyLast",
+  "estSelfFamilyCurrent",
+  "estEncashParticular",
+  "estEncashLast",
+  "estEncashCurrent",
+  "estEarnedLeaveCreditOn",
+  "estEarnedLeaveStanding",
+  "estEarnedLeaveBalanceAfterEncashment",
+  "estEarnedLeaveEncashmentAdmissible",
+  "estLeaveLast",
+  "estLeaveCurrent",
+  "estPeriodNatureParticular",
+  "estPeriodNatureLast",
+  "estPeriodNatureCurrent",
+]);
+
+const LTC_ACCOUNTS_KEYS = new Set([
+  "accountsFrom1",
+  "accountsTo1",
+  "accountsMode1",
+  "accountsFares1",
+  "accountsSingleFare1",
+  "accountsAmount1",
+  "accountsFrom2",
+  "accountsTo2",
+  "accountsMode2",
+  "accountsFares2",
+  "accountsSingleFare2",
+  "accountsAmount2",
+  "accountsFrom3",
+  "accountsTo3",
+  "accountsMode3",
+  "accountsFares3",
+  "accountsSingleFare3",
+  "accountsAmount3",
+  "accountsFrom4",
+  "accountsTo4",
+  "accountsMode4",
+  "accountsFares4",
+  "accountsSingleFare4",
+  "accountsAmount4",
+  "accountsTotal",
+  "accountsAdmissible",
+  "accountsPassed",
+  "accountsInWords",
+  "accountsDebitable",
+]);
 
 const withStatus = (message: string, status: number) =>
   Object.assign(new Error(message), { status });
 
 type SessionActor = {
   userId: string;
+};
+
+const getEligibleWorkflowActors = (roleKey: RoleKey | null | undefined) => {
+  if (!roleKey) return [] as WorkflowActor[];
+
+  switch (roleKey) {
+    case RoleKey.HOD:
+      return [WorkflowActor.HOD];
+    case RoleKey.ASSOCIATE_HOD:
+      return [WorkflowActor.ASSOCIATE_HOD];
+    case RoleKey.DEAN:
+      return [WorkflowActor.DEAN];
+    case RoleKey.REGISTRAR:
+      return [WorkflowActor.REGISTRAR];
+    case RoleKey.ESTABLISHMENT:
+      return [WorkflowActor.ESTABLISHMENT];
+    case RoleKey.ACCOUNTS:
+      return [WorkflowActor.ACCOUNTS];
+    case RoleKey.DIRECTOR:
+      return [WorkflowActor.DIRECTOR];
+    default:
+      return [] as WorkflowActor[];
+  }
 };
 
 const bulkApprovalActionSchema = z.object({
@@ -365,13 +456,29 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
     new Set([actor.userId, ...actingCoverage.hodIds, ...delegatedActingIds]),
   );
 
-  const steps = await prisma.approvalStep.findMany({
-    where: {
-      assignedToId: { in: assignedIds },
-      leaveApplication: {
-        status: { not: LeaveStatus.DRAFT },
+  const eligibleActors = getEligibleWorkflowActors(actorProfile.role?.key);
+  const pooledStepFilter: Prisma.ApprovalStepWhereInput | null =
+    eligibleActors.length > 0
+      ? {
+          assignedToId: null,
+          actor: { in: eligibleActors },
+        }
+      : null;
+
+  const stepWhere: Prisma.ApprovalStepWhereInput = {
+    OR: [
+      {
+        assignedToId: { in: assignedIds },
       },
+      ...(pooledStepFilter ? [pooledStepFilter] : []),
+    ],
+    leaveApplication: {
+      status: { not: LeaveStatus.DRAFT },
     },
+  };
+
+  const steps = await prisma.approvalStep.findMany({
+    where: stepWhere,
     include: {
       assignedTo: {
         include: {
@@ -436,7 +543,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         isHodStep &&
         actorProfile.role?.key === RoleKey.HOD &&
         step.assignedToId !== actor.userId &&
-        delegatedActingIds.has(step.assignedToId);
+        Boolean(step.assignedToId && delegatedActingIds.has(step.assignedToId));
       const isHodTemporarilyViewOnly =
         Boolean(actorSelfDelegation) &&
         (isOriginalHodViewingOwnStep || isOriginalHodViewingActingStep);
@@ -484,7 +591,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
         destination: step.leaveApplication.destination,
         notes: step.leaveApplication.notes,
         currentApprover:
-          step.assignedTo?.name ?? step.assignedTo?.role?.name ?? null,
+          step.assignedTo?.name ?? step.assignedTo?.role?.name ?? step.actor,
         delegatedFromHodName,
         formData,
         signatureProof,
@@ -500,7 +607,9 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
             actor: entry.actor,
             status: entry.status,
             assignedTo:
-              entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
+              entry.assignedTo?.name ??
+              entry.assignedTo?.role?.name ??
+              entry.actor,
             actedAt: entry.actedAt?.toISOString() ?? null,
             remarks: entry.remarks ?? null,
             recommended:
@@ -514,6 +623,25 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
             balance: typeof meta?.balance === "string" ? meta.balance : null,
             decisionDate:
               typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+            approverSignatureProof:
+              meta?.approverSignatureProof &&
+              typeof meta.approverSignatureProof === "object"
+                ? {
+                    image:
+                      typeof (meta.approverSignatureProof as Prisma.JsonObject)
+                        ?.image === "string"
+                        ? ((meta.approverSignatureProof as Prisma.JsonObject)
+                            .image as string)
+                        : null,
+                    animation: Array.isArray(
+                      (meta.approverSignatureProof as Prisma.JsonObject)
+                        ?.animation,
+                    )
+                      ? ((meta.approverSignatureProof as Prisma.JsonObject)
+                          .animation as unknown[])
+                      : null,
+                  }
+                : null,
           };
         }),
       };
@@ -544,12 +672,26 @@ export const decideLeaveApproval = async (
     new Set([actor.userId, ...actingCoverage.hodIds]),
   );
 
+  const eligibleActors = getEligibleWorkflowActors(actorProfile.role?.key);
+  const pooledStepFilter: Prisma.ApprovalStepWhereInput | null =
+    eligibleActors.length > 0
+      ? {
+          assignedToId: null,
+          actor: { in: eligibleActors },
+        }
+      : null;
+
   // Relaxed query: If there is a pending step assigned to this user, grab it.
   const step = await prisma.approvalStep.findFirst({
     where: {
       leaveApplicationId: applicationId,
-      assignedToId: { in: assignedIds },
       status: { in: [ApprovalStatus.PENDING, ApprovalStatus.IN_REVIEW] },
+      OR: [
+        {
+          assignedToId: { in: assignedIds },
+        },
+        ...(pooledStepFilter ? [pooledStepFilter] : []),
+      ],
     },
     include: {
       leaveApplication: {
@@ -571,6 +713,34 @@ export const decideLeaveApproval = async (
       "No pending approval found for this request. It may have already been approved.",
       404,
     );
+  }
+
+  // If this is a pooled (unassigned) step, claim it now so only one user can act.
+  if (step.assignedToId === null) {
+    if (!eligibleActors.includes(step.actor)) {
+      throw withStatus(
+        "You are not authorized to act on this approval step.",
+        403,
+      );
+    }
+
+    const claimed = await prisma.approvalStep.updateMany({
+      where: {
+        id: step.id,
+        assignedToId: null,
+        status: { in: [ApprovalStatus.PENDING, ApprovalStatus.IN_REVIEW] },
+      },
+      data: {
+        assignedToId: actor.userId,
+      },
+    });
+
+    if (claimed.count === 0) {
+      throw withStatus(
+        "This approval step was just taken by another reviewer. Please refresh.",
+        409,
+      );
+    }
   }
 
   const actingHodAssignment = getActingHodAssignmentDelegate();
@@ -602,6 +772,9 @@ export const decideLeaveApproval = async (
     code: step.leaveApplication.leaveType.code,
     name: step.leaveApplication.leaveType.name,
   });
+  const isLtc =
+    (step.leaveApplication.leaveType.code ?? "").toUpperCase() === "LTC" ||
+    step.leaveApplication.leaveType.name.toLowerCase().includes("ltc");
   const isAccountsStep = step.actor === "ACCOUNTS";
   if (
     !isJoiningReport &&
@@ -612,13 +785,72 @@ export const decideLeaveApproval = async (
 
   if (isAccountsStep && parsed.decision === "REJECT") {
     throw withStatus(
-      "Accounts section cannot reject the request. Please fill the balance and continue.",
+      isLtc
+        ? "Accounts section cannot reject the request. Please fill the accounts section details and continue."
+        : "Accounts section cannot reject the request. Please fill the balance and continue.",
       403,
     );
   }
 
-  if (isAccountsStep && !(parsed.balance && parsed.balance.trim())) {
+  if (isAccountsStep && !isLtc && !(parsed.balance && parsed.balance.trim())) {
     throw withStatus("Please provide balance as on date.", 400);
+  }
+  const isHodLtcApprove =
+    isLtc && step.actor === "HOD" && parsed.decision === "APPROVE";
+  const isEstablishmentLtcApprove =
+    isLtc && step.actor === "ESTABLISHMENT" && parsed.decision === "APPROVE";
+  const isAccountsLtcApprove =
+    isLtc && step.actor === "ACCOUNTS" && parsed.decision === "APPROVE";
+
+  if (isHodLtcApprove) {
+    const image = parsed.approverSignatureProof?.image?.trim();
+    if (!image) {
+      throw withStatus(
+        "HoD approval for LTC requires signature capture and OTP verification.",
+        400,
+      );
+    }
+  }
+
+  let approvedFormDataPatch: Record<string, string> | null = null;
+  if (parsed.formDataPatch) {
+    if (!(isEstablishmentLtcApprove || isAccountsLtcApprove)) {
+      throw withStatus(
+        "Form data updates are only allowed for Establishment/Accounts LTC approvals.",
+        400,
+      );
+    }
+
+    const cleaned: Record<string, string> = {};
+    for (const [key, rawValue] of Object.entries(parsed.formDataPatch)) {
+      if (isEstablishmentLtcApprove) {
+        if (!LTC_ESTABLISHMENT_KEYS.has(key)) continue;
+      } else {
+        if (!LTC_ACCOUNTS_KEYS.has(key)) continue;
+      }
+      cleaned[key] = rawValue.trim();
+    }
+
+    if (Object.values(cleaned).every((value) => !value)) {
+      throw withStatus(
+        isEstablishmentLtcApprove
+          ? "Please fill at least one Establishment section field before approving."
+          : "Please fill at least one Accounts section field before approving.",
+        400,
+      );
+    }
+
+    approvedFormDataPatch = cleaned;
+  } else if (isEstablishmentLtcApprove) {
+    throw withStatus(
+      "Please fill the Establishment section details before approving.",
+      400,
+    );
+  } else if (isAccountsLtcApprove) {
+    throw withStatus(
+      "Please fill the Accounts section details before approving.",
+      400,
+    );
   }
 
   const hasPriorPendingStep = step.leaveApplication.approvalSteps.some(
@@ -719,14 +951,45 @@ export const decideLeaveApproval = async (
     );
   }
 
+  const leaveApplicationUpdate: Prisma.LeaveApplicationUpdateArgs["data"] = {
+    status: applicationStatus,
+    approvedAt:
+      parsed.decision === "APPROVE" && !remainingPendingSteps ? now : null,
+  };
+
+  if (isHodLtcApprove || approvedFormDataPatch) {
+    const existingMeta =
+      (step.leaveApplication.metadata as Prisma.JsonObject | null) ?? {};
+    const existingFormDataRaw =
+      existingMeta && typeof existingMeta.formData === "object"
+        ? (existingMeta.formData as Record<string, unknown>)
+        : {};
+    const existingFormData: Record<string, string> = {};
+    for (const [key, value] of Object.entries(existingFormDataRaw)) {
+      if (typeof value === "string") existingFormData[key] = value;
+    }
+
+    const mergedFormData: Record<string, string> = {
+      ...existingFormData,
+      ...(approvedFormDataPatch ?? {}),
+      ...(isHodLtcApprove
+        ? {
+            hodSignature:
+              parsed.hodSignature?.trim() || DIGITAL_SIGNATURE_VALUE,
+          }
+        : {}),
+    };
+
+    leaveApplicationUpdate.metadata = {
+      ...existingMeta,
+      formData: mergedFormData,
+    } as Prisma.InputJsonValue;
+  }
+
   transactionQueries.push(
     prisma.leaveApplication.update({
       where: { id: step.leaveApplicationId },
-      data: {
-        status: applicationStatus,
-        approvedAt:
-          parsed.decision === "APPROVE" && !remainingPendingSteps ? now : null,
-      },
+      data: leaveApplicationUpdate,
     }),
   );
 

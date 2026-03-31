@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import {
   LeaveRequestDetailsModal,
@@ -10,6 +10,14 @@ import {
   EarnedLeaveApprovalModal,
   type EarnedLeaveApprovalData,
 } from "@/components/leaves/earned-leave-approval-modal";
+import {
+  LtcEstablishmentApprovalActions,
+  LtcAccountsApprovalActions,
+} from "@/components/leaves/ltc-approval-modal";
+import {
+  HodSignatureApprovalModal,
+  type HodSignatureApprovalModalData,
+} from "@/components/leaves/hod-signature-approval-modal";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
@@ -148,6 +156,10 @@ const isEarnedLeaveRecord = (item: ApprovalRecord) =>
   (item.leaveTypeCode ?? "").toUpperCase() === "EL" ||
   item.leaveType.toLowerCase().includes("earned");
 
+const isLtcRecord = (item: ApprovalRecord) =>
+  (item.leaveTypeCode ?? "").toUpperCase() === "LTC" ||
+  item.leaveType.toLowerCase().includes("ltc");
+
 export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,6 +175,8 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remarksById, setRemarksById] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<ApprovalRecord | null>(null);
+  const [selectedHodApproval, setSelectedHodApproval] =
+    useState<HodSignatureApprovalModalData | null>(null);
   const [selectedEarnedLeave, setSelectedEarnedLeave] =
     useState<EarnedLeaveApprovalData | null>(null);
   const [roleFilter, setRoleFilter] = useState("ALL");
@@ -536,6 +550,111 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       setBusyId(null);
     }
   };
+
+  const selectedFooter: ReactNode = (() => {
+    if (!selected) return null;
+    if (!selected.decisionRequired) return null;
+    if (!isLtcRecord(selected)) return null;
+
+    const defaultRemarks = remarksById[selected.applicationId] || "NA";
+    const disabled = busyId === selected.applicationId;
+
+    if (
+      roleKey === "establishment" &&
+      selected.currentApprovalActor === "ESTABLISHMENT"
+    ) {
+      return (
+        <LtcEstablishmentApprovalActions
+          applicationId={selected.applicationId}
+          formData={selected.formData ?? null}
+          defaultRemarks={defaultRemarks}
+          disabled={disabled}
+          onApprove={async ({ remarks, formDataPatch }) => {
+            setBusyId(selected.applicationId);
+            setError(null);
+            try {
+              const response = await fetch(
+                `/api/leaves/approvals/${selected.applicationId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    decision: "APPROVE",
+                    remarks,
+                    formDataPatch,
+                  }),
+                },
+              );
+
+              const result = (await response.json()) as {
+                ok?: boolean;
+                message?: string;
+              };
+              if (!response.ok || !result.ok) {
+                throw new Error(result.message ?? "Unable to approve request.");
+              }
+
+              setSelected(null);
+              await loadItems();
+            } finally {
+              setBusyId(null);
+            }
+          }}
+        />
+      );
+    }
+
+    if (
+      roleKey === "accounts" &&
+      selected.currentApprovalActor === "ACCOUNTS"
+    ) {
+      return (
+        <LtcAccountsApprovalActions
+          applicationId={selected.applicationId}
+          formData={selected.formData ?? null}
+          defaultRemarks={defaultRemarks}
+          disabled={disabled}
+          onApprove={async ({ remarks, formDataPatch }) => {
+            setBusyId(selected.applicationId);
+            setError(null);
+            try {
+              const response = await fetch(
+                `/api/leaves/approvals/${selected.applicationId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    decision: "APPROVE",
+                    remarks,
+                    formDataPatch,
+                  }),
+                },
+              );
+
+              const result = (await response.json()) as {
+                ok?: boolean;
+                message?: string;
+              };
+              if (!response.ok || !result.ok) {
+                throw new Error(result.message ?? "Unable to submit request.");
+              }
+
+              setSelected(null);
+              await loadItems();
+            } finally {
+              setBusyId(null);
+            }
+          }}
+        />
+      );
+    }
+
+    return null;
+  })();
 
   const toggleSelectedId = (applicationId: string) => {
     setSelectedIds((prev) =>
@@ -1276,7 +1395,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                       }}
                       disabled={busyId === item.applicationId}
                     >
-                      View
+                      Open
                     </Button>
                     {item.decisionRequired ? (
                       <>
@@ -1291,7 +1410,8 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                           </Button>
                         ) : null}
                         {!isJoiningReportRecord(item) &&
-                        !isEarnedLeaveRecord(item) ? (
+                        !isEarnedLeaveRecord(item) &&
+                        item.currentApprovalActor !== "ACCOUNTS" ? (
                           <Button
                             variant="secondary"
                             onClick={() =>
@@ -1304,14 +1424,100 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                         ) : null}
                         {!isEarnedLeaveRecord(item) ? (
                           <Button
-                            onClick={() =>
-                              runDecision(item.applicationId, "APPROVE")
-                            }
+                            onClick={() => {
+                              if (
+                                item.decisionRequired &&
+                                item.currentApprovalActor === "HOD"
+                              ) {
+                                setSelectedHodApproval({
+                                  applicationId: item.applicationId,
+                                  referenceCode: item.referenceCode,
+                                  applicantName: item.applicant.name,
+                                  applicantDepartment:
+                                    item.applicant.department,
+                                  leaveType: item.leaveType,
+                                  defaultRemarks:
+                                    remarksById[item.applicationId] || "NA",
+                                  onApprove: async ({
+                                    remarks,
+                                    hodSignature,
+                                    approverSignatureProof,
+                                  }) => {
+                                    setBusyId(item.applicationId);
+                                    setError(null);
+                                    try {
+                                      const response = await fetch(
+                                        `/api/leaves/approvals/${item.applicationId}`,
+                                        {
+                                          method: "POST",
+                                          headers: {
+                                            "Content-Type": "application/json",
+                                          },
+                                          body: JSON.stringify({
+                                            decision: "APPROVE",
+                                            remarks,
+                                            hodSignature,
+                                            approverSignatureProof,
+                                          }),
+                                        },
+                                      );
+
+                                      const result =
+                                        (await response.json()) as {
+                                          ok?: boolean;
+                                          message?: string;
+                                        };
+                                      if (!response.ok || !result.ok) {
+                                        throw new Error(
+                                          result.message ??
+                                            "Unable to approve request.",
+                                        );
+                                      }
+
+                                      setSelectedHodApproval(null);
+                                      await loadItems();
+                                    } finally {
+                                      setBusyId(null);
+                                    }
+                                  },
+                                  onClose: () => setSelectedHodApproval(null),
+                                });
+                                return;
+                              }
+
+                              if (
+                                isLtcRecord(item) &&
+                                roleKey === "establishment" &&
+                                item.currentApprovalActor === "ESTABLISHMENT"
+                              ) {
+                                setSelected(item);
+                                return;
+                              }
+
+                              if (
+                                isLtcRecord(item) &&
+                                roleKey === "accounts" &&
+                                item.currentApprovalActor === "ACCOUNTS"
+                              ) {
+                                setSelected(item);
+                                return;
+                              }
+
+                              void runDecision(item.applicationId, "APPROVE");
+                            }}
                             disabled={busyId === item.applicationId}
                           >
                             {busyId === item.applicationId
                               ? "Saving..."
-                              : "Approve"}
+                              : isLtcRecord(item) &&
+                                  item.decisionRequired &&
+                                  ((roleKey === "establishment" &&
+                                    item.currentApprovalActor ===
+                                      "ESTABLISHMENT") ||
+                                    (roleKey === "accounts" &&
+                                      item.currentApprovalActor === "ACCOUNTS"))
+                                ? "Enter"
+                                : "Approve"}
                           </Button>
                         ) : null}
                       </>
@@ -1375,6 +1581,15 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
         isOpen={selected !== null}
         onClose={() => setSelected(null)}
         request={selected}
+        footer={selectedFooter}
+      />
+
+      <HodSignatureApprovalModal
+        isOpen={selectedHodApproval !== null}
+        data={selectedHodApproval}
+        disabled={Boolean(
+          selectedHodApproval && busyId === selectedHodApproval.applicationId,
+        )}
       />
 
       <EarnedLeaveApprovalModal
