@@ -138,6 +138,11 @@ export const ApplicationTracker = () => {
                 {result.application.leaveType.name} |{" "}
                 {result.application.status}
               </p>
+              {result.request.applicantIp ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  Applicant IP: {result.request.applicantIp}
+                </p>
+              ) : null}
               <div className="mt-3">
                 <Button
                   variant="secondary"
@@ -167,30 +172,23 @@ export const ApplicationTracker = () => {
               Approval trail
             </p>
             <div className="mt-3 space-y-2">
-              {result.application.approvalSteps.map((step) => (
+              {(result.request.approvalTrail ?? []).map((step) => (
                 <div
-                  key={step.id}
+                  key={`${step.sequence}-${step.actor}`}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
                 >
                   <p className="font-semibold text-slate-900">
                     Step {step.sequence} | {step.actor} | {step.status}
                   </p>
-                  <p>
-                    Assigned to: {step.assignedTo?.name ?? "-"}
-                    {step.assignedTo?.email
-                      ? ` (${step.assignedTo.email})`
-                      : ""}
-                  </p>
-                  <p>
-                    Acted by: {step.actedBy?.name ?? "-"}
-                    {step.actedBy?.email ? ` (${step.actedBy.email})` : ""}
-                  </p>
+                  <p>Assigned to: {step.assignedTo ?? "-"}</p>
+                  <p>Acted by: {step.actedBy ?? "-"}</p>
                   <p>
                     Acted at:{" "}
                     {step.actedAt
                       ? new Date(step.actedAt).toLocaleString()
                       : "-"}
                   </p>
+                  <p>IP: {step.ipAddress ?? "-"}</p>
                   <p>Remarks: {step.remarks ?? "-"}</p>
                 </div>
               ))}

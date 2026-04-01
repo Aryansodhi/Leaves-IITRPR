@@ -34,9 +34,11 @@ export const logAuditEvent = async (input: AuditEventInput) => {
 
   const auditLog = (
     prisma as unknown as {
-      auditLog: { create: (args: unknown) => Promise<unknown> };
+      auditLog?: { create: (args: unknown) => Promise<unknown> };
     }
   ).auditLog;
+
+  if (!auditLog) return;
 
   await auditLog.create({
     data: {

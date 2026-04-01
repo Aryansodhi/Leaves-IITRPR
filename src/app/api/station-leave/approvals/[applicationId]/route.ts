@@ -19,7 +19,12 @@ export async function POST(
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
     const actor = await requireSessionActor(token);
-    const payload = await request.json();
+    const rawPayload = (await request.json()) as Record<string, unknown> | null;
+    const ipAddress = getRequestIp(request);
+    const payload =
+      rawPayload && typeof rawPayload === "object"
+        ? { ...rawPayload, ipAddress }
+        : { ipAddress };
 
     const result = await decideStationLeaveApproval(applicationId, payload, {
       userId: actor.userId,
@@ -38,7 +43,6 @@ export async function POST(
         },
       });
 
-      const ipAddress = getRequestIp(request);
       const userAgent = request.headers.get("user-agent");
       await logAuditEvent({
         action: decision === "APPROVE" ? "APPROVE_LEAVE" : "REJECT_LEAVE",

@@ -20,6 +20,7 @@ export type LeaveApprovalTrailItem = {
   accountsSignature?: string | null;
   balance?: string | null;
   decisionDate?: string | null;
+  ipAddress?: string | null;
   approverSignatureProof?: {
     image?: string | null;
     animation?: unknown[] | null;
@@ -40,6 +41,7 @@ export type LeaveRequestDetails = {
   contactDuringLeave?: string | null;
   notes?: string | null;
   currentApprover?: string | null;
+  applicantIp?: string | null;
   applicant?: {
     name: string;
     role: string;
@@ -315,6 +317,9 @@ export const LeaveRequestDetailsModal = ({
                 label="Contact during leave"
                 value={request.contactDuringLeave || "-"}
               />
+              {request.applicantIp ? (
+                <DetailTile label="Applicant IP" value={request.applicantIp} />
+              ) : null}
               <DetailTile label="Notes" value={request.notes || "-"} />
               <DetailTile
                 label="Leave type code"
@@ -351,7 +356,7 @@ export const LeaveRequestDetailsModal = ({
                         {step.status}
                       </span>
                     </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <DetailTile
                         label="Assigned to"
                         value={step.assignedTo || "-"}
@@ -365,6 +370,11 @@ export const LeaveRequestDetailsModal = ({
                       <DetailTile
                         label="Acted at"
                         value={formatDateTime(step.actedAt)}
+                        compact
+                      />
+                      <DetailTile
+                        label="IP address"
+                        value={step.ipAddress || "-"}
                         compact
                       />
                       <DetailTile

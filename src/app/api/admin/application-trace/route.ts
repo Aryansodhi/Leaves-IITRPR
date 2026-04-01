@@ -70,6 +70,24 @@ export async function GET(request: Request) {
         })
       : [];
 
+    const applicantIp = auditLogs.find((log) => {
+      const action =
+        log && typeof (log as { action?: unknown }).action === "string"
+          ? (log as { action: string }).action
+          : "";
+      return action.startsWith("SUBMIT_");
+    })
+      ? ((
+          auditLogs.find((log) => {
+            const action =
+              log && typeof (log as { action?: unknown }).action === "string"
+                ? (log as { action: string }).action
+                : "";
+            return action.startsWith("SUBMIT_");
+          }) as { ipAddress?: string | null }
+        )?.ipAddress ?? null)
+      : null;
+
     const metadata =
       application.metadata &&
       typeof application.metadata === "object" &&
@@ -174,6 +192,7 @@ export async function GET(request: Request) {
         balance: typeof meta?.balance === "string" ? meta.balance : null,
         decisionDate:
           typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+        ipAddress: typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
         approverSignatureProof,
       };
     });
@@ -198,6 +217,7 @@ export async function GET(request: Request) {
           contactDuringLeave: application.contactDuringLeave ?? null,
           notes: application.notes ?? null,
           currentApprover,
+          applicantIp,
           applicant: {
             name: application.applicant.name,
             role:

@@ -18,7 +18,12 @@ export async function POST(request: Request) {
     const actor = await requireSessionActor(token, {
       roles: [RoleKey.HOD, RoleKey.ACCOUNTS, RoleKey.DEAN],
     });
-    const payload = await request.json();
+    const rawPayload = (await request.json()) as Record<string, unknown> | null;
+    const ipAddress = getRequestIp(request);
+    const payload =
+      rawPayload && typeof rawPayload === "object"
+        ? { ...rawPayload, ipAddress }
+        : { ipAddress };
 
     const result = await bulkDecideLeaveApprovals(payload, {
       userId: actor.userId,
@@ -42,7 +47,6 @@ export async function POST(request: Request) {
       });
 
       const byId = new Map(applications.map((item) => [item.id, item]));
-      const ipAddress = getRequestIp(request);
       const userAgent = request.headers.get("user-agent");
 
       await Promise.all(

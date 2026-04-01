@@ -108,6 +108,7 @@ const stationLeavePayloadSchema = z
 const approvalActionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
   remarks: z.string().trim().max(500).optional(),
+  ipAddress: z.string().trim().optional(),
 });
 
 const DIRECTOR_ESCALATION_THRESHOLD_DAYS = 30;
@@ -833,15 +834,20 @@ export const getStationLeaveApprovals = async (actor: SessionActor) => {
         formData,
         remarks: step.remarks,
         actedAt: step.actedAt?.toISOString() ?? null,
-        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => ({
-          sequence: entry.sequence,
-          actor: entry.actor,
-          status: entry.status,
-          assignedTo:
-            entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
-          actedAt: entry.actedAt?.toISOString() ?? null,
-          remarks: entry.remarks ?? null,
-        })),
+        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => {
+          const meta = entry.metadata as Prisma.JsonObject | null;
+          return {
+            sequence: entry.sequence,
+            actor: entry.actor,
+            status: entry.status,
+            assignedTo:
+              entry.assignedTo?.name ?? entry.assignedTo?.role?.name ?? null,
+            actedAt: entry.actedAt?.toISOString() ?? null,
+            remarks: entry.remarks ?? null,
+            ipAddress:
+              typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
+          };
+        }),
       };
     }),
   };
@@ -917,6 +923,10 @@ export const decideStationLeaveApproval = async (
         remarks: parsed.remarks ?? null,
         actedById: actor.userId,
         actedAt: now,
+        metadata: {
+          ...(step.metadata as Prisma.JsonObject),
+          ...(parsed.ipAddress && { ipAddress: parsed.ipAddress }),
+        } as Prisma.InputJsonValue,
       },
     }),
   ];

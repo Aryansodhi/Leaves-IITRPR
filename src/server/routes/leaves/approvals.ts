@@ -18,6 +18,7 @@ const approvalActionSchema = z.object({
   accountsSignature: z.string().trim().optional(),
   balance: z.string().trim().optional(), // for accounts to fill
   decisionDate: z.string().trim().optional(),
+  ipAddress: z.string().trim().optional(),
   approverSignatureProof: z
     .object({
       animation: z.array(z.unknown()).optional(),
@@ -127,6 +128,7 @@ const bulkApprovalActionSchema = z.object({
   accountsSignature: z.string().trim().optional(),
   balance: z.string().trim().optional(),
   decisionDate: z.string().trim().optional(),
+  ipAddress: z.string().trim().optional(),
   approverSignatureProof: z
     .object({
       animation: z.array(z.unknown()).optional(),
@@ -630,6 +632,8 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
             balance: typeof meta?.balance === "string" ? meta.balance : null,
             decisionDate:
               typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+            ipAddress:
+              typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
             approverSignatureProof:
               meta?.approverSignatureProof &&
               typeof meta.approverSignatureProof === "object"
@@ -934,6 +938,7 @@ export const decideLeaveApproval = async (
           }),
           ...(parsed.balance && { balance: parsed.balance }),
           ...(parsed.decisionDate && { decisionDate: parsed.decisionDate }),
+          ...(parsed.ipAddress && { ipAddress: parsed.ipAddress }),
           ...(parsed.approverSignatureProof && {
             approverSignatureProof: parsed.approverSignatureProof,
           }),
