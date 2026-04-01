@@ -6,6 +6,8 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
+import { prisma } from "@/server/db/prisma";
 import { decideLeaveApproval } from "@/server/routes/leaves/approvals";
 
 export async function POST(
@@ -22,6 +24,41 @@ export async function POST(
     const result = await decideLeaveApproval(applicationId, payload, {
       userId: actor.userId,
     });
+
+    const decision =
+      payload && typeof payload.decision === "string" ? payload.decision : null;
+
+    if (result?.ok && decision) {
+      const application = await prisma.leaveApplication.findUnique({
+        where: { id: applicationId },
+        select: {
+          referenceCode: true,
+          leaveType: { select: { name: true, code: true } },
+        },
+      });
+
+      const ipAddress = getRequestIp(request);
+      const userAgent = request.headers.get("user-agent");
+      await logAuditEvent({
+        action: decision === "APPROVE" ? "APPROVE_LEAVE" : "REJECT_LEAVE",
+        entityType: "LEAVE_APPLICATION",
+        entityId: applicationId,
+        referenceCode: application?.referenceCode ?? null,
+        userId: actor.userId,
+        userEmail: actor.email,
+        userName: actor.name,
+        ipAddress,
+        userAgent,
+        details: {
+          decision,
+          leaveType: application?.leaveType?.name ?? null,
+          remarks:
+            payload && typeof payload.remarks === "string"
+              ? payload.remarks
+              : null,
+        },
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error) {

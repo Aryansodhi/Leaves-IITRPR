@@ -6,6 +6,7 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
 import { submitNonAirIndia } from "@/server/routes/leaves/non-air-india";
 
 export async function POST(request: Request) {
@@ -19,6 +20,26 @@ export async function POST(request: Request) {
       userId: actor.userId,
       roleKey: actor.roleKey,
     });
+
+    if (result?.ok && result.data?.id) {
+      const ipAddress = getRequestIp(request);
+      const userAgent = request.headers.get("user-agent");
+      await logAuditEvent({
+        action: "SUBMIT_NON_AIR_INDIA",
+        entityType: "LEAVE_APPLICATION",
+        entityId: result.data.id,
+        referenceCode: result.data.referenceCode ?? null,
+        userId: actor.userId,
+        userEmail: actor.email,
+        userName: actor.name,
+        ipAddress,
+        userAgent,
+        details: {
+          status: result.data.status,
+          leaveType: "Non-Air India",
+        },
+      });
+    }
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

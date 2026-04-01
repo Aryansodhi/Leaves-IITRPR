@@ -7,6 +7,7 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
 import { prisma } from "@/server/db/prisma";
 
 const withStatus = (message: string, status: number) =>
@@ -116,6 +117,23 @@ export async function POST(_request: Request, context: Params) {
         },
       }),
     ]);
+
+    const ipAddress = getRequestIp(_request);
+    const userAgent = _request.headers.get("user-agent");
+    await logAuditEvent({
+      action: "WITHDRAW_LEAVE",
+      entityType: "LEAVE_APPLICATION",
+      entityId: application.id,
+      referenceCode: application.referenceCode,
+      userId: actor.userId,
+      userEmail: actor.email,
+      userName: actor.name,
+      ipAddress,
+      userAgent,
+      details: {
+        status: "CANCELLED",
+      },
+    });
 
     return NextResponse.json({
       ok: true,

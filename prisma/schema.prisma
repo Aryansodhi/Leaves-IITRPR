@@ -232,6 +232,29 @@ model ApprovalStep {
   @@unique([leaveApplicationId, sequence])
 }
 
+model AuditLog {
+  id            String   @id
+  action        String
+  entityType    String
+  entityId      String?
+  referenceCode String?
+  userId        String?
+  userEmail     String?
+  userName      String?
+  ipAddress     String?
+  userAgent     String?
+  details       Json?
+  createdAt     DateTime @default(now())
+
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([ipAddress, createdAt])
+  @@index([referenceCode])
+  @@index([entityType, entityId])
+}
+
 model OfficeOrder {
   id                 String         @id @default(cuid())
   leaveApplicationId String         @unique

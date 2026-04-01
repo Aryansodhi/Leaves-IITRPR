@@ -7,6 +7,8 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
+import { prisma } from "@/server/db/prisma";
 import { bulkDecideLeaveApprovals } from "@/server/routes/leaves/approvals";
 
 export async function POST(request: Request) {
@@ -21,6 +23,54 @@ export async function POST(request: Request) {
     const result = await bulkDecideLeaveApprovals(payload, {
       userId: actor.userId,
     });
+
+    const decision =
+      payload && typeof payload.decision === "string" ? payload.decision : null;
+    const successIds =
+      result.data && Array.isArray(result.data.successes)
+        ? result.data.successes
+        : [];
+
+    if (decision && successIds.length > 0) {
+      const applications = await prisma.leaveApplication.findMany({
+        where: { id: { in: successIds } },
+        select: {
+          id: true,
+          referenceCode: true,
+          leaveType: { select: { name: true } },
+        },
+      });
+
+      const byId = new Map(applications.map((item) => [item.id, item]));
+      const ipAddress = getRequestIp(request);
+      const userAgent = request.headers.get("user-agent");
+
+      await Promise.all(
+        successIds.map((applicationId, index) => {
+          const application = byId.get(applicationId);
+          return logAuditEvent({
+            action:
+              decision === "APPROVE"
+                ? "BULK_APPROVE_LEAVE"
+                : "BULK_REJECT_LEAVE",
+            entityType: "LEAVE_APPLICATION",
+            entityId: applicationId,
+            referenceCode: application?.referenceCode ?? null,
+            userId: actor.userId,
+            userEmail: actor.email,
+            userName: actor.name,
+            ipAddress,
+            userAgent,
+            createdAt: new Date(Date.now() + index),
+            details: {
+              decision,
+              leaveType: application?.leaveType?.name ?? null,
+              bulkCount: successIds.length,
+            },
+          });
+        }),
+      );
+    }
 
     return NextResponse.json(
       {
