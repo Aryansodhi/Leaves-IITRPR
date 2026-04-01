@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { ToggleLeft, ToggleRight } from "lucide-react";
 
 import {
   LeaveRequestDetailsModal,
@@ -18,6 +19,14 @@ import {
   HodSignatureApprovalModal,
   type HodSignatureApprovalModalData,
 } from "@/components/leaves/hod-signature-approval-modal";
+import {
+  ApprovalSignatureOtpModal,
+  type ApprovalSignatureOtpModalData,
+} from "@/components/leaves/approval-signature-otp-modal";
+import {
+  BulkApprovalSignatureOtpModal,
+  type BulkApprovalSignatureOtpModalData,
+} from "@/components/leaves/bulk-approval-signature-otp-modal";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 
@@ -177,6 +186,10 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [selected, setSelected] = useState<ApprovalRecord | null>(null);
   const [selectedHodApproval, setSelectedHodApproval] =
     useState<HodSignatureApprovalModalData | null>(null);
+  const [selectedApproverOtpApproval, setSelectedApproverOtpApproval] =
+    useState<ApprovalSignatureOtpModalData | null>(null);
+  const [selectedBulkOtpApproval, setSelectedBulkOtpApproval] =
+    useState<BulkApprovalSignatureOtpModalData | null>(null);
   const [selectedEarnedLeave, setSelectedEarnedLeave] =
     useState<EarnedLeaveApprovalData | null>(null);
   const [roleFilter, setRoleFilter] = useState("ALL");
@@ -185,6 +198,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [toDate, setToDate] = useState("");
   const [showPending, setShowPending] = useState(true);
   const [showHandled, setShowHandled] = useState(true);
+  const [approvalMode, setApprovalMode] = useState<"individual" | "bulk">(
+    "individual",
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const roleKey = role.toLowerCase().replace(/_/g, "-");
   const canBulkAct = ["hod", "accounts", "dean"].includes(roleKey);
@@ -403,6 +419,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     if (roleKey === "faculty" || roleKey === "associate-hod") {
       void loadMyActingContext();
     }
+
+    setApprovalMode("individual");
+    setSelectedIds([]);
   }, [roleKey]);
 
   const availableRoles = useMemo(
@@ -448,6 +467,19 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const bulkSelectableItems = useMemo(
     () => pendingItems.filter((item) => item.decisionRequired),
     [pendingItems],
+  );
+
+  const bulkEligibleItems = useMemo(
+    () =>
+      bulkSelectableItems.filter(
+        (item) => !isLtcRecord(item) && !isEarnedLeaveRecord(item),
+      ),
+    [bulkSelectableItems],
+  );
+
+  const bulkEligibleIdSet = useMemo(
+    () => new Set(bulkEligibleItems.map((item) => item.applicationId)),
+    [bulkEligibleItems],
   );
 
   const handledItems = useMemo(
@@ -665,7 +697,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   };
 
   const selectAllVisible = () => {
-    const allIds = bulkSelectableItems.map((item) => item.applicationId);
+    const allIds = bulkEligibleItems.map((item) => item.applicationId);
     setSelectedIds(allIds);
   };
 
@@ -739,11 +771,91 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   useEffect(() => {
     setSelectedIds((prev) => {
       const allowed = new Set(
-        bulkSelectableItems.map((item) => item.applicationId),
+        bulkEligibleItems.map((item) => item.applicationId),
       );
       return prev.filter((id) => allowed.has(id));
     });
-  }, [bulkSelectableItems]);
+  }, [bulkEligibleItems]);
+
+  useEffect(() => {
+    if (approvalMode !== "bulk") setSelectedIds([]);
+  }, [approvalMode]);
+
+  const openBulkApproveSignature = () => {
+    if (!selectedIds.length) return;
+    if (isBulkAccounts && !bulkBalance.trim()) {
+      setError("Please enter balance as on date for bulk accounts approval.");
+      return;
+    }
+
+    const selectedItems = bulkEligibleItems
+      .filter((item) => selectedIds.includes(item.applicationId))
+      .map((item) => ({
+        applicationId: item.applicationId,
+        referenceCode: item.referenceCode,
+        applicantName: item.applicant.name,
+        applicantDepartment: item.applicant.department,
+        leaveType: item.leaveType,
+      }));
+
+    if (selectedItems.length === 0) {
+      setError("No eligible applications selected for bulk approval.");
+      return;
+    }
+
+    setSelectedBulkOtpApproval({
+      title: `Bulk approve (${role.toUpperCase()})`,
+      items: selectedItems,
+      onApproveAll: async ({ approverSignatureProof }) => {
+        setBusyId("__bulk__");
+        setError(null);
+        try {
+          const payload: Record<string, unknown> = {
+            applicationIds: selectedItems.map((item) => item.applicationId),
+            decision: "APPROVE",
+            remarks: bulkRemarks.trim() || "NA",
+            approverSignatureProof,
+          };
+
+          if (isBulkAccounts) {
+            payload.accountsSignature = "ACCOUNTS";
+            payload.balance = bulkBalance.trim();
+          } else {
+            payload.recommended =
+              bulkRecommended === "AUTO" ? "RECOMMENDED" : bulkRecommended;
+            payload.hodSignature = signatureDefault;
+            payload.decisionDate = bulkDecisionDate || undefined;
+          }
+
+          const response = await fetch("/api/leaves/approvals/bulk", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const result = (await response.json()) as {
+            ok?: boolean;
+            message?: string;
+          };
+
+          if (!response.ok || !result.ok) {
+            throw new Error(
+              result.message ?? "Unable to process bulk approval.",
+            );
+          }
+
+          setSelectedBulkOtpApproval(null);
+          setSelectedIds([]);
+          await loadItems();
+        } finally {
+          setBusyId(null);
+        }
+      },
+      onClose: () => setSelectedBulkOtpApproval(null),
+    });
+  };
 
   const openEarnedLeaveApproval = (item: ApprovalRecord) => {
     const handled = item.status !== "PENDING" && item.status !== "IN_REVIEW";
@@ -1064,6 +1176,32 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
             />
             Recently handled
           </label>
+          {canBulkAct ? (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Approval mode
+              </span>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setApprovalMode((prev) =>
+                    prev === "bulk" ? "individual" : "bulk",
+                  )
+                }
+                disabled={
+                  busyId === "__bulk__" || bulkEligibleItems.length === 0
+                }
+                className="gap-2"
+              >
+                {approvalMode === "bulk" ? (
+                  <ToggleRight className="h-4 w-4" />
+                ) : (
+                  <ToggleLeft className="h-4 w-4" />
+                )}
+                {approvalMode === "bulk" ? "Bulk approve" : "Individual"}
+              </Button>
+            </div>
+          ) : null}
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <label className="space-y-2 text-sm text-slate-700">
@@ -1139,9 +1277,32 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
 
       {showPending ? (
         <section className="space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Pending approvals
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Pending approvals
+            </p>
+            {canBulkAct ? (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setApprovalMode((prev) =>
+                    prev === "bulk" ? "individual" : "bulk",
+                  )
+                }
+                disabled={
+                  busyId === "__bulk__" || bulkEligibleItems.length === 0
+                }
+                className="gap-2"
+              >
+                {approvalMode === "bulk" ? (
+                  <ToggleRight className="h-4 w-4" />
+                ) : (
+                  <ToggleLeft className="h-4 w-4" />
+                )}
+                {approvalMode === "bulk" ? "Bulk approve" : "Individual"}
+              </Button>
+            ) : null}
+          </div>
           {loading ? (
             <SurfaceCard className="p-4 text-sm text-slate-600">
               Loading requests...
@@ -1152,7 +1313,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
             </SurfaceCard>
           ) : (
             <>
-              {canBulkAct && bulkSelectableItems.length > 0 ? (
+              {canBulkAct &&
+              approvalMode === "bulk" &&
+              bulkEligibleItems.length > 0 ? (
                 <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-900">
@@ -1160,7 +1323,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                     </p>
                     <p className="text-xs text-slate-600">
                       Selected {selectedIds.length} of{" "}
-                      {bulkSelectableItems.length}
+                      {bulkEligibleItems.length}
                     </p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
@@ -1260,7 +1423,7 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                       Clear
                     </Button>
                     <Button
-                      onClick={() => runBulkDecision("APPROVE")}
+                      onClick={openBulkApproveSignature}
                       disabled={
                         busyId === "__bulk__" ||
                         selectedIds.length === 0 ||
@@ -1299,7 +1462,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      {canBulkAct && item.decisionRequired ? (
+                      {canBulkAct &&
+                      approvalMode === "bulk" &&
+                      bulkEligibleIdSet.has(item.applicationId) ? (
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(item.applicationId)}
@@ -1503,6 +1668,62 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                                 return;
                               }
 
+                              if (item.decisionRequired) {
+                                setSelectedApproverOtpApproval({
+                                  applicationId: item.applicationId,
+                                  referenceCode: item.referenceCode,
+                                  applicantName: item.applicant.name,
+                                  applicantDepartment:
+                                    item.applicant.department,
+                                  leaveType: item.leaveType,
+                                  defaultRemarks:
+                                    remarksById[item.applicationId] || "NA",
+                                  onApprove: async ({
+                                    remarks,
+                                    approverSignatureProof,
+                                  }) => {
+                                    setBusyId(item.applicationId);
+                                    setError(null);
+                                    try {
+                                      const response = await fetch(
+                                        `/api/leaves/approvals/${item.applicationId}`,
+                                        {
+                                          method: "POST",
+                                          headers: {
+                                            "Content-Type": "application/json",
+                                          },
+                                          body: JSON.stringify({
+                                            decision: "APPROVE",
+                                            remarks,
+                                            approverSignatureProof,
+                                          }),
+                                        },
+                                      );
+
+                                      const result =
+                                        (await response.json()) as {
+                                          ok?: boolean;
+                                          message?: string;
+                                        };
+                                      if (!response.ok || !result.ok) {
+                                        throw new Error(
+                                          result.message ??
+                                            "Unable to approve request.",
+                                        );
+                                      }
+
+                                      setSelectedApproverOtpApproval(null);
+                                      await loadItems();
+                                    } finally {
+                                      setBusyId(null);
+                                    }
+                                  },
+                                  onClose: () =>
+                                    setSelectedApproverOtpApproval(null),
+                                });
+                                return;
+                              }
+
                               void runDecision(item.applicationId, "APPROVE");
                             }}
                             disabled={busyId === item.applicationId}
@@ -1529,6 +1750,21 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
           )}
         </section>
       ) : null}
+
+      <ApprovalSignatureOtpModal
+        isOpen={Boolean(selectedApproverOtpApproval)}
+        data={selectedApproverOtpApproval}
+        disabled={
+          busyId === selectedApproverOtpApproval?.applicationId ||
+          busyId === "__bulk__"
+        }
+      />
+
+      <BulkApprovalSignatureOtpModal
+        isOpen={Boolean(selectedBulkOtpApproval)}
+        data={selectedBulkOtpApproval}
+        disabled={busyId === "__bulk__"}
+      />
 
       {showHandled ? (
         <section className="space-y-3">
@@ -1587,9 +1823,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       <HodSignatureApprovalModal
         isOpen={selectedHodApproval !== null}
         data={selectedHodApproval}
-        disabled={Boolean(
-          selectedHodApproval && busyId === selectedHodApproval.applicationId,
-        )}
+        disabled={
+          busyId === selectedHodApproval?.applicationId || busyId === "__bulk__"
+        }
       />
 
       <EarnedLeaveApprovalModal

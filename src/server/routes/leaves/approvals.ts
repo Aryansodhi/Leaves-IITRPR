@@ -127,6 +127,12 @@ const bulkApprovalActionSchema = z.object({
   accountsSignature: z.string().trim().optional(),
   balance: z.string().trim().optional(),
   decisionDate: z.string().trim().optional(),
+  approverSignatureProof: z
+    .object({
+      animation: z.array(z.unknown()).optional(),
+      image: z.string().trim().optional(),
+    })
+    .optional(),
 });
 
 const toBoolean = (value: Prisma.JsonValue | undefined, fallback: boolean) =>
@@ -1050,6 +1056,7 @@ export const bulkDecideLeaveApprovals = async (
           accountsSignature: parsed.accountsSignature,
           balance: parsed.balance,
           decisionDate: parsed.decisionDate,
+          approverSignatureProof: parsed.approverSignatureProof,
         },
         actor,
       );

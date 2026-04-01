@@ -8,33 +8,30 @@ import {
   SignatureOtpVerificationCard,
   type SignatureCapture,
 } from "@/components/leaves/signature-otp-verification-card";
-import {
-  DIGITAL_SIGNATURE_VALUE,
-  useSignatureOtp,
-} from "@/components/leaves/use-signature-otp";
+import { useSignatureOtp } from "@/components/leaves/use-signature-otp";
 
-export type HodSignatureApprovalModalData = {
+export type ApprovalSignatureOtpModalData = {
   applicationId: string;
   referenceCode: string;
   applicantName: string;
   applicantDepartment: string;
   leaveType: string;
+  title?: string;
   defaultRemarks?: string;
   onApprove: (payload: {
     remarks?: string;
-    hodSignature?: string;
     approverSignatureProof: SignatureCapture;
   }) => Promise<void>;
   onClose: () => void;
 };
 
-export const HodSignatureApprovalModal = ({
+export const ApprovalSignatureOtpModal = ({
   isOpen,
   data,
   disabled,
 }: {
   isOpen: boolean;
-  data: HodSignatureApprovalModalData | null;
+  data: ApprovalSignatureOtpModalData | null;
   disabled: boolean;
 }) => {
   const [remarks, setRemarks] = useState("");
@@ -48,8 +45,11 @@ export const HodSignatureApprovalModal = ({
 
   useEffect(() => {
     if (!data) return;
+
     setRemarks(data.defaultRemarks ?? "NA");
     setError(null);
+    setIsSubmitting(false);
+
     signature.resetAfterSubmit({ clearSignature: true });
 
     const storedEmail =
@@ -64,6 +64,7 @@ export const HodSignatureApprovalModal = ({
   if (!isOpen || !data) return null;
 
   const canSubmit = signature.ensureReadyForSubmit() === null;
+  const modalTitle = data.title ?? "Approve request — signature verification";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
@@ -72,7 +73,7 @@ export const HodSignatureApprovalModal = ({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
               <p className="text-xl font-semibold text-slate-900">
-                Approve request — HoD signature verification
+                {modalTitle}
               </p>
               <p className="text-sm text-slate-600">
                 {data.referenceCode} • {data.applicantName} •{" "}
@@ -90,7 +91,7 @@ export const HodSignatureApprovalModal = ({
 
           <div className="space-y-5">
             <SignatureOtpVerificationCard
-              storageScope={`hod-approval:${data.applicationId}`}
+              storageScope={`approval-signature:${data.applicationId}`}
               signatureMode={signature.signatureMode}
               onSignatureModeChange={signature.onSignatureModeChange}
               typedSignature={signature.typedSignature}
@@ -148,7 +149,6 @@ export const HodSignatureApprovalModal = ({
                 try {
                   await data.onApprove({
                     remarks: remarks.trim() || undefined,
-                    hodSignature: DIGITAL_SIGNATURE_VALUE,
                     approverSignatureProof: signature.signatureCapture,
                   });
                   signature.resetAfterSubmit({ clearSignature: true });
