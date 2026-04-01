@@ -1,4 +1,4 @@
-import { RoleKey, Prisma } from "@prisma/client";
+import { RoleKey } from "@prisma/client";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       : 50;
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
-    const where: Prisma.AuditLogWhereInput = {};
+    const where: Record<string, unknown> = {};
     if (userId) where.userId = userId;
     if (ip) where.ipAddress = { contains: ip };
     if (reference)
@@ -55,15 +55,26 @@ export async function GET(request: Request) {
       };
     }
 
-    const [total, logs] = await Promise.all([
-      prisma.auditLog.count({ where }),
-      prisma.auditLog.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: limit,
-        skip: offset,
-      }),
-    ]);
+    const auditLog = (
+      prisma as unknown as {
+        auditLog?: {
+          count: (args: unknown) => Promise<number>;
+          findMany: (args: unknown) => Promise<unknown[]>;
+        };
+      }
+    ).auditLog;
+
+    const [total, logs] = auditLog
+      ? await Promise.all([
+          auditLog.count({ where }),
+          auditLog.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            take: limit,
+            skip: offset,
+          }),
+        ])
+      : [0, []];
 
     return NextResponse.json({
       ok: true,

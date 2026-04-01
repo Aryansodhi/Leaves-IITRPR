@@ -121,7 +121,17 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
         {
           label: "Add Users",
           href: "/dashboard/admin",
-          active: pathname.startsWith("/dashboard/admin"),
+          active: pathname === "/dashboard/admin",
+        },
+        {
+          label: "Audit",
+          href: "/dashboard/admin/audit",
+          active: pathname.startsWith("/dashboard/admin/audit"),
+        },
+        {
+          label: "Track Applications",
+          href: "/dashboard/admin/track",
+          active: pathname.startsWith("/dashboard/admin/track"),
         },
       ]
     : [

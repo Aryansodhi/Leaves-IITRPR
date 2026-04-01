@@ -12,6 +12,7 @@ export type LeaveApprovalTrailItem = {
   actor: string;
   status: string;
   assignedTo: string | null;
+  actedBy?: string | null;
   actedAt: string | null;
   remarks: string | null;
   recommended?: string | null;
@@ -350,10 +351,15 @@ export const LeaveRequestDetailsModal = ({
                         {step.status}
                       </span>
                     </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
                       <DetailTile
                         label="Assigned to"
                         value={step.assignedTo || "-"}
+                        compact
+                      />
+                      <DetailTile
+                        label="Action by"
+                        value={step.actedBy || "-"}
                         compact
                       />
                       <DetailTile

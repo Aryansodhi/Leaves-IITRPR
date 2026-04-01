@@ -32,7 +32,13 @@ export const logAuditEvent = async (input: AuditEventInput) => {
   const idSource = `${timestamp.toISOString()}|${input.ipAddress ?? "unknown"}|${input.userId ?? "anonymous"}`;
   const id = crypto.createHash("sha256").update(idSource).digest("hex");
 
-  await prisma.auditLog.create({
+  const auditLog = (
+    prisma as unknown as {
+      auditLog: { create: (args: unknown) => Promise<unknown> };
+    }
+  ).auditLog;
+
+  await auditLog.create({
     data: {
       id,
       action: input.action,

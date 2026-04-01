@@ -616,6 +616,7 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
               entry.assignedTo?.name ??
               entry.assignedTo?.role?.name ??
               entry.actor,
+            actedBy: entry.actedBy?.name ?? entry.actedBy?.role?.name ?? null,
             actedAt: entry.actedAt?.toISOString() ?? null,
             remarks: entry.remarks ?? null,
             recommended:

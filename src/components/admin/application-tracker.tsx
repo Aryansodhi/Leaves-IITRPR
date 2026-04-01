@@ -4,6 +4,10 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
+import {
+  LeaveRequestDetailsModal,
+  type LeaveRequestDetails,
+} from "@/components/leaves/leave-request-details-modal";
 
 type TraceResponse = {
   application: {
@@ -32,6 +36,7 @@ type TraceResponse = {
       escalatedTo?: { name: string; email: string } | null;
     }>;
   };
+  request: LeaveRequestDetails;
   auditLogs: Array<{
     id: string;
     action: string;
@@ -48,6 +53,8 @@ export const ApplicationTracker = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TraceResponse | null>(null);
+  const [selectedRequest, setSelectedRequest] =
+    useState<LeaveRequestDetails | null>(null);
 
   const handleLookup = async () => {
     if (!referenceCode.trim()) {
@@ -131,6 +138,14 @@ export const ApplicationTracker = () => {
                 {result.application.leaveType.name} |{" "}
                 {result.application.status}
               </p>
+              <div className="mt-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedRequest(result.request)}
+                >
+                  View full form
+                </Button>
+              </div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
               <p className="text-xs uppercase tracking-wide text-slate-500">
@@ -170,6 +185,12 @@ export const ApplicationTracker = () => {
                     Acted by: {step.actedBy?.name ?? "-"}
                     {step.actedBy?.email ? ` (${step.actedBy.email})` : ""}
                   </p>
+                  <p>
+                    Acted at:{" "}
+                    {step.actedAt
+                      ? new Date(step.actedAt).toLocaleString()
+                      : "-"}
+                  </p>
                   <p>Remarks: {step.remarks ?? "-"}</p>
                 </div>
               ))}
@@ -205,6 +226,12 @@ export const ApplicationTracker = () => {
           </div>
         </div>
       )}
+
+      <LeaveRequestDetailsModal
+        isOpen={Boolean(selectedRequest)}
+        onClose={() => setSelectedRequest(null)}
+        request={selectedRequest}
+      />
     </SurfaceCard>
   );
 };
