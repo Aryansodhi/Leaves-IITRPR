@@ -508,6 +508,9 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
               assignedTo: {
                 include: { role: true },
               },
+              actedBy: {
+                include: { role: true },
+              },
             },
           },
         },

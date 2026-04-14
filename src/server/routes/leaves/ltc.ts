@@ -615,8 +615,10 @@ export const submitLtc = async (payload: unknown, actor: SessionActor) => {
     ok: true,
     message: "LTC application submitted successfully.",
     data: {
+      id: application.id,
       applicationId: application.id,
       referenceCode: application.referenceCode,
+      status: application.status,
     },
   };
 };

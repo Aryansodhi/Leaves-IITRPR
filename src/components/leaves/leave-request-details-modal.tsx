@@ -153,6 +153,7 @@ export const LeaveRequestDetailsModal = ({
   canWithdraw = false,
   withdrawBusy = false,
   footer,
+  displayMode = "default",
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -161,6 +162,7 @@ export const LeaveRequestDetailsModal = ({
   canWithdraw?: boolean;
   withdrawBusy?: boolean;
   footer?: ReactNode;
+  displayMode?: "default" | "form-only";
 }) => {
   const printableRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -183,6 +185,9 @@ export const LeaveRequestDetailsModal = ({
   };
 
   const professionalSummary = buildProfessionalSummary(request);
+  const hasFormData = Boolean(
+    request.formData && Object.keys(request.formData).length > 0,
+  );
   const hasFormPreview =
     // show full form for station leave (SL), joining report (JR), or when request has
     // form data and has already been approved. Approved records are often reviewed
@@ -192,6 +197,9 @@ export const LeaveRequestDetailsModal = ({
       request.leaveTypeCode === "SL" ||
       request.leaveTypeCode === "JR" ||
       isLtcType(request));
+
+  const showSubmittedForm =
+    displayMode === "form-only" ? hasFormData : hasFormPreview;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-8">
@@ -259,12 +267,21 @@ export const LeaveRequestDetailsModal = ({
             </div>
           </div>
 
-          {hasFormPreview ? (
+          {showSubmittedForm ? (
             <section className="space-y-3">
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 Submitted form
               </p>
               <FormPreview request={request} />
+            </section>
+          ) : displayMode === "form-only" ? (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Submitted form
+              </p>
+              <div className="rounded-2xl border border-slate-200/80 p-4 text-sm text-slate-700">
+                No submitted form data is available for this application.
+              </div>
             </section>
           ) : (
             <section className="space-y-3">
@@ -299,34 +316,39 @@ export const LeaveRequestDetailsModal = ({
             </section>
           ) : null}
 
-          <section className="space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Summary
-            </p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <DetailTile label="Purpose" value={request.purpose || "-"} />
-              <DetailTile
-                label="Current approver"
-                value={request.currentApprover || "-"}
-              />
-              <DetailTile
-                label="Destination"
-                value={request.destination || "-"}
-              />
-              <DetailTile
-                label="Contact during leave"
-                value={request.contactDuringLeave || "-"}
-              />
-              {request.applicantIp ? (
-                <DetailTile label="Applicant IP" value={request.applicantIp} />
-              ) : null}
-              <DetailTile label="Notes" value={request.notes || "-"} />
-              <DetailTile
-                label="Leave type code"
-                value={request.leaveTypeCode || "-"}
-              />
-            </div>
-          </section>
+          {displayMode === "form-only" ? null : (
+            <section className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Summary
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <DetailTile label="Purpose" value={request.purpose || "-"} />
+                <DetailTile
+                  label="Current approver"
+                  value={request.currentApprover || "-"}
+                />
+                <DetailTile
+                  label="Destination"
+                  value={request.destination || "-"}
+                />
+                <DetailTile
+                  label="Contact during leave"
+                  value={request.contactDuringLeave || "-"}
+                />
+                {request.applicantIp ? (
+                  <DetailTile
+                    label="Applicant IP"
+                    value={request.applicantIp}
+                  />
+                ) : null}
+                <DetailTile label="Notes" value={request.notes || "-"} />
+                <DetailTile
+                  label="Leave type code"
+                  value={request.leaveTypeCode || "-"}
+                />
+              </div>
+            </section>
+          )}
 
           {request.signatureProof ? (
             <section className="space-y-3">
@@ -683,7 +705,673 @@ const FormPreview = ({ request }: { request: LeaveRequestDetails }) => {
     return <EarnedLeavePreview request={request} />;
   }
 
+  if ((request.leaveTypeCode ?? "").toUpperCase() === "EXIN") {
+    return <ExIndiaLeavePreview request={request} />;
+  }
+
+  if ((request.leaveTypeCode ?? "").toUpperCase() === "AIR") {
+    return <NonAirIndiaPreview request={request} />;
+  }
+
   return null;
+};
+
+const ExIndiaLeavePreview = ({ request }: { request: LeaveRequestDetails }) => {
+  const form = request.formData ?? {};
+
+  const fromDate = formatFormDate(form.fromDate) || form.fromDate;
+  const toDate = formatFormDate(form.toDate) || form.toDate;
+
+  return (
+    <div className="space-y-4">
+      <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:p-4 md:p-6">
+        <header className="space-y-1 text-center text-slate-900">
+          <p className="text-sm font-semibold sm:text-base">
+            भारतीय प्रौद्योगिकी संस्थान रोपड़
+          </p>
+          <p className="text-sm font-semibold uppercase sm:text-base">
+            INDIAN INSTITUTE OF TECHNOLOGY ROPAR
+          </p>
+          <p className="text-[11px] text-slate-700">
+            रूपनगर, पंजाब-140001 / Rupnagar, Punjab-140001
+          </p>
+          <p className="text-[12px] font-semibold">
+            व्यक्तिगत आधार पर भारत के बाहर यात्रा के लिए छुट्टी या छुट्टी के
+            विस्तार के लिए आवेदन /
+          </p>
+          <p className="text-[12px] font-semibold">
+            Application for Leave or Extension of Leave for Ex-India visit on
+            personal ground
+          </p>
+        </header>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border border-slate-400 text-[11px] text-slate-900 sm:text-[12px]">
+            <colgroup>
+              <col className="w-[36%]" />
+              <col />
+            </colgroup>
+            <tbody>
+              <PreviewRow
+                label="1. आवेदक का नाम / Name of the applicant"
+                value={form.name}
+              />
+              <PreviewRow label="2. पद नाम / Post held" value={form.post} />
+              <PreviewRow
+                label="3. विभाग/केन्द्रीय कार्यालय/अनुभाग/Department./Office/Section"
+                value={form.department}
+              />
+              <PreviewRow
+                label="4. अवकाश का प्रकार / Nature of Leave applied for"
+                value={form.leaveType}
+              />
+              <tr className="border-t border-slate-400">
+                <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                  5. छुट्टी की अवधि / Period of Leave
+                </td>
+                <td className="px-3 py-2 text-[12px]">
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                      <span>से / From:</span>
+                      <FilledUnderline value={fromDate} width="w-full" />
+                      <FilledUnderline
+                        value={form.fromSession}
+                        width="w-32"
+                        align="text-center"
+                      />
+                    </div>
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                      <span>तक / To:</span>
+                      <FilledUnderline value={toDate} width="w-full" />
+                      <FilledUnderline
+                        value={form.toSession}
+                        width="w-32"
+                        align="text-center"
+                      />
+                    </div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-2">
+                      <span>दिनों की संख्या / No. of days:</span>
+                      <FilledUnderline
+                        value={form.days}
+                        width="w-full"
+                        align="text-center"
+                      />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                  6. रविवार, अवकाश और अवकाश, छुट्टी से पहले या पश्चात मिलाना
+                  चाहते हैं
+                  <div className="text-[11px] font-normal">
+                    Sunday and Holiday, if any, proposed to be prefixed/suffixed
+                    to leave
+                  </div>
+                </td>
+                <td className="space-y-2 px-3 py-2 text-[12px]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>के पूर्व Prefix</span>
+                    <FilledUnderline value={form.prefixFrom} width="w-28" />
+                    <span>से / From:</span>
+                    <FilledUnderline
+                      value={
+                        formatFormDate(form.prefixFromDate) ||
+                        form.prefixFromDate
+                      }
+                      width="w-28"
+                    />
+                    <span>तक / To:</span>
+                    <FilledUnderline
+                      value={
+                        formatFormDate(form.prefixToDate) || form.prefixToDate
+                      }
+                      width="w-28"
+                    />
+                    <span>दिनों की संख्या / No. of days:</span>
+                    <FilledUnderline value={form.prefixDays} width="w-20" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>के पश्चात Suffix</span>
+                    <FilledUnderline value={form.suffixFrom} width="w-28" />
+                    <span>से / From:</span>
+                    <FilledUnderline
+                      value={
+                        formatFormDate(form.suffixFromDate) ||
+                        form.suffixFromDate
+                      }
+                      width="w-28"
+                    />
+                    <span>तक / To:</span>
+                    <FilledUnderline
+                      value={
+                        formatFormDate(form.suffixToDate) || form.suffixToDate
+                      }
+                      width="w-28"
+                    />
+                    <span>दिनों की संख्या / No. of days:</span>
+                    <FilledUnderline value={form.suffixDays} width="w-20" />
+                  </div>
+                </td>
+              </tr>
+              <PreviewRow
+                label="7. उद्देश्य / Purpose of the visit"
+                value={form.purpose}
+              />
+              <PreviewRow
+                label="8. कार्य, प्रशासनिक जिम्मेदारियों आदि (यदि कोई हो) के लिए वैकल्पिक व्यवस्था / Alternative arrangements"
+                value={form.arrangements}
+              />
+              <tr className="border-t border-slate-400">
+                <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                  9. मैं उपयुक्त दस्तावेज संलग्न कर रहा/रही हूँ / I am attaching
+                  the following necessary documents alongwith the form:
+                </td>
+                <td className="space-y-2 px-3 py-2 text-[12px]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>(i) Application addressed to the Director :</span>
+                    <span>Yes / No</span>
+                    <FilledUnderline value={form.docDirector} width="w-20" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>(ii) Undertaking / agreement (Form I & Form 2)</span>
+                    <span>:</span>
+                    <span>Yes / No</span>
+                    <FilledUnderline value={form.docAgreement} width="w-20" />
+                  </div>
+                </td>
+              </tr>
+              <tr className="border-t border-slate-400">
+                <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
+                  10. अवकाश के दौरान पता / Address during the leave
+                </td>
+                <td className="space-y-2 px-3 py-2 text-[12px]">
+                  <FilledUnderline value={form.address} width="w-full" />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>संपर्क नं. / Contact No.</span>
+                    <FilledUnderline value={form.contactNo} width="w-40" />
+                    <span>पिन / PIN:</span>
+                    <FilledUnderline value={form.pin} width="w-24" />
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-right text-[12px] text-slate-900">
+          आवेदक के हस्ताक्षर दिनांक सहित / Signature of the applicant with date:{" "}
+          <FilledUnderline value={form.applicantSignature} width="w-60" />
+        </p>
+
+        <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
+          <p className="text-center font-semibold">
+            नियंत्रक अधिकारी की टिप्पणियाँ एवं सिफारिशें / Remarks and
+            Recommendations of the controlling officer
+          </p>
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              सिफारिश की गई / Recommended या नहीं की गई / not recommended:
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.recommended} width="w-full" />
+            </div>
+          </div>
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              विभागाध्यक्ष एवं विभाग प्रमुख के हस्ताक्षर तिथि सहित / Signature
+              with date Head of Department/Section In-charge:
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.hodSignature} width="w-full" />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 border-t border-slate-400 pt-2 text-[11px] text-slate-900 sm:text-[12px]">
+          <p className="text-center font-semibold">
+            प्रशासनिक अनुभाग द्वारा प्रयोग हेतु / For use by the Administration
+            Section
+          </p>
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <div className="space-y-1 leading-snug">
+              <p>
+                प्रमाणित किया जाता है कि (प्रकृति) / Certified that (nature of
+                leave) for period:
+              </p>
+              <p>is available as per following details:</p>
+            </div>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                <span>from</span>
+                <FilledUnderline value={form.adminFrom} width="w-full" />
+                <span>to</span>
+                <FilledUnderline value={form.adminTo} width="w-full" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              अवकाश का प्रकार / Nature of leave applied for
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.adminLeaveType} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              आज की तिथि तक शेष / Balance as on date
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.balance} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              कुल दिनों के लिए अवकाश / Leave applied for (No. of days)
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.adminDays} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">संबंधित सहायक / Dealing Assistant</p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.assistant} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">Jr. Supdt.</p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.jrSupdt} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              अधि./सहा. कुलसचिव/अनुभागाध्यक्ष/ सुपdt./AR/DR
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.arDr} width="w-full" />
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p className="leading-snug">
+              कुलसचिव/ अधिकारी (Faculty Affairs & Administration) के हस्ताक्षर /
+              Signature of Registrar / Dean (Faculty Affairs & Administration)
+            </p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.registrarSign} width="w-full" />
+            </div>
+          </div>
+
+          <div className="space-y-1 leading-snug">
+            <p>
+              छुट्टी प्रदान करने के लिए सक्षम प्राधिकारी की टिप्पणी : स्वीकृत /
+              अस्वीकृत / Comments of the competent authority to grant leave:
+              Sanctioned / Not Sanctioned
+            </p>
+          </div>
+
+          <div className="grid gap-1.5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-3">
+            <p>निदेशक / Director:</p>
+            <div className="w-full lg:w-88 lg:justify-self-end">
+              <FilledUnderline value={form.directorSign} width="w-full" />
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:p-4 md:p-6">
+        <div className="text-[12px] text-slate-900 sm:text-[13px]">
+          <p>The Director</p>
+          <p>Indian Institute of Technology</p>
+          <p>Ropar</p>
+
+          <p className="mt-4 font-semibold">
+            Subject: Application for Leave Ex-India for Private Visit.
+          </p>
+
+          <p className="mt-4">Sir,</p>
+
+          <p className="mt-4">
+            I wish to proceed abroad to{" "}
+            <FilledUnderline value={form.country} width="w-64" /> (Country) for
+            the following purpose:-
+          </p>
+
+          <p className="mt-3">
+            I request that I may kindly be granted leave of the due / leave
+            without pay Ex-India for{" "}
+            <FilledUnderline value={form.exDays} width="w-20" /> days from{" "}
+            <FilledUnderline value={form.exFrom} width="w-32" /> to{" "}
+            <FilledUnderline value={form.exTo} width="w-32" />. I am holding a
+            valid passport for visit to the aforesaid country / countries.
+          </p>
+
+          <p className="mt-3">
+            During my stay in the above country / countries, my address will be
+            as under:-
+          </p>
+          <div className="space-y-2 pt-2">
+            <FilledUnderline value={form.addr1} width="w-full" />
+            <FilledUnderline value={form.addr2} width="w-full" />
+            <FilledUnderline value={form.addr3} width="w-full" />
+          </div>
+
+          <p className="mt-4">I hereby undertake that:-</p>
+          <ol className="ml-6 mt-2 list-decimal space-y-1">
+            <li>
+              I shall return to duty on expiry of the aforesaid leave and shall
+              not extend leave.
+            </li>
+            <li>I shall intimate change in my above address, if any.</li>
+            <li>
+              I shall not undertake any employment abroad during the period of
+              my leave / stay / abroad.
+            </li>
+            <li>
+              I shall not leave the station / country unless the sanction has
+              been communicated to me.
+            </li>
+            <li>
+              I am submitting an undertaking on the prescribed form as per rules
+              duly signed.
+            </li>
+          </ol>
+
+          <div className="mt-5 space-y-3 text-right sm:mt-6 sm:space-y-4">
+            <p>Yours faithfully,</p>
+            <div className="space-y-2">
+              <p>
+                Signature{" "}
+                <FilledUnderline value={form.letterSignature} width="w-56" />
+              </p>
+              <p>
+                Name <FilledUnderline value={form.letterName} width="w-64" />
+              </p>
+              <p>
+                Designation{" "}
+                <FilledUnderline value={form.letterDesignation} width="w-60" />
+              </p>
+              <p>
+                Department{" "}
+                <FilledUnderline value={form.letterDepartment} width="w-60" />
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2 text-[12px] text-slate-900 sm:mt-6 sm:text-[13px]">
+            <p>
+              Dated: <FilledUnderline value={form.letterDated} width="w-40" />
+            </p>
+            <p>Recommendations of the Head of the Department</p>
+          </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-6 sm:p-4 md:p-6">
+        <div className="flex justify-end text-[13px] font-semibold text-slate-900">
+          Form - I
+        </div>
+        <div className="space-y-2 text-center text-[13px] text-slate-900">
+          <p className="font-semibold underline">UNDERTAKING</p>
+        </div>
+        <div className="space-y-3 text-[12px] text-slate-900 sm:space-y-4 sm:text-[13px]">
+          <p>
+            I, <FilledUnderline value={form.u1Name} width="w-60" />,{" "}
+            <FilledUnderline value={form.u1Designation} width="w-60" />
+            (Designation) is proceeding on Ex-India Leave (EL) to{" "}
+            <FilledUnderline value={form.u1Country} width="w-60" /> (Country)
+            for <FilledUnderline value={form.u1Days} width="w-20" /> days from
+            <FilledUnderline value={form.u1From} width="w-32" /> to{" "}
+            <FilledUnderline value={form.u1To} width="w-32" />.
+          </p>
+          <p>
+            I hereby certify that no Institute dues are outstanding against me.
+            Further I undertake that if I did not return back on the due date
+            i.e. <FilledUnderline value={form.u1DueDate} width="w-32" />, any
+            dues of the Institute found later on, the same may be recovered from
+            my payable balances available with the Institute.
+          </p>
+          <p>
+            Date: <FilledUnderline value={form.u1Date} width="w-32" />
+          </p>
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="space-y-2 text-[13px] text-slate-900">
+              <p className="font-semibold">Witness</p>
+              <p>
+                Signature{" "}
+                <FilledUnderline value={form.u1WitnessSign} width="w-48" />
+              </p>
+              <p>
+                Name <FilledUnderline value={form.u1WitnessName} width="w-48" />
+              </p>
+              <p>
+                E. Code No.{" "}
+                <FilledUnderline value={form.u1WitnessCode} width="w-40" />
+              </p>
+              <p>
+                Department{" "}
+                <FilledUnderline value={form.u1WitnessDept} width="w-48" />
+              </p>
+            </div>
+            <div className="space-y-2 text-right text-[13px] text-slate-900">
+              <p>
+                Signature <FilledUnderline value={form.u1Sign} width="w-48" />
+              </p>
+              <p>
+                Name: <FilledUnderline value={form.u1SignName} width="w-48" />
+              </p>
+              <p>
+                Employee Code:{" "}
+                <FilledUnderline value={form.u1SignCode} width="w-40" />
+              </p>
+              <p>
+                Department:{" "}
+                <FilledUnderline value={form.u1SignDept} width="w-48" />
+              </p>
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-6 sm:p-4 md:p-6">
+        <div className="flex justify-end text-[13px] font-semibold text-slate-900">
+          Form - II
+        </div>
+        <div className="space-y-2 text-center text-[13px] text-slate-900">
+          <p className="font-semibold underline">
+            UNDERTAKING/ AGREEMENT FROM A MEMBER OF STAFF OF IIT ROPAR
+            PROCEEDING ON LEAVE EX-INDIA
+          </p>
+        </div>
+        <div className="space-y-4 text-[13px] text-slate-900">
+          <p>
+            Whereas, I, <FilledUnderline value={form.u2Name} width="w-60" />{" "}
+            employed as Designation{" "}
+            <FilledUnderline value={form.u2Designation} width="w-60" /> in the{" "}
+            <FilledUnderline value={form.u2Dept} width="w-60" /> on Indian
+            Institute of Technology, Ropar have applied for leave Ex-India for
+            the period from <FilledUnderline value={form.u2From} width="w-32" />{" "}
+            to <FilledUnderline value={form.u2To} width="w-32" /> for private
+            work.
+          </p>
+          <p>
+            And whereas Indian Institute of Technology, Ropar have agreed to
+            grant me leave Ex-India Leave of the kind due for period from{" "}
+            <FilledUnderline value={form.u2LeaveFrom} width="w-32" /> to{" "}
+            <FilledUnderline value={form.u2LeaveTo} width="w-32" /> on the
+            condition that no extension of the said leave shall be allowed.
+          </p>
+          <p>
+            Now, therefore, I hereby declare and agree that the grant of leave
+            on the condition mentioned above is acceptable to me and I hereby
+            undertake and agree to abide by the same.
+          </p>
+
+          <div className="flex flex-wrap items-start justify-between gap-6 pt-4">
+            <div className="space-y-2 text-[13px] text-slate-900">
+              <p>
+                Signature <FilledUnderline value={form.u2Sign} width="w-48" />
+              </p>
+              <p>
+                Name <FilledUnderline value={form.u2SignName} width="w-48" />
+              </p>
+              <p>
+                Department{" "}
+                <FilledUnderline value={form.u2SignDept} width="w-48" />
+              </p>
+              <p>
+                Designation{" "}
+                <FilledUnderline value={form.u2SignDesignation} width="w-48" />
+              </p>
+            </div>
+
+            <div className="space-y-2 text-[13px] text-slate-900">
+              <p className="font-semibold">Signed in the presence of:</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Signature</span>
+                <FilledUnderline value={form.u2Witness1Sign} width="w-44" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Name</span>
+                <FilledUnderline value={form.u2Witness1Name} width="w-44" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Designation</span>
+                <FilledUnderline
+                  value={form.u2Witness1Designation}
+                  width="w-44"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Date</span>
+                <FilledUnderline value={form.u2Witness1Date} width="w-36" />
+              </div>
+            </div>
+
+            <div className="space-y-2 text-[13px] text-slate-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Signature</span>
+                <FilledUnderline value={form.u2Witness2Sign} width="w-44" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Name</span>
+                <FilledUnderline value={form.u2Witness2Name} width="w-44" />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Designation</span>
+                <FilledUnderline
+                  value={form.u2Witness2Designation}
+                  width="w-44"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Date</span>
+                <FilledUnderline value={form.u2Witness2Date} width="w-36" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
+    </div>
+  );
+};
+
+const NonAirIndiaPreview = ({ request }: { request: LeaveRequestDetails }) => {
+  const form = request.formData ?? {};
+
+  return (
+    <SurfaceCard className="mx-auto max-w-3xl space-y-4 border border-slate-300 bg-white p-4 md:p-7">
+      <PreviewHeader />
+      <p className="text-center text-[12px] font-semibold uppercase text-slate-900">
+        APPLICATION FOR PERMISSION TO TRAVEL BY AIRLINE OTHER THAN AIR INDIA
+      </p>
+
+      <div className="space-y-3 text-[12px] text-slate-900 sm:text-[13px]">
+        <PreviewLine number="1." label="Name" value={form.name} />
+        <PreviewLine number="2." label="Designation" value={form.designation} />
+        <PreviewLine number="3." label="Department" value={form.department} />
+        <div className="space-y-1">
+          <p className="text-[12px] font-semibold text-slate-900">
+            4. Visit dates
+          </p>
+          <div className="grid gap-2 rounded-2xl border border-slate-200/80 p-3 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">Onward journey:</span>
+              <FilledUnderline
+                value={formatFormDate(form.onwardJourney) || form.onwardJourney}
+                width="w-36"
+              />
+              <FilledUnderline
+                value={form.onwardSession}
+                width="w-28"
+                align="text-center"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">Return journey:</span>
+              <FilledUnderline
+                value={formatFormDate(form.returnJourney) || form.returnJourney}
+                width="w-36"
+              />
+              <FilledUnderline
+                value={form.returnSession}
+                width="w-28"
+                align="text-center"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">Total days:</span>
+              <FilledUnderline
+                value={form.travelDays}
+                width="w-20"
+                align="text-center"
+              />
+            </div>
+          </div>
+        </div>
+        <PreviewLine
+          number="5."
+          label="Place to be visited"
+          value={form.placeToVisit}
+        />
+        <PreviewLine number="6." label="Purpose" value={form.purpose} />
+        <PreviewLine
+          number="7."
+          label="Sectors for which permission is sought"
+          value={form.sectors}
+        />
+        <PreviewLine
+          number="8."
+          label="Reason for travel by airline other than Air India"
+          value={form.reason}
+        />
+        <PreviewLine
+          number="9."
+          label="Permission sought from MHRD (Yes/No)"
+          value={form.permissionMhrd}
+        />
+        <PreviewLine
+          number="10."
+          label="Budget head (Institute/Project)"
+          value={form.budgetHead}
+        />
+      </div>
+
+      <p className="text-right text-[12px] text-slate-900">
+        Applicant signature:{" "}
+        <FilledUnderline value={form.applicantSignature} width="w-64" />
+      </p>
+    </SurfaceCard>
+  );
 };
 
 const LtcPreview = ({ request }: { request: LeaveRequestDetails }) => {

@@ -21,10 +21,14 @@ export async function POST(
     const actor = await requireSessionActor(token);
     const rawPayload = (await request.json()) as Record<string, unknown> | null;
     const ipAddress = getRequestIp(request);
-    const payload =
-      rawPayload && typeof rawPayload === "object"
-        ? { ...rawPayload, ipAddress }
-        : { ipAddress };
+    const payload: Record<string, unknown> & { ipAddress: string | null } = {
+      ...(rawPayload &&
+      typeof rawPayload === "object" &&
+      !Array.isArray(rawPayload)
+        ? rawPayload
+        : {}),
+      ipAddress,
+    };
 
     const result = await decideLeaveApproval(applicationId, payload, {
       userId: actor.userId,

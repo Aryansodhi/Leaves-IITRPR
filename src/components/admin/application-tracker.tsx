@@ -229,6 +229,7 @@ export const ApplicationTracker = () => {
         isOpen={Boolean(selectedRequest)}
         onClose={() => setSelectedRequest(null)}
         request={selectedRequest}
+        displayMode="form-only"
       />
     </SurfaceCard>
   );
