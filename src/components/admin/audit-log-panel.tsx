@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -38,6 +38,9 @@ export const AuditLogPanel = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const [source, setSource] = useState<"table" | "derived" | "unknown">(
+    "unknown",
+  );
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -65,7 +68,7 @@ export const AuditLogPanel = () => {
     void loadUsers();
   }, []);
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -83,7 +86,11 @@ export const AuditLogPanel = () => {
       });
       const result = (await response.json()) as {
         ok?: boolean;
-        data?: { logs?: AuditLogRecord[]; total?: number };
+        data?: {
+          logs?: AuditLogRecord[];
+          total?: number;
+          source?: "table" | "derived";
+        };
         message?: string;
       };
 
@@ -93,6 +100,7 @@ export const AuditLogPanel = () => {
 
       setLogs(result.data?.logs ?? []);
       setTotal(result.data?.total ?? 0);
+      setSource(result.data?.source ?? "unknown");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to load audit logs.",
@@ -100,7 +108,11 @@ export const AuditLogPanel = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fromDate, ipAddress, selectedUserId, toDate, userQuery]);
+
+  useEffect(() => {
+    void loadLogs();
+  }, [loadLogs]);
 
   const filtersSummary = useMemo(() => {
     const parts: string[] = [];
@@ -193,7 +205,7 @@ export const AuditLogPanel = () => {
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600">
-        {filtersSummary} | {total} log(s)
+        {filtersSummary} | {total} log(s) | source: {source}
       </div>
 
       {logs.length === 0 ? (

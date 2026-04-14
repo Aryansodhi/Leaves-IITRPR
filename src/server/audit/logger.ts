@@ -23,6 +23,52 @@ export { getRequestIp };
 
 let auditTableReady: boolean | null = null;
 
+const ensureAuditLogGuards = async () => {
+  await prisma.$executeRawUnsafe(`
+    CREATE OR REPLACE FUNCTION public.auditlog_guard_insert()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      IF COALESCE(NEW.details->>'_source', '') <> 'system-audit' THEN
+        RAISE EXCEPTION 'Manual audit inserts are not allowed';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE OR REPLACE FUNCTION public.auditlog_guard_immutable()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        RAISE EXCEPTION 'AuditLog is immutable: updates are not allowed';
+      ELSIF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'AuditLog is immutable: deletes are not allowed';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+  `);
+
+  await prisma.$executeRawUnsafe(
+    `DROP TRIGGER IF EXISTS "AuditLog_block_manual_insert" ON "AuditLog"`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TRIGGER "AuditLog_block_manual_insert" BEFORE INSERT ON "AuditLog" FOR EACH ROW EXECUTE FUNCTION public.auditlog_guard_insert()`,
+  );
+
+  await prisma.$executeRawUnsafe(
+    `DROP TRIGGER IF EXISTS "AuditLog_block_mutation" ON "AuditLog"`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TRIGGER "AuditLog_block_mutation" BEFORE UPDATE OR DELETE ON "AuditLog" FOR EACH ROW EXECUTE FUNCTION public.auditlog_guard_immutable()`,
+  );
+};
+
 const ensureAuditLogTable = async () => {
   if (auditTableReady === true) return true;
 
@@ -60,6 +106,8 @@ const ensureAuditLogTable = async () => {
       `CREATE INDEX IF NOT EXISTS "AuditLog_entityType_entityId_idx" ON "AuditLog"("entityType", "entityId")`,
     );
 
+    await ensureAuditLogGuards();
+
     auditTableReady = true;
     return true;
   } catch (error) {
@@ -71,8 +119,9 @@ const ensureAuditLogTable = async () => {
 
 export const logAuditEvent = async (input: AuditEventInput) => {
   const timestamp = input.createdAt ?? new Date();
-  const idSource = `${timestamp.toISOString()}|${input.ipAddress ?? "unknown"}|${input.userId ?? "anonymous"}`;
-  const id = crypto.createHash("sha256").update(idSource).digest("hex");
+  // Use random UUID to avoid collisions during rapid multi-action flows
+  // (for example bulk approvals from the same actor/IP in the same millisecond).
+  const id = crypto.randomUUID();
 
   const auditLog = (
     prisma as unknown as {
@@ -81,6 +130,11 @@ export const logAuditEvent = async (input: AuditEventInput) => {
   ).auditLog;
 
   if (!auditLog) return;
+
+  const details = {
+    ...(input.details ?? {}),
+    _source: "system-audit",
+  };
 
   try {
     await auditLog.create({
@@ -95,7 +149,7 @@ export const logAuditEvent = async (input: AuditEventInput) => {
         userName: input.userName ?? null,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
-        details: input.details ?? undefined,
+        details,
         createdAt: timestamp,
       },
     });
@@ -108,6 +162,7 @@ export const logAuditEvent = async (input: AuditEventInput) => {
       const ready = await ensureAuditLogTable();
       if (!ready) return;
       try {
+        await ensureAuditLogGuards();
         await auditLog.create({
           data: {
             id,
@@ -120,7 +175,7 @@ export const logAuditEvent = async (input: AuditEventInput) => {
             userName: input.userName ?? null,
             ipAddress: input.ipAddress ?? null,
             userAgent: input.userAgent ?? null,
-            details: input.details ?? undefined,
+            details,
             createdAt: timestamp,
           },
         });

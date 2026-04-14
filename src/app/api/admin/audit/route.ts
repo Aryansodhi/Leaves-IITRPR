@@ -1,4 +1,4 @@
-import { RoleKey } from "@prisma/client";
+import { Prisma, RoleKey } from "@prisma/client";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -14,6 +14,22 @@ const parseDate = (value: string | null) => {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isMissingAuditLogTableError = (error: unknown) => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2021";
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("auditlog") &&
+      (message.includes("does not exist") || message.includes("not found"))
+    );
+  }
+
+  return false;
 };
 
 export async function GET(request: Request) {
@@ -65,10 +81,10 @@ export async function GET(request: Request) {
       }
     ).auditLog;
 
-    const [total, logs] = auditLog
+    const [total, logs, source] = auditLog
       ? await (async () => {
           try {
-            return await Promise.all([
+            const [tableTotal, tableLogs] = await Promise.all([
               auditLog.count({ where }),
               auditLog.findMany({
                 where,
@@ -77,10 +93,16 @@ export async function GET(request: Request) {
                 skip: offset,
               }),
             ]);
-          } catch {
-            // If the AuditLog table isn't present (common when skipping migrations),
-            // fall back to a derived audit feed from existing tables.
-            if (ip) return [0, []];
+
+            return [tableTotal, tableLogs, "table"] as const;
+          } catch (error) {
+            // Fall back only when the AuditLog table/delegate is genuinely unavailable.
+            // For all other errors, bubble up so environments don't silently diverge.
+            if (!isMissingAuditLogTableError(error)) {
+              throw error;
+            }
+
+            if (ip) return [0, [], "derived"] as const;
 
             const derived = await loadDerivedAuditLogs({
               userId,
@@ -92,11 +114,11 @@ export async function GET(request: Request) {
               offset,
             });
 
-            return [derived.total, derived.logs];
+            return [derived.total, derived.logs, "derived"] as const;
           }
         })()
       : await (async () => {
-          if (ip) return [0, []];
+          if (ip) return [0, [], "derived"] as const;
           const derived = await loadDerivedAuditLogs({
             userId,
             userQuery,
@@ -106,7 +128,7 @@ export async function GET(request: Request) {
             limit,
             offset,
           });
-          return [derived.total, derived.logs];
+          return [derived.total, derived.logs, "derived"] as const;
         })();
 
     return NextResponse.json({
@@ -115,6 +137,7 @@ export async function GET(request: Request) {
         total,
         limit,
         offset,
+        source,
         logs,
       },
     });
