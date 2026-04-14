@@ -8,6 +8,7 @@ import {
   requireSessionActor,
 } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
+import { loadDerivedAuditLogs } from "@/server/audit/derived-audit";
 
 const parseDate = (value: string | null) => {
   if (!value) return null;
@@ -65,16 +66,48 @@ export async function GET(request: Request) {
     ).auditLog;
 
     const [total, logs] = auditLog
-      ? await Promise.all([
-          auditLog.count({ where }),
-          auditLog.findMany({
-            where,
-            orderBy: { createdAt: "desc" },
-            take: limit,
-            skip: offset,
-          }),
-        ])
-      : [0, []];
+      ? await (async () => {
+          try {
+            return await Promise.all([
+              auditLog.count({ where }),
+              auditLog.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                take: limit,
+                skip: offset,
+              }),
+            ]);
+          } catch {
+            // If the AuditLog table isn't present (common when skipping migrations),
+            // fall back to a derived audit feed from existing tables.
+            if (ip) return [0, []];
+
+            const derived = await loadDerivedAuditLogs({
+              userId,
+              userQuery,
+              reference,
+              from,
+              to,
+              limit,
+              offset,
+            });
+
+            return [derived.total, derived.logs];
+          }
+        })()
+      : await (async () => {
+          if (ip) return [0, []];
+          const derived = await loadDerivedAuditLogs({
+            userId,
+            userQuery,
+            reference,
+            from,
+            to,
+            limit,
+            offset,
+          });
+          return [derived.total, derived.logs];
+        })();
 
     return NextResponse.json({
       ok: true,
