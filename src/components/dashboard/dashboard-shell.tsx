@@ -129,6 +129,11 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           active: pathname.startsWith("/dashboard/admin/audit"),
         },
         {
+          label: "Statistics",
+          href: "/dashboard/admin/statistics",
+          active: pathname.startsWith("/dashboard/admin/statistics"),
+        },
+        {
           label: "Track Applications",
           href: "/dashboard/admin/track",
           active: pathname.startsWith("/dashboard/admin/track"),

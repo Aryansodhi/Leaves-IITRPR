@@ -52,6 +52,12 @@ const firstForwardedFor = (value: string) => {
 };
 
 export const getRequestIp = (request: Request) => {
+  const directRequestIp = (request as { ip?: string | null }).ip;
+  if (directRequestIp) {
+    const normalized = normalizeIp(directRequestIp);
+    if (normalized) return normalized;
+  }
+
   const forwarded = request.headers.get("forwarded");
   if (forwarded) {
     const candidate = firstForwardedFor(forwarded);
