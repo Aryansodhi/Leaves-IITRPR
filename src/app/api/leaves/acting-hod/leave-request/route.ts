@@ -6,6 +6,7 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
 import { requestActingHodForLeave } from "@/server/routes/leaves/acting-hod";
 
 export async function POST(request: Request) {
@@ -17,6 +18,26 @@ export async function POST(request: Request) {
 
     const result = await requestActingHodForLeave(payload, {
       userId: actor.userId,
+    });
+
+    const applicationId =
+      payload && typeof payload === "object" && "applicationId" in payload
+        ? String((payload as { applicationId?: unknown }).applicationId ?? "")
+        : "";
+
+    await logAuditEvent({
+      action: "ACTING_HOD_CONFIRMATION_REQUEST",
+      entityType: "LEAVE_APPLICATION",
+      entityId: applicationId || null,
+      referenceCode: null,
+      userId: actor.userId,
+      userEmail: actor.email,
+      userName: actor.name,
+      ipAddress: getRequestIp(request),
+      userAgent: request.headers.get("user-agent"),
+      details: {
+        ok: (result as { ok?: unknown } | null)?.ok ?? null,
+      },
     });
 
     return NextResponse.json(result);

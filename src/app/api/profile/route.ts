@@ -7,6 +7,7 @@ import {
   requireSessionActor,
 } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
 
 const normalizePhone = (input: unknown) => {
   if (typeof input !== "string") return null;
@@ -40,6 +41,21 @@ export async function PATCH(request: Request) {
       select: {
         id: true,
         phone: true,
+      },
+    });
+
+    await logAuditEvent({
+      action: "UPDATE_PROFILE",
+      entityType: "USER",
+      entityId: actor.userId,
+      referenceCode: null,
+      userId: actor.userId,
+      userEmail: actor.email,
+      userName: actor.name,
+      ipAddress: getRequestIp(request),
+      userAgent: request.headers.get("user-agent"),
+      details: {
+        phoneSet: Boolean(updated.phone),
       },
     });
 

@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/server/db/prisma";
+import { getRequestIp } from "@/server/audit/ip";
 
 export type AuditEventInput = {
   action: string;
@@ -16,16 +19,7 @@ export type AuditEventInput = {
   createdAt?: Date;
 };
 
-export const getRequestIp = (request: Request) => {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || null;
-
-  return (
-    request.headers.get("x-real-ip") ||
-    request.headers.get("cf-connecting-ip") ||
-    null
-  );
-};
+export { getRequestIp };
 
 export const logAuditEvent = async (input: AuditEventInput) => {
   const timestamp = input.createdAt ?? new Date();
@@ -40,20 +34,32 @@ export const logAuditEvent = async (input: AuditEventInput) => {
 
   if (!auditLog) return;
 
-  await auditLog.create({
-    data: {
-      id,
-      action: input.action,
-      entityType: input.entityType,
-      entityId: input.entityId ?? null,
-      referenceCode: input.referenceCode ?? null,
-      userId: input.userId ?? null,
-      userEmail: input.userEmail ?? null,
-      userName: input.userName ?? null,
-      ipAddress: input.ipAddress ?? null,
-      userAgent: input.userAgent ?? null,
-      details: input.details ?? undefined,
-      createdAt: timestamp,
-    },
-  });
+  try {
+    await auditLog.create({
+      data: {
+        id,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId ?? null,
+        referenceCode: input.referenceCode ?? null,
+        userId: input.userId ?? null,
+        userEmail: input.userEmail ?? null,
+        userName: input.userName ?? null,
+        ipAddress: input.ipAddress ?? null,
+        userAgent: input.userAgent ?? null,
+        details: input.details ?? undefined,
+        createdAt: timestamp,
+      },
+    });
+  } catch (error) {
+    // Audit logging must never block the main request.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      return;
+    }
+
+    console.warn("Audit logging failed", error);
+  }
 };

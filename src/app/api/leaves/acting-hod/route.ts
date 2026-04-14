@@ -6,6 +6,7 @@ import {
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
+import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
 import {
   createActingHodAssignment,
   getActingHodStatus,
@@ -55,6 +56,27 @@ export async function POST(request: Request) {
 
     const result = await createActingHodAssignment(payload, {
       userId: actor.userId,
+    });
+
+    await logAuditEvent({
+      action: "ACTING_HOD_ASSIGN",
+      entityType: "ACTING_HOD_ASSIGNMENT",
+      entityId:
+        result && typeof result === "object" && "data" in result
+          ? String(
+              ((result as { data?: unknown }).data as { id?: unknown } | null)
+                ?.id ?? "",
+            ) || null
+          : null,
+      referenceCode: null,
+      userId: actor.userId,
+      userEmail: actor.email,
+      userName: actor.name,
+      ipAddress: getRequestIp(request),
+      userAgent: request.headers.get("user-agent"),
+      details: {
+        ok: (result as { ok?: unknown } | null)?.ok ?? null,
+      },
     });
 
     return NextResponse.json(result);
