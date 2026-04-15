@@ -15,8 +15,8 @@ export default async function LoginPage() {
 
   if (token) {
     try {
-      const actor = await requireSessionActor(token);
-      redirect(`/dashboard/${actor.roleSlug}`);
+      await requireSessionActor(token);
+      redirect("/");
     } catch {}
   }
 

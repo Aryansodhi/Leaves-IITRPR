@@ -1,10 +1,20 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowRight, Layers3, LogIn, ShieldCheck, Users } from "lucide-react";
 
 import { HomeAuthRedirect } from "@/components/auth/home-auth-redirect";
 import { OtpForm } from "@/components/auth/otp-form";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
+import {
+  requireSessionActor,
+  SESSION_COOKIE_NAME,
+} from "@/server/auth/session";
+import {
+  isValidDashboardPath,
+  LAST_DASHBOARD_PATH_COOKIE,
+} from "@/server/auth/last-dashboard-path";
 
 const highlights = [
   {
@@ -24,7 +34,26 @@ const highlights = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+
+  if (token) {
+    const actor = await requireSessionActor(token).catch(() => null);
+    if (actor) {
+      const lastPath = cookieStore.get(LAST_DASHBOARD_PATH_COOKIE)?.value;
+      if (lastPath && isValidDashboardPath(lastPath)) {
+        redirect(lastPath);
+      }
+
+      const destination =
+        actor.roleSlug === "admin"
+          ? "/dashboard/admin"
+          : `/dashboard/${actor.roleSlug}/leaves`;
+      redirect(destination);
+    }
+  }
+
   return (
     <div className="space-y-10 sm:space-y-12">
       <HomeAuthRedirect />

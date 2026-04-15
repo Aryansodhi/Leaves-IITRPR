@@ -7,6 +7,7 @@ import {
   requireSessionActor,
 } from "@/server/auth/session";
 import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
+import { LAST_DASHBOARD_PATH_COOKIE } from "@/server/auth/last-dashboard-path";
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -31,6 +32,13 @@ export async function POST(request: Request) {
 
   cookieStore.set({
     name: SESSION_COOKIE_NAME,
+    value: "",
+    ...getSessionCookieConfig(request),
+    maxAge: 0,
+  });
+
+  cookieStore.set({
+    name: LAST_DASHBOARD_PATH_COOKIE,
     value: "",
     ...getSessionCookieConfig(request),
     maxAge: 0,

@@ -18,6 +18,15 @@ export const DashboardLastRouteTracker = () => {
     } catch {
       // ignore
     }
+
+    fetch("/api/auth/remember-dashboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ path: pathname }),
+    }).catch(() => {
+      // ignore
+    });
   }, [pathname]);
 
   return null;
