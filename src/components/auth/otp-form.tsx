@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Mail, ShieldCheck, TimerReset } from "lucide-react";
@@ -78,6 +78,15 @@ export const OtpForm = () => {
     return `${local.slice(0, 2)}***@${domain}`;
   }, [email]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    if (error) {
+      setStatusMessage(error);
+    }
+  }, []);
+
   const requestOtp = emailForm.handleSubmit(async (values) => {
     setIsLoading(true);
     setStatusMessage(null);
@@ -145,11 +154,11 @@ export const OtpForm = () => {
         <StatusPill label="Secure Access" tone="review" />
         <div>
           <p className="text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
-            Sign in with your institute email
+            Sign in with Gmail
           </p>
           <p className="mt-2 text-sm text-slate-500 sm:text-base">
-            We send a one-time passcode to verify every session. No passwords to
-            remember and OTPs expire in {OTP_HINT_MINUTES} minutes.
+            Use your institute Gmail address to receive a one-time passcode.
+            OTPs expire in {OTP_HINT_MINUTES} minutes.
           </p>
         </div>
       </div>
@@ -179,11 +188,51 @@ export const OtpForm = () => {
                 <Loader2 className="h-4 w-4 animate-spin" /> Sending code
               </>
             ) : (
-              "Email me the code"
+              "Sign in with Gmail"
             )}
           </Button>
         </form>
       )}
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 text-xs text-slate-400">
+          <span className="h-px w-full bg-slate-200" />
+          <span>or</span>
+          <span className="h-px w-full bg-slate-200" />
+        </div>
+        <Button asChild variant="secondary" className="w-full">
+          <a
+            href="/api/auth/google"
+            className="flex items-center justify-center gap-3"
+          >
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white">
+              <svg
+                viewBox="0 0 533.5 544.3"
+                aria-hidden="true"
+                className="h-4 w-4"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M533.5 278.4c0-18.6-1.7-37.2-5.2-55.3H272v104.7h146.9c-6.3 34-25 62.9-53.3 82.2v68h86.2c50.5-46.5 82.7-115.2 82.7-199.6z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M272 544.3c72.6 0 133.6-23.9 178.1-64.6l-86.2-68c-24 16.2-55 25.4-91.9 25.4-70.6 0-130.4-47.6-151.8-111.5H31.7v69.9C76.5 482.7 168.2 544.3 272 544.3z"
+                />
+                <path
+                  fill="#FBBC04"
+                  d="M120.2 325.6c-11.2-34-11.2-70.8 0-104.8V151H31.7c-36.4 72.6-36.4 159 0 231.6l88.5-57z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M272 107.7c39.6-.6 77.7 14.6 106.8 42.6l79.6-79.6C408.5 24.1 344.8-1.5 272 0 168.2 0 76.5 61.6 31.7 151l88.5 69.9C141.6 155.3 201.4 107.7 272 107.7z"
+                />
+              </svg>
+            </span>
+            <span>Sign in with Google</span>
+          </a>
+        </Button>
+      </div>
 
       {stage === "OTP" && (
         <form className="space-y-4" onSubmit={verifyOtp}>

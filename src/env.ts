@@ -10,6 +10,8 @@ const envSchema = z.object({
   EMAIL_SERVER_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
   OTP_EXP_MINUTES: z.coerce.number().int().positive().default(10),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse({
@@ -23,6 +25,8 @@ const parsed = envSchema.safeParse({
   EMAIL_SERVER_PASSWORD: process.env.EMAIL_SERVER_PASSWORD,
   EMAIL_FROM: process.env.EMAIL_FROM,
   OTP_EXP_MINUTES: process.env.OTP_EXP_MINUTES ?? "10",
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 });
 
 if (!parsed.success) {
