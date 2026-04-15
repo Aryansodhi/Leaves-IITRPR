@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 
+import { AuthSessionSync } from "@/components/auth/auth-session-sync";
+import { DashboardLastRouteTracker } from "@/components/auth/dashboard-last-route-tracker";
+
 import "./globals.css";
 
 const sans = Space_Grotesk({
@@ -33,6 +36,8 @@ export default function RootLayout({
       <body
         className={`${sans.variable} ${mono.variable} bg-canvas text-slate-900 antialiased`}
       >
+        <AuthSessionSync />
+        <DashboardLastRouteTracker />
         <div className="min-h-dvh bg-grid text-base">
           <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-8 sm:py-10">
             {children}

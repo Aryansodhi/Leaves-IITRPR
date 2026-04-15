@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { broadcastLogout } from "@/lib/auth-broadcast";
 
 export const DashboardLogoutButton = () => {
   const router = useRouter();
@@ -19,6 +20,7 @@ export const DashboardLogoutButton = () => {
         credentials: "include",
       });
     } finally {
+      broadcastLogout();
       router.replace("/login");
       router.refresh();
       setIsSubmitting(false);

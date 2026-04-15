@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Layers3, LogIn, ShieldCheck, Users } from "lucide-react";
 
+import { HomeAuthRedirect } from "@/components/auth/home-auth-redirect";
 import { OtpForm } from "@/components/auth/otp-form";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -26,6 +27,7 @@ const highlights = [
 export default function Home() {
   return (
     <div className="space-y-10 sm:space-y-12">
+      <HomeAuthRedirect />
       <div className="fixed right-3 top-3 z-30 md:hidden">
         <Button asChild className="px-4 py-2 text-xs">
           <Link href="/login" className="flex items-center gap-2">

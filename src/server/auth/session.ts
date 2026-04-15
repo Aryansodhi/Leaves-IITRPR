@@ -131,6 +131,30 @@ export const sessionCookieConfig = {
   maxAge: SESSION_TTL_SECONDS,
 };
 
+const getSecureFromRequest = (request: Request) => {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedProto) return forwardedProto === "https";
+  return new URL(request.url).protocol === "https:";
+};
+
+export const getSessionCookieConfig = (request?: Request) => {
+  const cookieDomain = process.env.AUTH_COOKIE_DOMAIN;
+  const domain =
+    cookieDomain && cookieDomain.trim().length > 0
+      ? cookieDomain.trim()
+      : undefined;
+
+  const secure = request
+    ? getSecureFromRequest(request)
+    : sessionCookieConfig.secure;
+
+  return {
+    ...sessionCookieConfig,
+    ...(domain ? { domain } : {}),
+    secure,
+  };
+};
+
 export const requireSessionActor = async (
   token: string | undefined,
   options?: { roles?: RoleKey[] },

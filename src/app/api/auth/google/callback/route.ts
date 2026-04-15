@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 import { env } from "@/env";
 import {
   createSessionToken,
+  getSessionCookieConfig,
   getRoleSlugFromKey,
-  sessionCookieConfig,
   SESSION_COOKIE_NAME,
 } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
@@ -226,8 +226,7 @@ export async function GET(request: Request) {
     response.cookies.set({
       name: SESSION_COOKIE_NAME,
       value: sessionToken,
-      ...sessionCookieConfig,
-      secure: secureCookie,
+      ...getSessionCookieConfig(request),
     });
     return response;
   } catch (error) {

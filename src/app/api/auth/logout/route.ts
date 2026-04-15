@@ -2,8 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import {
+  getSessionCookieConfig,
   SESSION_COOKIE_NAME,
-  sessionCookieConfig,
   requireSessionActor,
 } from "@/server/auth/session";
 import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   cookieStore.set({
     name: SESSION_COOKIE_NAME,
     value: "",
-    ...sessionCookieConfig,
+    ...getSessionCookieConfig(request),
     maxAge: 0,
   });
 
