@@ -119,6 +119,8 @@ model User {
   actingHodAssignments ActingHodAssignment[] @relation("ActingHodFor")
   actingHodDelegations ActingHodAssignment[] @relation("ActingHodActor")
   actingHodAssigned    ActingHodAssignment[] @relation("ActingHodAssignedBy")
+  createdFormTemplates FormTemplate[]        @relation("FormTemplateCreator")
+  formSubmissions      FormSubmission[]
   auditLogs            AuditLog[]
 }
 
@@ -314,4 +316,33 @@ model OtpToken {
 
   @@index([email])
   @@index([expiresAt])
+}
+
+model FormTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  schema      Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("FormTemplateCreator", fields: [createdById], references: [id])
+  submissions FormSubmission[]
+
+  @@index([createdById, createdAt])
+}
+
+model FormSubmission {
+  id            String   @id @default(cuid())
+  templateId    String
+  submittedById String?
+  data          Json
+  createdAt     DateTime @default(now())
+
+  template    FormTemplate @relation(fields: [templateId], references: [id])
+  submittedBy User?        @relation(fields: [submittedById], references: [id])
+
+  @@index([templateId, createdAt])
+  @@index([submittedById, createdAt])
 }

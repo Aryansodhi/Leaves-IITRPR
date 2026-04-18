@@ -124,6 +124,16 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           active: pathname === "/dashboard/admin",
         },
         {
+          label: "Create Form",
+          href: "/dashboard/admin/form-builder",
+          active: pathname.startsWith("/dashboard/admin/form-builder"),
+        },
+        {
+          label: "Forms",
+          href: "/dashboard/admin/forms",
+          active: pathname.startsWith("/dashboard/admin/forms"),
+        },
+        {
           label: "Audit",
           href: "/dashboard/admin/audit",
           active: pathname.startsWith("/dashboard/admin/audit"),
@@ -144,6 +154,11 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           label: "Leaves",
           href: `/dashboard/${roleSlug}/leaves`,
           active: leavesActive,
+        },
+        {
+          label: "Forms",
+          href: "/dashboard/forms",
+          active: pathname.startsWith("/dashboard/forms"),
         },
         {
           label: "My Applications",
