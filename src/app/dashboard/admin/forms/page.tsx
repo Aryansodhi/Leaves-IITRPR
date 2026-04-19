@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { DeleteFormTemplateButton } from "@/components/admin/delete-form-template-button";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { requireRoleForPage } from "@/server/auth/page-access";
@@ -60,7 +61,11 @@ export default async function AdminFormsPage() {
               const schema = form.schema as unknown as {
                 visibilityRoles?: string[];
                 version?: number;
+                lifecycle?: {
+                  status?: "draft" | "published";
+                };
               };
+              const status = schema?.lifecycle?.status ?? "published";
 
               return (
                 <SurfaceCard
@@ -76,11 +81,26 @@ export default async function AdminFormsPage() {
                     </p>
                   </div>
                   <div>
-                    <Button asChild variant="secondary">
-                      <Link href={`/dashboard/forms/${form.id}`}>
-                        Open form
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild variant="secondary">
+                        <Link
+                          href={`/dashboard/admin/form-builder?templateId=${form.id}`}
+                        >
+                          Continue editing
+                        </Link>
+                      </Button>
+                      {status === "published" ? (
+                        <Button asChild variant="secondary">
+                          <Link href={`/dashboard/forms/${form.id}`}>
+                            Open form
+                          </Link>
+                        </Button>
+                      ) : null}
+                      <DeleteFormTemplateButton
+                        formId={form.id}
+                        formName={form.name}
+                      />
+                    </div>
                   </div>
                   {form.description ? (
                     <p className="text-sm text-slate-600">{form.description}</p>
@@ -92,6 +112,9 @@ export default async function AdminFormsPage() {
                         v{schema.version}
                       </span>
                     ) : null}
+                    <span className="rounded-full bg-slate-100 px-2 py-1">
+                      Status: {status === "draft" ? "Draft" : "Published"}
+                    </span>
                     {schema?.visibilityRoles?.length ? (
                       <span className="rounded-full bg-slate-100 px-2 py-1">
                         Visible to: {schema.visibilityRoles.join(", ")}

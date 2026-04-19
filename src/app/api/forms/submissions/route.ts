@@ -38,7 +38,17 @@ export async function POST(request: Request) {
 
     const schema = template.schema as unknown as {
       visibilityRoles?: string[];
+      lifecycle?: {
+        status?: "draft" | "published";
+      };
     };
+
+    if (schema?.lifecycle?.status === "draft") {
+      return NextResponse.json(
+        { ok: false, message: "This form is not published yet." },
+        { status: 400 },
+      );
+    }
 
     if (
       schema?.visibilityRoles?.length &&

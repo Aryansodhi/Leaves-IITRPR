@@ -23,7 +23,14 @@ export default async function FormsPage() {
   const visibleForms = forms.filter((form) => {
     const schema = form.schema as unknown as {
       visibilityRoles?: string[];
+      lifecycle?: {
+        status?: "draft" | "published";
+      };
     };
+
+    if (schema?.lifecycle?.status === "draft") {
+      return false;
+    }
 
     if (!schema?.visibilityRoles?.length) return true;
     return schema.visibilityRoles.includes(actor.roleKey);

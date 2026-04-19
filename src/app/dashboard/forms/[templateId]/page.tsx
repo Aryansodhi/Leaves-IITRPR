@@ -3,15 +3,9 @@ import { notFound } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { TemplateFormRenderer } from "@/components/forms/template-form-renderer";
+import type { FormTemplateSchema } from "@/components/forms/template-form-renderer";
 import { requireSignedInForPage } from "@/server/auth/page-access";
 import { prisma } from "@/server/db/prisma";
-
-type FormTemplateSchema = {
-  title?: string;
-  description?: string | null;
-  visibilityRoles?: string[];
-  pages?: unknown[];
-};
 
 type PageProps = {
   params: Promise<{ templateId: string }>;
@@ -36,6 +30,18 @@ export default async function FormTemplatePage({ params }: PageProps) {
   }
 
   const schema = template.schema as unknown as FormTemplateSchema;
+  if (schema.lifecycle?.status === "draft") {
+    return (
+      <DashboardShell>
+        <SurfaceCard className="border-slate-200/80 p-6">
+          <p className="text-sm font-semibold text-rose-600">
+            This form is still in draft and not published yet.
+          </p>
+        </SurfaceCard>
+      </DashboardShell>
+    );
+  }
+
   const visibilityRoles = schema.visibilityRoles ?? [];
 
   if (visibilityRoles.length > 0 && !visibilityRoles.includes(actor.roleKey)) {

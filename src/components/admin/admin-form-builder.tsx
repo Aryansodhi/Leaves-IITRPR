@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import type { DragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -105,10 +106,19 @@ type BuilderPage = {
   fields: BuilderField[];
 };
 
+type SaveMode = "draft" | "published";
+
+type PersistedBuilderState = {
+  formName: string;
+  formDescription: string;
+  pages: BuilderPage[];
+  visibilityRoles: RoleOptionKey[];
+};
+
 type DragState =
   | {
       source: "palette";
-      kind: Exclude<FieldKind, "brand">;
+      kind: FieldKind;
       preset?: { inputType?: InputFieldType };
     }
   | { source: "canvas"; fieldId: string; pageId: string };
@@ -152,11 +162,17 @@ const widthBySize: Record<FieldWidth, number> = {
 
 const paletteItems: Array<{
   id: string;
-  kind: Exclude<FieldKind, "brand">;
+  kind: FieldKind;
   title: string;
   description: string;
   preset?: { inputType?: InputFieldType };
 }> = [
+  {
+    id: "brand",
+    kind: "brand",
+    title: "College header",
+    description: "Logo + institute title block for the page header.",
+  },
   {
     id: "text",
     kind: "text",
@@ -306,16 +322,20 @@ const createBrandField = (): BrandField => ({
   },
 });
 
-const createPage = (index: number): BuilderPage => ({
+const createPage = (index: number, includeBrand = false): BuilderPage => ({
   id: createId(),
   title: `Page ${index + 1}`,
-  fields: [createBrandField()],
+  fields: includeBrand ? [createBrandField()] : [],
 });
 
 const createField = (
-  kind: Exclude<FieldKind, "brand">,
+  kind: FieldKind,
   preset?: { inputType?: InputFieldType },
 ): BuilderField => {
+  if (kind === "brand") {
+    return createBrandField();
+  }
+
   if (kind === "text") {
     return {
       id: createId(),
@@ -403,9 +423,11 @@ const createField = (
 };
 
 export const AdminFormBuilder = () => {
+  const searchParams = useSearchParams();
+  const queryTemplateId = searchParams.get("templateId");
   const [formName, setFormName] = useState("New form");
   const [formDescription, setFormDescription] = useState("");
-  const [pages, setPages] = useState<BuilderPage[]>([createPage(0)]);
+  const [pages, setPages] = useState<BuilderPage[]>([createPage(0, true)]);
   const [elementSearch, setElementSearch] = useState("");
   const [isVisibilityOpen, setIsVisibilityOpen] = useState(false);
   const [visibilityRoles, setVisibilityRoles] = useState<RoleOptionKey[]>(
@@ -425,6 +447,10 @@ export const AdminFormBuilder = () => {
     null,
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(
+    queryTemplateId,
+  );
+  const [isBootstrapped, setIsBootstrapped] = useState(false);
   const gridRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const textAreaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const [editingTextAreaId, setEditingTextAreaId] = useState<string | null>(
@@ -454,6 +480,162 @@ export const AdminFormBuilder = () => {
   }, []);
 
   const cellLineHeight = `${GRID_UNIT_MM}mm`;
+
+  const storageKey = useMemo(
+    () => `admin-form-builder:draft:${currentTemplateId ?? "new"}`,
+    [currentTemplateId],
+  );
+
+  useEffect(() => {
+    setCurrentTemplateId(queryTemplateId);
+  }, [queryTemplateId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyBuilderState = (state: PersistedBuilderState) => {
+      setFormName(state.formName || "New form");
+      setFormDescription(state.formDescription || "");
+      setPages(state.pages.length > 0 ? state.pages : [createPage(0, true)]);
+      setVisibilityRoles(
+        state.visibilityRoles.length > 0
+          ? state.visibilityRoles
+          : roleOptions.map((role) => role.key),
+      );
+      setSelectedItem(null);
+      setSettingsDraft(null);
+      setSettingsPageId(null);
+      setIsSettingsOpen(false);
+      setStatusMessage(null);
+      setStatusTone(null);
+    };
+
+    const parseLocalState = (
+      raw: string | null,
+    ): PersistedBuilderState | null => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as Partial<PersistedBuilderState>;
+        if (!parsed || typeof parsed !== "object") return null;
+        if (!Array.isArray(parsed.pages) || parsed.pages.length === 0)
+          return null;
+        const nextVisibility = Array.isArray(parsed.visibilityRoles)
+          ? parsed.visibilityRoles.filter((entry): entry is RoleOptionKey =>
+              roleOptions.some((role) => role.key === entry),
+            )
+          : [];
+        return {
+          formName:
+            typeof parsed.formName === "string" ? parsed.formName : "New form",
+          formDescription:
+            typeof parsed.formDescription === "string"
+              ? parsed.formDescription
+              : "",
+          pages: parsed.pages,
+          visibilityRoles: nextVisibility,
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    const bootstrap = async () => {
+      const local =
+        typeof window !== "undefined"
+          ? parseLocalState(window.localStorage.getItem(storageKey))
+          : null;
+
+      if (local) {
+        if (!cancelled) {
+          applyBuilderState(local);
+          setIsBootstrapped(true);
+        }
+        return;
+      }
+
+      if (!currentTemplateId) {
+        if (!cancelled) {
+          setIsBootstrapped(true);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/admin/form-templates?id=${encodeURIComponent(currentTemplateId)}`,
+        );
+        const data = (await response.json()) as {
+          ok?: boolean;
+          message?: string;
+          data?: {
+            id: string;
+            name: string;
+            description: string | null;
+            schema: {
+              visibilityRoles?: string[];
+              pages?: BuilderPage[];
+            };
+          };
+        };
+
+        if (!response.ok || !data?.data) {
+          if (!cancelled) {
+            setStatusTone("error");
+            setStatusMessage(
+              data.message ?? "Unable to load form for editing.",
+            );
+          }
+          return;
+        }
+
+        if (cancelled) return;
+
+        applyBuilderState({
+          formName: data.data.name,
+          formDescription: data.data.description ?? "",
+          pages: data.data.schema?.pages ?? [createPage(0, true)],
+          visibilityRoles: (data.data.schema?.visibilityRoles ?? []).filter(
+            (entry): entry is RoleOptionKey =>
+              roleOptions.some((role) => role.key === entry),
+          ),
+        });
+      } catch (error) {
+        console.error("Unable to bootstrap form builder", error);
+        if (!cancelled) {
+          setStatusTone("error");
+          setStatusMessage("Unable to load form for editing.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsBootstrapped(true);
+        }
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTemplateId, storageKey]);
+
+  useEffect(() => {
+    if (!isBootstrapped || typeof window === "undefined") return;
+    const payload: PersistedBuilderState = {
+      formName,
+      formDescription,
+      pages,
+      visibilityRoles,
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [
+    formDescription,
+    formName,
+    isBootstrapped,
+    pages,
+    storageKey,
+    visibilityRoles,
+  ]);
 
   const filteredPaletteItems = useMemo(() => {
     const query = elementSearch.trim().toLowerCase();
@@ -779,10 +961,46 @@ export const AdminFormBuilder = () => {
   };
 
   const handleAddPage = () => {
-    setPages((prev) => [...prev, createPage(prev.length)]);
+    setPages((prev) => [...prev, createPage(prev.length, false)]);
+  };
+
+  const handleClearForm = () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Clear the current form layout? Unsaved edits will be lost.",
+      );
+      if (!confirmed) return;
+    }
+
+    const defaultVisibility = roleOptions.map((role) => role.key);
+    setFormName("New form");
+    setFormDescription("");
+    setPages([createPage(0, true)]);
+    setVisibilityRoles(defaultVisibility);
+    setSelectedItem(null);
+    setDragState(null);
+    setDropPreview(null);
+    setSettingsPageId(null);
+    setSettingsDraft(null);
+    setIsSettingsOpen(false);
+    setIsVisibilityOpen(false);
+    setEditingTextAreaId(null);
+    setResizeState(null);
+    setHeightResizeState(null);
+    setStatusTone("success");
+    setStatusMessage("Form cleared. Start building again.");
   };
 
   const handleRemovePage = (pageId: string) => {
+    const firstPageId = pages[0]?.id;
+    if (firstPageId && pageId === firstPageId) {
+      setStatusTone("error");
+      setStatusMessage("The first page cannot be removed.");
+      return;
+    }
+
+    setStatusMessage(null);
+    setStatusTone(null);
     setPages((prev) => {
       if (prev.length === 1) return prev;
       const next = prev.filter((page) => page.id !== pageId);
@@ -799,6 +1017,8 @@ export const AdminFormBuilder = () => {
     preferredCol: number,
     preferredRow: number,
   ) => {
+    setStatusMessage(null);
+    setStatusTone(null);
     setPages((prev) =>
       prev.map((page) => {
         if (page.id !== pageId) return page;
@@ -823,12 +1043,25 @@ export const AdminFormBuilder = () => {
     item: (typeof paletteItems)[number],
     pageId: string,
   ) => {
-    const newField = createField(item.kind, item.preset);
     const targetPage = pages.find((page) => page.id === pageId);
+    if (!targetPage) return;
+
+    if (item.kind === "brand") {
+      const hasBrand = targetPage.fields.some(
+        (field) => field.kind === "brand",
+      );
+      if (hasBrand) {
+        setStatusTone("error");
+        setStatusMessage("This page already has a college header block.");
+        return;
+      }
+    }
+
+    const newField = createField(item.kind, item.preset);
     const startRow =
       item.kind === "signature"
         ? GRID_ROWS
-        : targetPage?.fields.find((field) => field.kind === "brand")
+        : targetPage.fields.find((field) => field.kind === "brand")
           ? 8
           : 1;
     placeField(pageId, newField, 1, startRow);
@@ -929,6 +1162,19 @@ export const AdminFormBuilder = () => {
     if (!cell) return;
 
     if (dragState.source === "palette") {
+      const targetPage = pages.find((entry) => entry.id === pageId);
+      if (!targetPage) return;
+      if (
+        dragState.kind === "brand" &&
+        targetPage.fields.some((field) => field.kind === "brand")
+      ) {
+        setStatusTone("error");
+        setStatusMessage("This page already has a college header block.");
+        setDragState(null);
+        setDropPreview(null);
+        return;
+      }
+
       const newField = createField(dragState.kind, dragState.preset);
       const resolvedLayout = preview
         ? preview
@@ -986,6 +1232,8 @@ export const AdminFormBuilder = () => {
   };
 
   const handleRemoveField = (pageId: string, fieldId: string) => {
+    setStatusMessage(null);
+    setStatusTone(null);
     setPages((prev) =>
       prev.map((page) =>
         page.id === pageId
@@ -1052,7 +1300,7 @@ export const AdminFormBuilder = () => {
     closeSettings();
   };
 
-  const handleSave = async (roles: RoleOptionKey[]) => {
+  const handleSave = async (roles: RoleOptionKey[], mode: SaveMode) => {
     setStatusMessage(null);
     setStatusTone(null);
 
@@ -1072,7 +1320,7 @@ export const AdminFormBuilder = () => {
         sum + page.fields.filter((field) => field.kind !== "brand").length,
       0,
     );
-    if (totalFields === 0 || totalNonBrand === 0) {
+    if (mode === "published" && (totalFields === 0 || totalNonBrand === 0)) {
       setStatusTone("error");
       setStatusMessage("Add at least one field before saving.");
       return;
@@ -1081,31 +1329,40 @@ export const AdminFormBuilder = () => {
     setIsSaving(true);
 
     try {
-      const response = await fetch("/api/admin/form-templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmedName,
+      const payload = {
+        ...(currentTemplateId ? { id: currentTemplateId } : {}),
+        name: trimmedName,
+        description: formDescription.trim() || null,
+        schema: {
+          version: 3,
+          title: trimmedName,
           description: formDescription.trim() || null,
-          schema: {
-            version: 3,
-            title: trimmedName,
-            description: formDescription.trim() || null,
-            visibilityRoles: roles,
-            grid: {
-              unit: GRID_UNIT_MM,
-              unitLabel: "mm",
-              columns: GRID_COLS,
-              rows: GRID_ROWS,
-            },
-            pages,
+          visibilityRoles: roles,
+          lifecycle: {
+            status: mode,
           },
-        }),
+          grid: {
+            unit: GRID_UNIT_MM,
+            unitLabel: "mm",
+            columns: GRID_COLS,
+            rows: GRID_ROWS,
+          },
+          pages,
+        },
+      };
+
+      const response = await fetch("/api/admin/form-templates", {
+        method: currentTemplateId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
       const data = (await response.json()) as {
         ok?: boolean;
         message?: string;
+        data?: {
+          id?: string;
+        };
       };
 
       if (!response.ok) {
@@ -1114,8 +1371,30 @@ export const AdminFormBuilder = () => {
         return;
       }
 
+      const savedId = data.data?.id;
+      if (savedId) {
+        setCurrentTemplateId(savedId);
+      }
+
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("admin-form-builder:draft:new");
+        if (currentTemplateId) {
+          window.localStorage.removeItem(
+            `admin-form-builder:draft:${currentTemplateId}`,
+          );
+        }
+        if (savedId) {
+          window.localStorage.removeItem(`admin-form-builder:draft:${savedId}`);
+        }
+      }
+
       setStatusTone("success");
-      setStatusMessage(data.message ?? "Form saved successfully.");
+      setStatusMessage(
+        data.message ??
+          (mode === "draft"
+            ? "Draft saved successfully."
+            : "Form published successfully."),
+      );
     } catch (error) {
       console.error("Form save failed", error);
       setStatusTone("error");
@@ -1154,8 +1433,24 @@ export const AdminFormBuilder = () => {
               Add page
             </Button>
             <Button
+              variant="secondary"
+              onClick={handleClearForm}
+              disabled={isSaving || !isBootstrapped}
+            >
+              Clear form
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                await handleSave(visibilityRoles, "draft");
+              }}
+              disabled={isSaving || !isBootstrapped}
+            >
+              {isSaving ? "Saving..." : "Save draft"}
+            </Button>
+            <Button
               onClick={() => setIsVisibilityOpen(true)}
-              disabled={isSaving}
+              disabled={isSaving || !isBootstrapped}
             >
               {isSaving ? "Saving..." : "Save form"}
             </Button>
@@ -1223,7 +1518,7 @@ export const AdminFormBuilder = () => {
               <div key={page.id} className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                   <span>{page.title ?? `Page ${pageIndex + 1}`}</span>
-                  {pages.length > 1 ? (
+                  {pages.length > 1 && pageIndex > 0 ? (
                     <button
                       type="button"
                       onClick={() => handleRemovePage(page.id)}
@@ -1286,6 +1581,11 @@ export const AdminFormBuilder = () => {
                         }
                         className={cn(
                           "group relative transition",
+                          (field.kind === "text" ||
+                            field.kind === "input" ||
+                            field.kind === "textarea" ||
+                            field.kind === "checkbox") &&
+                            "rounded-sm border-2 border-dashed border-rose-400 bg-rose-50/20",
                           field.kind === "textarea"
                             ? editingTextAreaId === field.id
                               ? "cursor-text"
@@ -1342,7 +1642,7 @@ export const AdminFormBuilder = () => {
                             ↕
                           </button>
                         ) : null}
-                        {field.kind !== "brand" && field.kind !== "textarea" ? (
+                        {field.kind !== "textarea" ? (
                           <button
                             type="button"
                             onClick={(event) => {
@@ -1559,7 +1859,7 @@ export const AdminFormBuilder = () => {
                               </div>
                             ) : null}
 
-                            <div className="h-full w-full border border-dashed border-slate-500/80">
+                            <div className="h-full w-full border border-transparent">
                               <textarea
                                 ref={setTextAreaRef(field.id)}
                                 value={field.value}
@@ -2326,7 +2626,7 @@ export const AdminFormBuilder = () => {
               <Button
                 onClick={async () => {
                   setIsVisibilityOpen(false);
-                  await handleSave(visibilityRoles);
+                  await handleSave(visibilityRoles, "published");
                 }}
                 disabled={isSaving}
               >

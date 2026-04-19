@@ -92,10 +92,14 @@ type BuilderPage = {
   fields: BuilderField[];
 };
 
-type FormTemplateSchema = {
+export type FormTemplateSchema = {
   version?: number;
   title?: string;
   description?: string | null;
+  visibilityRoles?: string[];
+  lifecycle?: {
+    status?: "draft" | "published";
+  };
   grid?: {
     unit?: number;
     unitLabel?: string;

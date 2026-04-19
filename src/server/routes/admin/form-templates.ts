@@ -93,6 +93,11 @@ const builderSchema = z.object({
   title: z.string().min(1),
   description: z.string().nullable().optional(),
   visibilityRoles: z.array(z.string()).optional(),
+  lifecycle: z
+    .object({
+      status: z.enum(["draft", "published"]).optional(),
+    })
+    .optional(),
   grid: z
     .object({
       unit: z.number().int().min(1),
@@ -110,10 +115,18 @@ const createSchema = z.object({
   schema: builderSchema,
 });
 
+const updateSchema = createSchema.extend({
+  id: z.string().min(1),
+});
+
 type HandlerResult = {
   status: number;
   body: { ok: boolean; message: string; data?: { id: string } };
 };
+
+const deleteSchema = z.object({
+  id: z.string().min(1),
+});
 
 export const createFormTemplateHandler = async (
   payload: unknown,
@@ -129,6 +142,27 @@ export const createFormTemplateHandler = async (
       };
     }
 
+    const duplicate = await prisma.formTemplate.findFirst({
+      where: {
+        name: {
+          equals: trimmedName,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return {
+        status: 409,
+        body: {
+          ok: false,
+          message:
+            "A form with this name already exists. Please choose a different name.",
+        },
+      };
+    }
+
     const totalFields = data.schema.pages.reduce(
       (sum, page) => sum + page.fields.length,
       0,
@@ -139,7 +173,12 @@ export const createFormTemplateHandler = async (
       0,
     );
 
-    if (totalFields === 0 || totalNonBrandFields === 0) {
+    const status = data.schema.lifecycle?.status ?? "published";
+
+    if (
+      status !== "draft" &&
+      (totalFields === 0 || totalNonBrandFields === 0)
+    ) {
       return {
         status: 400,
         body: { ok: false, message: "Add at least one field before saving." },
@@ -187,6 +226,9 @@ export const createFormTemplateHandler = async (
     const description = data.description?.trim();
     const schema = {
       ...data.schema,
+      lifecycle: {
+        status,
+      },
       title: data.schema.title?.trim() || trimmedName,
       description: data.schema.description?.trim() || null,
     };
@@ -222,7 +264,10 @@ export const createFormTemplateHandler = async (
       status: 201,
       body: {
         ok: true,
-        message: "Form saved successfully.",
+        message:
+          status === "draft"
+            ? "Draft saved successfully."
+            : "Form published successfully.",
         data: { id: record.id },
       },
     };
@@ -254,6 +299,282 @@ export const createFormTemplateHandler = async (
       body: {
         ok: false,
         message: "Unable to save the form.",
+      },
+    };
+  }
+};
+
+export const updateFormTemplateHandler = async (
+  payload: unknown,
+): Promise<HandlerResult> => {
+  try {
+    const data = updateSchema.parse(payload);
+    const trimmedName = data.name.trim();
+    if (!trimmedName) {
+      return {
+        status: 400,
+        body: { ok: false, message: "Form name is required." },
+      };
+    }
+
+    const duplicate = await prisma.formTemplate.findFirst({
+      where: {
+        id: { not: data.id },
+        name: {
+          equals: trimmedName,
+          mode: "insensitive",
+        },
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return {
+        status: 409,
+        body: {
+          ok: false,
+          message:
+            "A form with this name already exists. Please choose a different name.",
+        },
+      };
+    }
+
+    const totalFields = data.schema.pages.reduce(
+      (sum, page) => sum + page.fields.length,
+      0,
+    );
+    const totalNonBrandFields = data.schema.pages.reduce(
+      (sum, page) =>
+        sum + page.fields.filter((field) => field.kind !== "brand").length,
+      0,
+    );
+
+    const status = data.schema.lifecycle?.status ?? "published";
+
+    if (
+      status !== "draft" &&
+      (totalFields === 0 || totalNonBrandFields === 0)
+    ) {
+      return {
+        status: 400,
+        body: { ok: false, message: "Add at least one field before saving." },
+      };
+    }
+
+    const gridColumns = data.schema.grid?.columns ?? null;
+    const gridRows = data.schema.grid?.rows ?? null;
+
+    for (const page of data.schema.pages) {
+      for (const field of page.fields) {
+        if (
+          (field.kind === "input" || field.kind === "textarea") &&
+          field.minLength != null &&
+          field.maxLength != null &&
+          field.maxLength < field.minLength
+        ) {
+          return {
+            status: 400,
+            body: { ok: false, message: "Max length must be >= min length." },
+          };
+        }
+
+        if (gridColumns != null && gridRows != null) {
+          const colEnd = field.layout.col + field.layout.colSpan - 1;
+          const rowEnd = field.layout.row + field.layout.rowSpan - 1;
+          if (
+            field.layout.col < 1 ||
+            field.layout.row < 1 ||
+            colEnd > gridColumns ||
+            rowEnd > gridRows
+          ) {
+            return {
+              status: 400,
+              body: {
+                ok: false,
+                message: "One or more fields are outside the grid bounds.",
+              },
+            };
+          }
+        }
+      }
+    }
+
+    const description = data.description?.trim();
+    const schema = {
+      ...data.schema,
+      lifecycle: {
+        status,
+      },
+      title: data.schema.title?.trim() || trimmedName,
+      description: data.schema.description?.trim() || null,
+    };
+
+    const formTemplateModel = (prisma as unknown as { formTemplate?: unknown })
+      .formTemplate as
+      | undefined
+      | {
+          update: (args: unknown) => Promise<{ id: string }>;
+        };
+
+    if (!formTemplateModel?.update) {
+      return {
+        status: 500,
+        body: {
+          ok: false,
+          message:
+            "Form templates database client is not initialized. Run `npm run prisma:generate`.",
+        },
+      };
+    }
+
+    const record = await formTemplateModel.update({
+      where: { id: data.id },
+      data: {
+        name: trimmedName,
+        description: description && description.length > 0 ? description : null,
+        schema,
+      },
+    });
+
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        message:
+          status === "draft"
+            ? "Draft saved successfully."
+            : "Form published successfully.",
+        data: { id: record.id },
+      },
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        status: 400,
+        body: { ok: false, message: "Invalid form payload." },
+      };
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2021") {
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            message:
+              "FormTemplate table is missing in the database. Run `npm run db:push` (or migrations) and try again.",
+          },
+        };
+      }
+
+      if (error.code === "P2025") {
+        return {
+          status: 404,
+          body: {
+            ok: false,
+            message: "Form template not found.",
+          },
+        };
+      }
+    }
+
+    console.error("updateFormTemplateHandler failed", error);
+
+    return {
+      status: 500,
+      body: {
+        ok: false,
+        message: "Unable to save the form.",
+      },
+    };
+  }
+};
+
+export const deleteFormTemplateHandler = async (
+  payload: unknown,
+): Promise<HandlerResult> => {
+  try {
+    const data = deleteSchema.parse(payload);
+
+    const formTemplateModel = (prisma as unknown as { formTemplate?: unknown })
+      .formTemplate as
+      | undefined
+      | {
+          delete: (args: unknown) => Promise<{ id: string }>;
+        };
+
+    if (!formTemplateModel?.delete) {
+      return {
+        status: 500,
+        body: {
+          ok: false,
+          message:
+            "Form templates database client is not initialized. Run `npm run prisma:generate`.",
+        },
+      };
+    }
+
+    const record = await formTemplateModel.delete({
+      where: { id: data.id },
+    });
+
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        message: "Form deleted successfully.",
+        data: { id: record.id },
+      },
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        status: 400,
+        body: { ok: false, message: "Template id is required." },
+      };
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2021") {
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            message:
+              "FormTemplate table is missing in the database. Run `npm run db:push` (or migrations) and try again.",
+          },
+        };
+      }
+
+      if (error.code === "P2025") {
+        return {
+          status: 404,
+          body: {
+            ok: false,
+            message: "Form template not found.",
+          },
+        };
+      }
+
+      if (error.code === "P2003") {
+        return {
+          status: 409,
+          body: {
+            ok: false,
+            message:
+              "This form has submissions and cannot be deleted right now.",
+          },
+        };
+      }
+    }
+
+    console.error("deleteFormTemplateHandler failed", error);
+
+    return {
+      status: 500,
+      body: {
+        ok: false,
+        message: "Unable to delete the form.",
       },
     };
   }
