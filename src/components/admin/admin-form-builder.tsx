@@ -125,9 +125,17 @@ type ResizeState = {
   startColSpan: number;
 } | null;
 
+type HeightResizeState = {
+  pageId: string;
+  fieldId: string;
+  startY: number;
+  startRowSpan: number;
+} | null;
+
 const GRID_UNIT_MM = 6;
 const GRID_COLS = 30;
 const GRID_ROWS = 45;
+const MAX_TEXT_ROWS = 6;
 const GRID_WIDTH_MM = GRID_COLS * GRID_UNIT_MM;
 const GRID_HEIGHT_MM = GRID_ROWS * GRID_UNIT_MM;
 const PAGE_WIDTH_MM = 210;
@@ -423,6 +431,8 @@ export const AdminFormBuilder = () => {
     null,
   );
   const [resizeState, setResizeState] = useState<ResizeState>(null);
+  const [heightResizeState, setHeightResizeState] =
+    useState<HeightResizeState>(null);
 
   const setTextAreaRef =
     (fieldId: string) => (node: HTMLTextAreaElement | null) => {
@@ -622,6 +632,78 @@ export const AdminFormBuilder = () => {
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [getCellSize, resizeState, resizeTextAreaToContent]);
+
+  useEffect(() => {
+    if (!heightResizeState) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const cellSize = getCellSize(heightResizeState.pageId);
+      if (!cellSize) return;
+
+      setPages((prev) =>
+        prev.map((page) => {
+          if (page.id !== heightResizeState.pageId) return page;
+          const target = page.fields.find(
+            (field) => field.id === heightResizeState.fieldId,
+          );
+          if (!target || target.kind !== "text") return page;
+
+          const deltaCells = Math.round(
+            (event.clientY - heightResizeState.startY) /
+              Math.max(1, cellSize.cellHeight),
+          );
+
+          const maxRowSpan = GRID_ROWS - target.layout.row + 1;
+          const maxAllowed = Math.min(MAX_TEXT_ROWS, Math.max(1, maxRowSpan));
+          const nextRowSpan = clamp(
+            heightResizeState.startRowSpan + deltaCells,
+            1,
+            maxAllowed,
+          );
+
+          if (nextRowSpan === target.layout.rowSpan) return page;
+
+          const candidateLayout = normalizeLayout({
+            ...target.layout,
+            rowSpan: nextRowSpan,
+          });
+
+          const others = page.fields.filter((field) => field.id !== target.id);
+          const overlaps = others.some((field) =>
+            isOverlapping(candidateLayout, field.layout),
+          );
+          if (overlaps) return page;
+
+          return {
+            ...page,
+            fields: page.fields.map((field) =>
+              field.id === target.id && field.kind === "text"
+                ? {
+                    ...field,
+                    rows: candidateLayout.rowSpan,
+                    layout: {
+                      ...field.layout,
+                      rowSpan: candidateLayout.rowSpan,
+                    },
+                  }
+                : field,
+            ),
+          };
+        }),
+      );
+    };
+
+    const handlePointerUp = () => {
+      setHeightResizeState(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [getCellSize, heightResizeState]);
 
   const selectedPage = useMemo(() => {
     if (!selectedItem) return null;
@@ -1240,6 +1322,26 @@ export const AdminFormBuilder = () => {
                             ↔
                           </button>
                         ) : null}
+                        {selectedItem?.fieldId === field.id &&
+                        field.kind === "text" ? (
+                          <button
+                            type="button"
+                            aria-label="Resize text height"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                              event.preventDefault();
+                              setHeightResizeState({
+                                pageId: page.id,
+                                fieldId: field.id,
+                                startY: event.clientY,
+                                startRowSpan: field.layout.rowSpan,
+                              });
+                            }}
+                            className="absolute bottom-0 left-1/2 z-10 h-3 w-6 -translate-x-1/2 cursor-row-resize rounded border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 shadow-sm"
+                          >
+                            ↕
+                          </button>
+                        ) : null}
                         {field.kind !== "brand" && field.kind !== "textarea" ? (
                           <button
                             type="button"
@@ -1775,7 +1877,10 @@ export const AdminFormBuilder = () => {
                     }}
                     className="w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-medium text-slate-900 transition hover:-translate-y-0.5 hover:border-slate-300 focus:border-slate-900 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
                   >
-                    {[1, 2, 3, 4, 5, 6].map((value) => (
+                    {Array.from(
+                      { length: MAX_TEXT_ROWS },
+                      (_, index) => index + 1,
+                    ).map((value) => (
                       <option key={value} value={value}>
                         {value} rows
                       </option>
