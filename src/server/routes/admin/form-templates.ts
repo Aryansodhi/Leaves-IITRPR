@@ -88,6 +88,30 @@ const pageSchema = z.object({
   ),
 });
 
+const taskAssignmentSchema = z.object({
+  mode: z.enum(["specific", "role", "department", "all"]),
+  values: z.array(z.string().min(1)).default([]),
+});
+
+const formTaskSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    type: z.enum(["fillform", "signature"]),
+    formTemplateId: z.string().min(1).nullable().optional(),
+    assignment: taskAssignmentSchema,
+    status: z.enum(["PENDING", "ASSIGNED", "IN_PROGRESS", "DONE"]).optional(),
+  })
+  .superRefine((task, ctx) => {
+    if (task.type === "fillform" && !task.formTemplateId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Template id is required for fill-form tasks.",
+        path: ["formTemplateId"],
+      });
+    }
+  });
+
 const builderSchema = z.object({
   version: z.number().int().min(1),
   title: z.string().min(1),
@@ -107,6 +131,7 @@ const builderSchema = z.object({
     })
     .optional(),
   pages: z.array(pageSchema).min(1),
+  tasks: z.array(formTaskSchema).optional().default([]),
 });
 
 const createSchema = z.object({

@@ -113,6 +113,44 @@ type PersistedBuilderState = {
   formDescription: string;
   pages: BuilderPage[];
   visibilityRoles: RoleOptionKey[];
+  tasks: FormTask[];
+};
+
+type TaskType = "fillform" | "signature";
+
+type AssignmentMode = "specific" | "role" | "department" | "all";
+
+type TaskAssignment = {
+  mode: AssignmentMode;
+  values: string[]; // e.g. user ids, role keys, department ids or empty for all
+};
+
+type FormTask = {
+  id: string;
+  title: string;
+  type: TaskType;
+  formTemplateId?: string | null; // null means use current form
+  assignment: TaskAssignment;
+  status: "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "DONE";
+};
+
+type WorkflowUserOption = {
+  id: string;
+  name: string;
+  email: string;
+  role?: { key: string; name: string } | null;
+  department?: { id: string; name: string } | null;
+};
+
+type WorkflowDepartmentOption = {
+  id: string;
+  name: string;
+};
+
+type SelectableOption = {
+  id: string;
+  label: string;
+  meta?: string;
 };
 
 type DragState =
@@ -433,6 +471,14 @@ export const AdminFormBuilder = () => {
   const [visibilityRoles, setVisibilityRoles] = useState<RoleOptionKey[]>(
     roleOptions.map((role) => role.key),
   );
+  const [tasks, setTasks] = useState<FormTask[]>([]);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [taskWizardStep, setTaskWizardStep] = useState(1);
+  const [taskDraft, setTaskDraft] = useState<Partial<FormTask> | null>(null);
+  const [workflowUsers, setWorkflowUsers] = useState<WorkflowUserOption[]>([]);
+  const [workflowDepartments, setWorkflowDepartments] = useState<
+    WorkflowDepartmentOption[]
+  >([]);
   const [selectedItem, setSelectedItem] = useState<{
     pageId: string;
     fieldId: string;
@@ -447,9 +493,10 @@ export const AdminFormBuilder = () => {
     null,
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(
-    queryTemplateId,
+  const [createdTemplateId, setCreatedTemplateId] = useState<string | null>(
+    null,
   );
+  const currentTemplateId = queryTemplateId ?? createdTemplateId;
   const [isBootstrapped, setIsBootstrapped] = useState(false);
   const gridRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const textAreaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
@@ -481,14 +528,186 @@ export const AdminFormBuilder = () => {
 
   const cellLineHeight = `${GRID_UNIT_MM}mm`;
 
+  const taskRoleOptions = useMemo<SelectableOption[]>(
+    () => roleOptions.map((role) => ({ id: role.key, label: role.label })),
+    [],
+  );
+
+  const taskDepartmentOptions = useMemo<SelectableOption[]>(
+    () =>
+      workflowDepartments.map((department) => ({
+        id: department.id,
+        label: department.name,
+      })),
+    [workflowDepartments],
+  );
+
+  const taskUserOptions = useMemo<SelectableOption[]>(
+    () =>
+      workflowUsers.map((user) => ({
+        id: user.id,
+        label: user.name,
+        meta: user.email,
+      })),
+    [workflowUsers],
+  );
+
+  const toggleTaskAssignmentValue = useCallback((value: string) => {
+    setTaskDraft((prev) => {
+      if (!prev) return prev;
+      if (!prev.assignment) return prev;
+      const current = prev.assignment?.values ?? [];
+      const next = current.includes(value)
+        ? current.filter((entry) => entry !== value)
+        : [...current, value];
+      return {
+        ...prev,
+        assignment: {
+          mode: prev.assignment.mode,
+          values: next,
+        },
+      };
+    });
+  }, []);
+
+  const selectedTaskRoleLabels = (
+    taskDraft?.assignment?.mode === "role" ? taskDraft.assignment.values : []
+  )
+    .map(
+      (value) => taskRoleOptions.find((option) => option.id === value)?.label,
+    )
+    .filter((value): value is string => Boolean(value));
+
+  const selectedTaskDepartmentLabels = (
+    taskDraft?.assignment?.mode === "department"
+      ? taskDraft.assignment.values
+      : []
+  )
+    .map(
+      (value) =>
+        taskDepartmentOptions.find((option) => option.id === value)?.label,
+    )
+    .filter((value): value is string => Boolean(value));
+
+  const selectedTaskUserOptions = (
+    taskDraft?.assignment?.mode === "specific"
+      ? taskDraft.assignment.values
+      : []
+  )
+    .map((value) => taskUserOptions.find((option) => option.id === value))
+    .filter((value): value is SelectableOption => Boolean(value));
+
+  const selectedTaskAssignmentValues = taskDraft?.assignment?.values ?? [];
+
+  const renderSelectedChips = (labels: string[]) =>
+    labels.length > 0 ? (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {labels.map((label) => (
+          <span
+            key={label}
+            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+    ) : (
+      <p className="mt-3 text-xs text-slate-500">No selection yet.</p>
+    );
+
+  const renderSelectableGrid = (
+    options: SelectableOption[],
+    selectedIds: string[],
+  ) => (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {options.map((option) => {
+        const selected = selectedIds.includes(option.id);
+
+        return (
+          <div
+            key={option.id}
+            className={cn(
+              "flex items-center justify-between rounded-2xl border px-4 py-3 transition",
+              selected
+                ? "border-cyan-200 bg-cyan-50/80 shadow-sm"
+                : "border-slate-200 bg-white/90 hover:border-slate-300 hover:bg-white",
+            )}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {option.label}
+              </p>
+              {option.meta ? (
+                <p className="truncate text-xs text-slate-500">{option.meta}</p>
+              ) : null}
+            </div>
+            <div className="ml-3 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => toggleTaskAssignmentValue(option.id)}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold transition",
+                  selected
+                    ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                )}
+                aria-label={
+                  selected ? `Remove ${option.label}` : `Add ${option.label}`
+                }
+              >
+                {selected ? "−" : "+"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   const storageKey = useMemo(
     () => `admin-form-builder:draft:${currentTemplateId ?? "new"}`,
     [currentTemplateId],
   );
 
   useEffect(() => {
-    setCurrentTemplateId(queryTemplateId);
-  }, [queryTemplateId]);
+    let cancelled = false;
+
+    const loadWorkflowOptions = async () => {
+      try {
+        const [usersRes, metaRes] = await Promise.all([
+          fetch("/api/admin/users"),
+          fetch("/api/admin/statistics/meta"),
+        ]);
+
+        if (!usersRes.ok || !metaRes.ok) return;
+
+        const usersPayload = (await usersRes.json()) as {
+          ok?: boolean;
+          data?: WorkflowUserOption[];
+        };
+
+        const metaPayload = (await metaRes.json()) as {
+          ok?: boolean;
+          data?: {
+            departments?: WorkflowDepartmentOption[];
+          };
+        };
+
+        if (cancelled) return;
+
+        setWorkflowUsers(usersPayload.data ?? []);
+        setWorkflowDepartments(metaPayload.data?.departments ?? []);
+      } catch {
+        // Keep editor usable even when dropdown data API is unavailable.
+      }
+    };
+
+    void loadWorkflowOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -502,6 +721,7 @@ export const AdminFormBuilder = () => {
           ? state.visibilityRoles
           : roleOptions.map((role) => role.key),
       );
+      setTasks(Array.isArray(state.tasks) ? state.tasks : []);
       setSelectedItem(null);
       setSettingsDraft(null);
       setSettingsPageId(null);
@@ -533,6 +753,9 @@ export const AdminFormBuilder = () => {
               : "",
           pages: parsed.pages,
           visibilityRoles: nextVisibility,
+          tasks: Array.isArray(parsed.tasks)
+            ? (parsed.tasks as FormTask[])
+            : [],
         };
       } catch {
         return null;
@@ -598,6 +821,9 @@ export const AdminFormBuilder = () => {
             (entry): entry is RoleOptionKey =>
               roleOptions.some((role) => role.key === entry),
           ),
+          tasks: Array.isArray((data.data.schema as { tasks?: unknown }).tasks)
+            ? ((data.data.schema as { tasks?: FormTask[] }).tasks ?? [])
+            : [],
         });
       } catch (error) {
         console.error("Unable to bootstrap form builder", error);
@@ -626,6 +852,7 @@ export const AdminFormBuilder = () => {
       formDescription,
       pages,
       visibilityRoles,
+      tasks,
     };
     window.localStorage.setItem(storageKey, JSON.stringify(payload));
   }, [
@@ -634,6 +861,7 @@ export const AdminFormBuilder = () => {
     isBootstrapped,
     pages,
     storageKey,
+    tasks,
     visibilityRoles,
   ]);
 
@@ -977,6 +1205,7 @@ export const AdminFormBuilder = () => {
     setFormDescription("");
     setPages([createPage(0, true)]);
     setVisibilityRoles(defaultVisibility);
+    setTasks([]);
     setSelectedItem(null);
     setDragState(null);
     setDropPreview(null);
@@ -1348,6 +1577,7 @@ export const AdminFormBuilder = () => {
             rows: GRID_ROWS,
           },
           pages,
+          tasks,
         },
       };
 
@@ -1373,7 +1603,7 @@ export const AdminFormBuilder = () => {
 
       const savedId = data.data?.id;
       if (savedId) {
-        setCurrentTemplateId(savedId);
+        setCreatedTemplateId(savedId);
       }
 
       if (typeof window !== "undefined") {
@@ -1404,6 +1634,22 @@ export const AdminFormBuilder = () => {
     }
   };
 
+  const handleDispatchTask = async (taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status: "ASSIGNED" } : t)),
+    );
+    setStatusTone("success");
+    setStatusMessage("Task dispatched.");
+    // TODO: integrate with backend to actually assign to users based on filters
+  };
+
+  const handleDispatchAll = async () => {
+    setTasks((prev) => prev.map((t) => ({ ...t, status: "ASSIGNED" })));
+    setStatusTone("success");
+    setStatusMessage("All tasks dispatched.");
+    // TODO: call backend API to create task instances for each assigned user
+  };
+
   return (
     <div className="space-y-6">
       <SurfaceCard className="space-y-5" spotlight>
@@ -1431,6 +1677,23 @@ export const AdminFormBuilder = () => {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button variant="secondary" onClick={handleAddPage}>
               Add page
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsTaskModalOpen(true);
+                setTaskWizardStep(1);
+                setTaskDraft({
+                  id: createId(),
+                  title: "New task",
+                  type: "fillform",
+                  formTemplateId: currentTemplateId,
+                  assignment: { mode: "all", values: [] },
+                  status: "PENDING",
+                });
+              }}
+            >
+              Add task
             </Button>
             <Button
               variant="secondary"
@@ -1585,7 +1848,7 @@ export const AdminFormBuilder = () => {
                             field.kind === "input" ||
                             field.kind === "textarea" ||
                             field.kind === "checkbox") &&
-                            "rounded-sm border-2 border-dashed border-rose-400 bg-rose-50/20",
+                            "rounded-sm border border-slate-200 bg-white/60",
                           field.kind === "textarea"
                             ? editingTextAreaId === field.id
                               ? "cursor-text"
@@ -1594,7 +1857,7 @@ export const AdminFormBuilder = () => {
                               ? "cursor-default"
                               : "cursor-grab rounded-md active:cursor-grabbing",
                           selectedItem?.fieldId === field.id
-                            ? "bg-white/95 ring-1 ring-slate-400"
+                            ? "border-slate-300 bg-white/95 ring-2 ring-slate-300"
                             : "hover:bg-white/70",
                         )}
                         style={{
@@ -1963,6 +2226,88 @@ export const AdminFormBuilder = () => {
             <p className="text-xs text-slate-500">
               Select a field to edit its settings.
             </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-sm font-semibold text-slate-900">Tasks</p>
+            <p className="text-xs text-slate-500">
+              Create and assign tasks for this form.
+            </p>
+            <div className="mt-3 space-y-2">
+              {tasks.length === 0 ? (
+                <p className="text-xs text-slate-500">No tasks created yet.</p>
+              ) : (
+                tasks.map((t) => (
+                  <div
+                    key={t.id}
+                    className="rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-900">
+                          {t.title}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {t.type === "fillform"
+                            ? "Fill form"
+                            : "Signature only"}{" "}
+                          • {t.assignment.mode}
+                        </div>
+                      </div>
+                      <div className="text-xs font-medium text-slate-700">
+                        {t.status}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleDispatchTask(t.id)}
+                      >
+                        Dispatch
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          setTasks((prev) =>
+                            prev.map((entry) =>
+                              entry.id === t.id
+                                ? { ...entry, status: "DONE" }
+                                : entry,
+                            ),
+                          )
+                        }
+                      >
+                        Mark done
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button
+                onClick={() => {
+                  setIsTaskModalOpen(true);
+                  setTaskWizardStep(1);
+                  setTaskDraft({
+                    id: createId(),
+                    title: "New task",
+                    type: "fillform",
+                    formTemplateId: currentTemplateId,
+                    assignment: { mode: "all", values: [] },
+                    status: "PENDING",
+                  });
+                }}
+              >
+                Add task
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleDispatchAll()}
+                disabled={tasks.length === 0}
+              >
+                Dispatch all
+              </Button>
+            </div>
           </div>
 
           {/*
@@ -2554,6 +2899,355 @@ export const AdminFormBuilder = () => {
                 Cancel
               </Button>
               <Button onClick={handleSettingsSave}>Save changes</Button>
+            </div>
+          </SurfaceCard>
+        </div>
+      ) : null}
+
+      {isTaskModalOpen && taskDraft ? (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/40"
+            onClick={() => {
+              setIsTaskModalOpen(false);
+              setTaskDraft(null);
+            }}
+            aria-label="Close task modal"
+          />
+          <SurfaceCard className="relative w-full max-w-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-lg font-semibold text-slate-900">
+                  Create task
+                </p>
+                <p className="text-xs text-slate-500">
+                  Define a task and who should perform it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTaskModalOpen(false);
+                  setTaskDraft(null);
+                }}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
+              >
+                Close
+              </button>
+            </div>
+
+            <div>
+              <div className="mb-3 text-sm font-medium">
+                Step {taskWizardStep} of {taskDraft.type === "fillform" ? 3 : 2}
+              </div>
+
+              {taskWizardStep === 1 ? (
+                <div className="space-y-3">
+                  <Label>Task title</Label>
+                  <Input
+                    value={taskDraft.title ?? ""}
+                    onChange={(e) =>
+                      setTaskDraft((prev) =>
+                        prev ? { ...prev, title: e.target.value } : prev,
+                      )
+                    }
+                  />
+                  <div>
+                    <Label>Task type</Label>
+                    <div className="flex gap-3 mt-2">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="task-type"
+                          checked={taskDraft.type === "fillform"}
+                          onChange={() =>
+                            setTaskDraft((prev) =>
+                              prev ? { ...prev, type: "fillform" } : prev,
+                            )
+                          }
+                        />
+                        <span className="text-sm">Fill form</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="task-type"
+                          checked={taskDraft.type === "signature"}
+                          onChange={() =>
+                            setTaskDraft((prev) =>
+                              prev ? { ...prev, type: "signature" } : prev,
+                            )
+                          }
+                        />
+                        <span className="text-sm">Signature only</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ) : taskWizardStep === 2 ? (
+                <div className="space-y-3">
+                  {taskDraft.type === "fillform" ? (
+                    <>
+                      <Label htmlFor="task-template-id">
+                        Template id (required)
+                      </Label>
+                      <Input
+                        id="task-template-id"
+                        placeholder="Enter template id"
+                        value={taskDraft.formTemplateId ?? ""}
+                        onChange={(e) =>
+                          setTaskDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  formTemplateId: e.target.value || null,
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                      <p className="text-xs text-slate-500">
+                        Fill-form tasks must reference a template id.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm">
+                      Signature-only tasks are added directly. Continue to
+                      assignment.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Label>Assign to</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+                      <input
+                        type="radio"
+                        name="assign-mode"
+                        checked={taskDraft.assignment?.mode === "all"}
+                        onChange={() =>
+                          setTaskDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  assignment: { mode: "all", values: [] },
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                      <span className="text-sm">Everyone (all users)</span>
+                    </label>
+                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+                      <input
+                        type="radio"
+                        name="assign-mode"
+                        checked={taskDraft.assignment?.mode === "role"}
+                        onChange={() =>
+                          setTaskDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  assignment: { mode: "role", values: [] },
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                      <span className="text-sm">By role</span>
+                    </label>
+                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+                      <input
+                        type="radio"
+                        name="assign-mode"
+                        checked={taskDraft.assignment?.mode === "department"}
+                        onChange={() =>
+                          setTaskDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  assignment: {
+                                    mode: "department",
+                                    values: [],
+                                  },
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                      <span className="text-sm">By department</span>
+                    </label>
+                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+                      <input
+                        type="radio"
+                        name="assign-mode"
+                        checked={taskDraft.assignment?.mode === "specific"}
+                        onChange={() =>
+                          setTaskDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  assignment: { mode: "specific", values: [] },
+                                }
+                              : prev,
+                          )
+                        }
+                      />
+                      <span className="text-sm">Specific users</span>
+                    </label>
+                  </div>
+
+                  {taskDraft.assignment?.mode === "role" ? (
+                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+                      <div className="space-y-1">
+                        <Label>Select roles</Label>
+                        <p className="text-xs text-slate-500">
+                          Tap + to add or − to remove roles assigned to this
+                          task.
+                        </p>
+                      </div>
+                      {renderSelectableGrid(
+                        taskRoleOptions,
+                        selectedTaskAssignmentValues,
+                      )}
+                      {renderSelectedChips(selectedTaskRoleLabels)}
+                    </div>
+                  ) : null}
+
+                  {taskDraft.assignment?.mode === "department" ? (
+                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+                      <div className="space-y-1">
+                        <Label>Select departments</Label>
+                        <p className="text-xs text-slate-500">
+                          Tap + to add or − to remove departments assigned to
+                          this task.
+                        </p>
+                      </div>
+                      {renderSelectableGrid(
+                        taskDepartmentOptions,
+                        selectedTaskAssignmentValues,
+                      )}
+                      {renderSelectedChips(selectedTaskDepartmentLabels)}
+                    </div>
+                  ) : null}
+
+                  {taskDraft.assignment?.mode === "specific" ? (
+                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+                      <div className="space-y-1">
+                        <Label>Select users</Label>
+                        <p className="text-xs text-slate-500">
+                          Tap + to add or − to remove specific users assigned to
+                          this task.
+                        </p>
+                      </div>
+                      {renderSelectableGrid(
+                        taskUserOptions,
+                        selectedTaskAssignmentValues,
+                      )}
+                      {renderSelectedChips(
+                        selectedTaskUserOptions.map(
+                          (option) =>
+                            `${option.label}${option.meta ? ` · ${option.meta}` : ""}`,
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              {taskWizardStep > 1 ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (
+                      taskDraft.type === "signature" &&
+                      taskWizardStep === 3
+                    ) {
+                      setTaskWizardStep(1);
+                      return;
+                    }
+                    setTaskWizardStep((s) => Math.max(1, s - 1));
+                  }}
+                >
+                  Back
+                </Button>
+              ) : null}
+              {taskWizardStep < 3 ? (
+                <Button
+                  onClick={() => {
+                    if (
+                      taskWizardStep === 1 &&
+                      taskDraft.type === "signature"
+                    ) {
+                      setTaskWizardStep(3);
+                      return;
+                    }
+
+                    if (taskWizardStep === 2 && taskDraft.type === "fillform") {
+                      if (!taskDraft.formTemplateId?.trim()) {
+                        setStatusTone("error");
+                        setStatusMessage(
+                          "Template id is required for fill-form tasks.",
+                        );
+                        return;
+                      }
+                    }
+
+                    setTaskWizardStep((s) => Math.min(3, s + 1));
+                  }}
+                >
+                  Next
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    if (taskDraft.type === "fillform") {
+                      if (!taskDraft.formTemplateId?.trim()) {
+                        setStatusTone("error");
+                        setStatusMessage(
+                          "Template id is required for fill-form tasks.",
+                        );
+                        return;
+                      }
+                    }
+
+                    if (
+                      taskDraft.assignment?.mode !== "all" &&
+                      (taskDraft.assignment?.values?.length ?? 0) === 0
+                    ) {
+                      setStatusTone("error");
+                      setStatusMessage(
+                        "Please select at least one assignment target.",
+                      );
+                      return;
+                    }
+
+                    // finalize and save
+                    const finalTask: FormTask = {
+                      id: (taskDraft.id as string) ?? createId(),
+                      title: (taskDraft.title as string) ?? "Task",
+                      type: (taskDraft.type as TaskType) ?? "fillform",
+                      formTemplateId: taskDraft.formTemplateId ?? null,
+                      assignment: taskDraft.assignment ?? {
+                        mode: "all",
+                        values: [],
+                      },
+                      status: "PENDING",
+                    };
+                    setTasks((prev) => [...prev, finalTask]);
+                    setIsTaskModalOpen(false);
+                    setTaskDraft(null);
+                    setStatusTone("success");
+                    setStatusMessage("Task created.");
+                  }}
+                >
+                  Save task
+                </Button>
+              )}
             </div>
           </SurfaceCard>
         </div>

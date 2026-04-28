@@ -40,12 +40,20 @@ export default async function FormsPage() {
     <DashboardShell>
       <div className="space-y-6">
         <header className="space-y-2">
-          <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
-            Forms
-          </h1>
-          <p className="text-base text-slate-600">
-            Open a form, fill it, and submit your details.
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
+                Forms
+              </h1>
+              <p className="text-base text-slate-600">
+                Open a form, fill it, and submit your details.
+              </p>
+            </div>
+
+            <Button asChild variant="secondary">
+              <Link href="/dashboard/forms/approvals">Approvals inbox</Link>
+            </Button>
+          </div>
         </header>
 
         <div className="grid gap-4">
