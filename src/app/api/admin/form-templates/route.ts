@@ -24,35 +24,36 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, message: "Template id is required." },
-        { status: 400 },
-      );
+    if (id) {
+      const template = await prisma.formTemplate.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          schema: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!template) {
+        return NextResponse.json(
+          { ok: false, message: "Form template not found." },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json({ ok: true, data: template });
     }
 
-    const template = await prisma.formTemplate.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        schema: true,
-        updatedAt: true,
-      },
+    // No id provided => return a short list for admin dropdowns
+    const templates = await prisma.formTemplate.findMany({
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, description: true, updatedAt: true },
+      take: 200,
     });
 
-    if (!template) {
-      return NextResponse.json(
-        { ok: false, message: "Form template not found." },
-        { status: 404 },
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      data: template,
-    });
+    return NextResponse.json({ ok: true, data: { items: templates } });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json(
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
         : "";
 
     await logAuditEvent({
+      request,
       action: "ADMIN_CREATE_FORM_TEMPLATE",
       entityType: "FORM_TEMPLATE",
       entityId: result.body.data?.id ?? null,
@@ -135,6 +137,7 @@ export async function PATCH(request: Request) {
         : "";
 
     await logAuditEvent({
+      request,
       action: "ADMIN_UPDATE_FORM_TEMPLATE",
       entityType: "FORM_TEMPLATE",
       entityId: templateId || null,
@@ -178,6 +181,7 @@ export async function DELETE(request: Request) {
     const result = await deleteFormTemplateHandler({ id });
 
     await logAuditEvent({
+      request,
       action: "ADMIN_DELETE_FORM_TEMPLATE",
       entityType: "FORM_TEMPLATE",
       entityId: id || null,

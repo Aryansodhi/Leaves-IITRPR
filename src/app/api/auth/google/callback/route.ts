@@ -130,6 +130,7 @@ export async function GET(request: Request) {
     const email = (profile.email ?? "").toLowerCase();
     if (!email.endsWith("@iitrpr.ac.in") || profile.email_verified !== true) {
       await logAuditEvent({
+        request,
         action: "AUTH_GOOGLE_FAIL",
         entityType: "AUTH",
         entityId: null,
@@ -158,6 +159,7 @@ export async function GET(request: Request) {
 
     if (!user || !user.isActive) {
       await logAuditEvent({
+        request,
         action: "AUTH_GOOGLE_FAIL",
         entityType: "AUTH",
         entityId: null,
@@ -202,6 +204,7 @@ export async function GET(request: Request) {
     });
 
     await logAuditEvent({
+      request,
       action: "AUTH_GOOGLE_SUCCESS",
       entityType: "AUTH",
       entityId: user.id,

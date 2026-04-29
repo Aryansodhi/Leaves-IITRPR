@@ -27,6 +27,9 @@ type AuditLogRecord = {
   createdAt: string;
 };
 
+const toText = (value: unknown) =>
+  typeof value === "string" && value.trim().length > 0 ? value : null;
+
 export const AuditLogPanel = () => {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -41,6 +44,12 @@ export const AuditLogPanel = () => {
   const [source, setSource] = useState<"table" | "derived" | "unknown">(
     "unknown",
   );
+
+  const getDestinationIp = (item: AuditLogRecord) =>
+    toText(item.details?.destinationIp) ?? "-";
+
+  const getCurrentHostIp = (item: AuditLogRecord) =>
+    toText(item.details?.currentHostIp) ?? "-";
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -220,6 +229,10 @@ export const AuditLogPanel = () => {
                 <th className="border-b border-slate-200 px-3 py-2">User</th>
                 <th className="border-b border-slate-200 px-3 py-2">IP</th>
                 <th className="border-b border-slate-200 px-3 py-2">
+                  Destination IP
+                </th>
+                <th className="border-b border-slate-200 px-3 py-2">Host IP</th>
+                <th className="border-b border-slate-200 px-3 py-2">
                   Reference
                 </th>
                 <th className="border-b border-slate-200 px-3 py-2">Entity</th>
@@ -241,6 +254,8 @@ export const AuditLogPanel = () => {
                     </span>
                   </td>
                   <td className="px-3 py-2">{item.ipAddress ?? "-"}</td>
+                  <td className="px-3 py-2">{getDestinationIp(item)}</td>
+                  <td className="px-3 py-2">{getCurrentHostIp(item)}</td>
                   <td className="px-3 py-2">{item.referenceCode ?? "-"}</td>
                   <td className="px-3 py-2">
                     {item.entityType}

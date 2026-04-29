@@ -45,6 +45,7 @@ export async function PATCH(request: Request) {
     });
 
     await logAuditEvent({
+      request,
       action: "UPDATE_PROFILE",
       entityType: "USER",
       entityId: actor.userId,

@@ -49,6 +49,7 @@ export async function POST(
 
       const userAgent = request.headers.get("user-agent");
       await logAuditEvent({
+        request,
         action: decision === "APPROVE" ? "APPROVE_LEAVE" : "REJECT_LEAVE",
         entityType: "LEAVE_APPLICATION",
         entityId: applicationId,

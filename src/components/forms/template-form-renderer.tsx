@@ -1,17 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { SurfaceCard } from "@/components/ui/surface-card";
-import { cn } from "@/lib/utils";
+import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
 import {
   DIGITAL_SIGNATURE_VALUE,
   useSignatureOtp,
 } from "@/components/leaves/use-signature-otp";
-import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { SurfaceCard } from "@/components/ui/surface-card";
+import { downloadFormAsPdf } from "@/lib/pdf-export";
+import { cn } from "@/lib/utils";
 
 type FieldLayout = {
   col: number;
@@ -145,6 +147,13 @@ export type FormTemplateSchema = {
 type TemplateFormRendererProps = {
   templateId: string;
   schema: FormTemplateSchema;
+  userEmail: string;
+  initialValues?: Record<string, string>;
+  readOnly?: boolean;
+  workflowContext?: {
+    items: WorkflowSubmissionItem[];
+    pendingForActor: WorkflowSubmissionItem | null;
+  };
 };
 
 const DEFAULT_GRID = {
@@ -177,97 +186,26 @@ const getTaskAssignmentSummary = (task: WorkflowTask) => {
     : "Selected users";
 };
 
-const FormSignatureField = ({
-  fieldId,
-  label,
-  required,
-  value,
-  onChange,
-}: {
-  fieldId: string;
-  label?: string;
-  required?: boolean;
-  value: string;
-  onChange: (nextValue: string) => void;
-}) => {
-  const signature = useSignatureOtp({ enableTyped: true });
-
-  useEffect(() => {
-    if (
-      signature.signatureMode === "typed" &&
-      signature.typedSignature.trim() &&
-      !signature.signatureCapture &&
-      !signature.isOtpVerified
-    ) {
-      onChange(signature.typedSignature.trim());
-      return;
-    }
-
-    if (signature.signatureCapture && signature.isOtpVerified) {
-      onChange(DIGITAL_SIGNATURE_VALUE);
-      return;
-    }
-
-    onChange("");
-  }, [
-    onChange,
-    signature.isOtpVerified,
-    signature.signatureCapture,
-    signature.signatureMode,
-    signature.typedSignature,
-  ]);
-
-  return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="space-y-1">
-          <Label className="text-[11px] text-slate-700">
-            {label || "Signature"}
-            {required ? " *" : ""}
-          </Label>
-          <p className="text-[10px] text-slate-500">
-            Choose a digital signature mode used in leave forms.
-          </p>
-        </div>
-        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          {value ? "Captured" : "Pending"}
-        </span>
-      </div>
-
-      <SignatureOtpVerificationCard
-        storageScope={fieldId}
-        signatureMode={signature.signatureMode}
-        onSignatureModeChange={signature.onSignatureModeChange}
-        typedSignature={signature.typedSignature}
-        onTypedSignatureChange={signature.onTypedSignatureChange}
-        otpEmail={signature.otpEmail}
-        otpCode={signature.otpCode}
-        onOtpCodeChange={signature.setOtpCode}
-        otpStatusMessage={signature.otpStatusMessage}
-        isSendingOtp={signature.isSendingOtp}
-        isVerifyingOtp={signature.isVerifyingOtp}
-        isSubmitting={false}
-        onSendOtp={signature.handleSendOtp}
-        onVerifyOtp={signature.handleVerifyOtp}
-        onSignatureChange={signature.onSignatureChange}
-        isOtpVerified={signature.isOtpVerified}
-      />
-    </div>
-  );
-};
-
 export const TemplateFormRenderer = ({
   templateId,
   schema,
+  userEmail,
+  initialValues: initialValuesProp,
+  readOnly = false,
+  workflowContext,
 }: TemplateFormRendererProps) => {
+  const searchParams = useSearchParams();
+  const shouldAutoDownload = searchParams.get("autoDownload") === "1";
   const pages = useMemo(() => schema.pages ?? [], [schema.pages]);
-  const signatureFields = useMemo(
+  const signatureFieldIds = useMemo(
     () =>
-      pages.flatMap((page) =>
-        page.fields.filter((field) => field.kind === "signature"),
-      ),
+      pages
+        .flatMap((page) => page.fields)
+        .filter((field): field is SignatureField => field.kind === "signature")
+        .map((field) => field.id),
     [pages],
   );
+  const hasSignatureField = signatureFieldIds.length > 0;
   const gridUnit = schema.grid?.unit ?? DEFAULT_GRID.unit;
   const gridColumns = schema.grid?.columns ?? DEFAULT_GRID.columns;
   const gridRows = schema.grid?.rows ?? DEFAULT_GRID.rows;
@@ -292,8 +230,8 @@ export const TemplateFormRenderer = ({
         }
       });
     });
-    return values;
-  }, [pages]);
+    return { ...values, ...(initialValuesProp ?? {}) };
+  }, [pages, initialValuesProp]);
 
   const [values, setValues] = useState<Record<string, string>>(initialValues);
   const [workflowItems, setWorkflowItems] = useState<WorkflowSubmissionItem[]>(
@@ -306,6 +244,19 @@ export const TemplateFormRenderer = ({
     null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const hasAutoDownloadedRef = useRef(false);
+  const printableRef = useRef<HTMLDivElement | null>(null);
+  const signature = useSignatureOtp({ enableTyped: true });
+  const approvalSignature = useSignatureOtp({ enableTyped: true });
+  const isApprovalView = Boolean(workflowContext);
+  useEffect(() => {
+    signature.setOtpEmail(userEmail);
+  }, [signature, userEmail]);
+
+  useEffect(() => {
+    approvalSignature.setOtpEmail(userEmail);
+  }, [approvalSignature, userEmail]);
 
   const hasWorkflow = (schema.tasks?.length ?? 0) > 0;
 
@@ -314,6 +265,7 @@ export const TemplateFormRenderer = ({
   }, []);
 
   const loadWorkflow = useCallback(async () => {
+    if (workflowContext) return workflowContext;
     if (!hasWorkflow) return null;
     try {
       const response = await fetch(
@@ -332,10 +284,9 @@ export const TemplateFormRenderer = ({
         pendingForActor: result.data?.pendingForActor ?? null,
       };
     } catch {
-      // Keep form usable if workflow status lookup fails.
       return null;
     }
-  }, [hasWorkflow, templateId]);
+  }, [hasWorkflow, templateId, workflowContext]);
 
   useEffect(() => {
     let cancelled = false;
@@ -353,6 +304,44 @@ export const TemplateFormRenderer = ({
       cancelled = true;
     };
   }, [loadWorkflow]);
+
+  useEffect(() => {
+    setValues(initialValues);
+  }, [initialValues]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!printableRef.current) return;
+
+    setSubmitMessage(null);
+    setSubmitTone(null);
+    setIsDownloading(true);
+
+    try {
+      await downloadFormAsPdf(
+        printableRef.current,
+        schema.title || "manual-form",
+        {
+          sanitizeFormFields: true,
+        },
+      );
+    } catch (error) {
+      setSubmitTone("error");
+      setSubmitMessage(
+        error instanceof Error ? error.message : "Unable to download form PDF.",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [schema.title]);
+
+  useEffect(() => {
+    if (!shouldAutoDownload) return;
+    if (hasAutoDownloadedRef.current) return;
+    if (!printableRef.current) return;
+
+    hasAutoDownloadedRef.current = true;
+    void handleDownloadPdf();
+  }, [handleDownloadPdf, shouldAutoDownload]);
 
   const handleSubmit = async () => {
     setSubmitMessage(null);
@@ -375,6 +364,19 @@ export const TemplateFormRenderer = ({
       return;
     }
 
+    if (hasSignatureField) {
+      const signatureError = signature.ensureReadyForSubmit({
+        typed: "Please type your signature before submitting.",
+        digital:
+          "Please complete Digital Signature and OTP verification before submitting.",
+      });
+      if (signatureError) {
+        setSubmitTone("error");
+        setSubmitMessage(signatureError);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -384,14 +386,42 @@ export const TemplateFormRenderer = ({
           : "SUBMIT"
         : "SUBMIT";
 
+      const payloadData: Record<string, string> = { ...values };
+
+      if (hasSignatureField) {
+        const signatureValue =
+          signature.signatureMode === "typed"
+            ? signature.typedSignature.trim()
+            : DIGITAL_SIGNATURE_VALUE;
+
+        signatureFieldIds.forEach((fieldId) => {
+          payloadData[fieldId] = signatureValue;
+        });
+      }
+
       const response = await fetch("/api/forms/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           templateId,
-          data: values,
+          data: payloadData,
           action: workflowAction,
           submissionId: pendingForActor?.id,
+          signatureMode: hasSignatureField
+            ? signature.signatureMode
+            : undefined,
+          typedSignature:
+            hasSignatureField && signature.signatureMode === "typed"
+              ? signature.typedSignature.trim()
+              : undefined,
+          signature:
+            hasSignatureField && signature.signatureMode !== "typed"
+              ? signature.signatureCapture
+              : undefined,
+          otpVerified:
+            hasSignatureField && signature.signatureMode !== "typed"
+              ? signature.isOtpVerified
+              : false,
         }),
       });
 
@@ -406,10 +436,15 @@ export const TemplateFormRenderer = ({
 
       setSubmitTone("success");
       setSubmitMessage(result.message ?? "Form submitted successfully.");
-      const workflow = await loadWorkflow();
-      if (workflow) {
-        setWorkflowItems(workflow.items);
-        setPendingForActor(workflow.pendingForActor);
+      if (hasWorkflow) {
+        const workflow = await loadWorkflow();
+        if (workflow) {
+          setWorkflowItems(workflow.items);
+          setPendingForActor(workflow.pendingForActor);
+        }
+      }
+      if (hasSignatureField) {
+        signature.resetAfterSubmit({ clearSignature: false });
       }
     } catch (error) {
       setSubmitTone("error");
@@ -425,8 +460,25 @@ export const TemplateFormRenderer = ({
     if (!pendingForActor) return;
     setSubmitMessage(null);
     setSubmitTone(null);
+
+    const signatureError = approvalSignature.ensureReadyForSubmit({
+      typed: "Please type the approver signature before completing the task.",
+      digital:
+        "Please complete Digital Signature and OTP verification before completing the task.",
+    });
+    if (signatureError) {
+      setSubmitTone("error");
+      setSubmitMessage(signatureError);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      const approvalSignatureValue =
+        approvalSignature.signatureMode === "typed"
+          ? approvalSignature.typedSignature.trim()
+          : DIGITAL_SIGNATURE_VALUE;
+
       const response = await fetch("/api/forms/submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -435,6 +487,20 @@ export const TemplateFormRenderer = ({
           action: "COMPLETE_TASK",
           submissionId: pendingForActor.id,
           data: {},
+          signatureMode: approvalSignature.signatureMode,
+          typedSignature:
+            approvalSignature.signatureMode === "typed"
+              ? approvalSignature.typedSignature.trim()
+              : undefined,
+          signature:
+            approvalSignature.signatureMode !== "typed"
+              ? approvalSignature.signatureCapture
+              : undefined,
+          otpVerified:
+            approvalSignature.signatureMode !== "typed"
+              ? approvalSignature.isOtpVerified
+              : false,
+          approverSignature: approvalSignatureValue,
         }),
       });
       const result = (await response.json()) as {
@@ -446,6 +512,7 @@ export const TemplateFormRenderer = ({
       }
       setSubmitTone("success");
       setSubmitMessage(result.message ?? "Task completed.");
+      approvalSignature.resetAfterSubmit({ clearSignature: true });
       const workflow = await loadWorkflow();
       if (workflow) {
         setWorkflowItems(workflow.items);
@@ -461,10 +528,7 @@ export const TemplateFormRenderer = ({
     }
   };
 
-  const showFormCanvas =
-    !hasWorkflow ||
-    pendingForActor?.currentTaskType === "fillform" ||
-    !pendingForActor;
+  const canActOnCurrentTask = Boolean(pendingForActor?.canAct);
 
   const workflowRoadmap = useMemo(
     () =>
@@ -475,14 +539,20 @@ export const TemplateFormRenderer = ({
       })),
     [pendingForActor?.currentTaskIndex, schema.tasks],
   );
-
-  const canActOnCurrentTask = Boolean(pendingForActor?.canAct);
-  const shouldShowWorkflowTaskDetails =
-    hasWorkflow && (canActOnCurrentTask || workflowItems.length === 0);
+  const shouldShowWorkflowTaskDetails = hasWorkflow && canActOnCurrentTask;
   const showCompleteTaskButton =
+    isApprovalView &&
     hasWorkflow &&
     pendingForActor?.currentTaskType === "signature" &&
     canActOnCurrentTask;
+  const showFillFormWorkflow =
+    isApprovalView &&
+    hasWorkflow &&
+    pendingForActor?.currentTaskType === "fillform" &&
+    canActOnCurrentTask;
+  const canEditWorkflowForm =
+    !readOnly && (!hasWorkflow || !pendingForActor || showFillFormWorkflow);
+  const showWorkflowAuditTrail = hasWorkflow && workflowItems.length > 0;
 
   if (!pages.length) {
     return (
@@ -496,184 +566,336 @@ export const TemplateFormRenderer = ({
 
   return (
     <div className="space-y-6">
-      {showFormCanvas
-        ? pages.map((page, pageIndex) => (
-            <SurfaceCard key={page.id} className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
-                  {page.title ?? `Page ${pageIndex + 1}`}
+      {hasWorkflow && canActOnCurrentTask && pendingForActor && (
+        <SurfaceCard className="border-slate-200/80 bg-slate-50/50 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Step {(pendingForActor.currentTaskIndex ?? 0) + 1} of{" "}
+                {schema.tasks?.length ?? 0}
+              </p>
+              <p className="text-xs text-slate-600 mt-1">
+                Waiting for:{" "}
+                <span className="font-medium">
+                  {pendingForActor.currentTaskTitle ?? "Unknown task"}
+                </span>
+              </p>
+            </div>
+            {pendingForActor.canAct ? (
+              <span className="inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                Your turn
+              </span>
+            ) : null}
+          </div>
+        </SurfaceCard>
+      )}
+      {showWorkflowAuditTrail ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-base font-semibold text-slate-900">
+              Workflow audit trail
+            </p>
+            <p className="text-xs text-slate-500">
+              Track the current submission state without opening the approval
+              form.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {workflowItems.slice(0, 3).map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-col gap-1 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {item.submittedBy?.name ??
+                      item.submittedBy?.email ??
+                      "Unknown user"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Current step: {item.currentTaskTitle ?? "No active step"}
+                  </p>
+                </div>
+                <p
+                  className={cn(
+                    "text-xs font-semibold uppercase tracking-wide",
+                    item.status === "APPROVED"
+                      ? "text-emerald-700"
+                      : "text-amber-700",
+                  )}
+                >
+                  {item.status === "APPROVED" ? "Approved" : "Pending"}
                 </p>
               </div>
+            ))}
+          </div>
+        </SurfaceCard>
+      ) : null}
+      <div ref={printableRef} className="space-y-6">
+        {pages.map((page, pageIndex) => (
+          <SurfaceCard key={page.id} className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                {page.title ?? `Page ${pageIndex + 1}`}
+              </p>
+            </div>
 
+            <div
+              className="mx-auto w-[210mm] min-h-[297mm] rounded-lg border border-slate-300 bg-white shadow-sm"
+              style={{
+                padding: `${pageVerticalMarginMm}mm ${pageHorizontalMarginMm}mm`,
+                width: `${PAGE_WIDTH_MM}mm`,
+                minHeight: `${PAGE_HEIGHT_MM}mm`,
+              }}
+            >
               <div
-                className="mx-auto w-[210mm] min-h-[297mm] rounded-lg border border-slate-300 bg-white shadow-sm"
+                className="relative grid"
                 style={{
-                  padding: `${pageVerticalMarginMm}mm ${pageHorizontalMarginMm}mm`,
-                  width: `${PAGE_WIDTH_MM}mm`,
-                  minHeight: `${PAGE_HEIGHT_MM}mm`,
+                  gridTemplateColumns: `repeat(${gridColumns}, ${gridUnit}mm)`,
+                  gridAutoRows: `${gridUnit}mm`,
+                  width: `${gridWidthMm}mm`,
+                  height: `${gridHeightMm}mm`,
                 }}
               >
-                <div
-                  className="relative grid"
-                  style={{
-                    gridTemplateColumns: `repeat(${gridColumns}, ${gridUnit}mm)`,
-                    gridAutoRows: `${gridUnit}mm`,
-                    width: `${gridWidthMm}mm`,
-                    height: `${gridHeightMm}mm`,
-                  }}
-                >
-                  {page.fields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="relative"
-                      style={{
-                        gridColumn: `${field.layout.col} / span ${field.layout.colSpan}`,
-                        gridRow: `${field.layout.row} / span ${field.layout.rowSpan}`,
-                      }}
-                    >
-                      {field.kind === "brand" ? (
-                        <div className="flex h-full w-full flex-col items-center justify-center px-2 text-center">
-                          {field.showLogo ? (
-                            <Image
-                              src="/iit_ropar.png"
-                              alt="IIT Ropar"
-                              width={64}
-                              height={64}
-                              className="h-14 w-14 object-contain"
-                              priority
-                            />
-                          ) : null}
-                          <p
-                            className="mt-2 text-[12px] font-semibold text-slate-900"
-                            style={{ lineHeight: cellLineHeight }}
-                          >
-                            {field.collegeName}
-                          </p>
-                          <p
-                            className="mt-1 text-[12px] font-semibold text-slate-900"
-                            style={{ lineHeight: cellLineHeight }}
-                          >
-                            {field.formHeading || schema.title || ""}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {field.kind === "text" ? (
-                        <div
-                          className={cn(
-                            "h-full w-full whitespace-pre-wrap text-[12px] text-slate-900",
-                            field.alignment === "center"
-                              ? "text-center"
-                              : field.alignment === "right"
-                                ? "text-right"
-                                : "text-left",
-                          )}
+                {page.fields.map((field) => (
+                  <div
+                    key={field.id}
+                    className="relative"
+                    style={{
+                      gridColumn: `${field.layout.col} / span ${field.layout.colSpan}`,
+                      gridRow: `${field.layout.row} / span ${field.layout.rowSpan}`,
+                    }}
+                  >
+                    {field.kind === "brand" ? (
+                      <div className="flex h-full w-full flex-col items-center justify-center px-2 text-center">
+                        {field.showLogo ? (
+                          <Image
+                            src="/iit_ropar.png"
+                            alt="IIT Ropar"
+                            width={64}
+                            height={64}
+                            className="h-14 w-14 object-contain"
+                            priority
+                          />
+                        ) : null}
+                        <p
+                          className="mt-2 text-[12px] font-semibold text-slate-900"
                           style={{ lineHeight: cellLineHeight }}
                         >
-                          {field.content}
-                        </div>
-                      ) : null}
+                          {field.collegeName}
+                        </p>
+                        <p
+                          className="mt-1 text-[12px] font-semibold text-slate-900"
+                          style={{ lineHeight: cellLineHeight }}
+                        >
+                          {field.formHeading || schema.title || ""}
+                        </p>
+                      </div>
+                    ) : null}
 
-                      {field.kind === "input" ? (
-                        <div className="flex h-full w-full flex-col justify-center gap-1">
-                          {field.label ? (
-                            <Label className="text-[11px] text-slate-700">
-                              {field.label}
-                              {field.required ? " *" : ""}
-                            </Label>
-                          ) : null}
-                          <input
-                            type={field.inputType}
-                            value={values[field.id] ?? ""}
-                            onChange={(event) =>
-                              updateValue(field.id, event.target.value)
-                            }
-                            placeholder={
-                              field.inputType === "date"
-                                ? "DD/MM/YYYY"
-                                : undefined
-                            }
-                            className="w-full border-0 border-b border-dashed border-slate-400 bg-transparent px-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
-                            style={{ lineHeight: cellLineHeight }}
-                          />
-                          {field.helpText ? (
-                            <p className="text-[10px] text-slate-500">
-                              {field.helpText}
-                            </p>
+                    {field.kind === "text" ? (
+                      <div
+                        className={cn(
+                          "h-full w-full whitespace-pre-wrap text-[12px] text-slate-900",
+                          field.alignment === "center"
+                            ? "text-center"
+                            : field.alignment === "right"
+                              ? "text-right"
+                              : "text-left",
+                        )}
+                        style={{ lineHeight: cellLineHeight }}
+                      >
+                        {field.content}
+                      </div>
+                    ) : null}
+
+                    {field.kind === "input" ? (
+                      <div className="flex h-full w-full flex-col justify-center gap-1">
+                        {field.label ? (
+                          <Label className="text-[11px] text-slate-700">
+                            {field.label}
+                            {field.required ? " *" : ""}
+                          </Label>
+                        ) : null}
+                        <input
+                          type={field.inputType}
+                          value={values[field.id] ?? ""}
+                          readOnly={
+                            readOnly || (hasWorkflow && !canEditWorkflowForm)
+                          }
+                          disabled={
+                            readOnly || (hasWorkflow && !canEditWorkflowForm)
+                          }
+                          onChange={(event) => {
+                            if (!canEditWorkflowForm) return;
+                            updateValue(field.id, event.target.value);
+                          }}
+                          placeholder={
+                            field.inputType === "date"
+                              ? "DD/MM/YYYY"
+                              : undefined
+                          }
+                          className="w-full border-0 border-b border-dashed border-slate-400 bg-transparent px-1 text-[12px] text-slate-900 focus:border-slate-800 focus:outline-none"
+                          style={{ lineHeight: cellLineHeight }}
+                        />
+                        {field.helpText ? (
+                          <p className="text-[10px] text-slate-500">
+                            {field.helpText}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {field.kind === "textarea" ? (
+                      <div className="flex h-full w-full flex-col gap-1">
+                        {field.label ? (
+                          <Label className="text-[11px] text-slate-700">
+                            {field.label}
+                            {field.required ? " *" : ""}
+                          </Label>
+                        ) : null}
+                        <textarea
+                          value={values[field.id] ?? ""}
+                          readOnly={
+                            readOnly || (hasWorkflow && !canEditWorkflowForm)
+                          }
+                          onChange={(event) => {
+                            if (!canEditWorkflowForm) return;
+                            updateValue(field.id, event.target.value);
+                          }}
+                          className="h-full w-full resize-none border border-dashed border-slate-300 bg-transparent p-1 text-[12px] text-slate-900 focus:border-slate-500 focus:outline-none"
+                          style={{ lineHeight: cellLineHeight }}
+                        />
+                        {field.helpText ? (
+                          <p className="text-[10px] text-slate-500">
+                            {field.helpText}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {field.kind === "checkbox" ? (
+                      <label className="flex h-full w-full items-center gap-2 text-[12px] text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={values[field.id] === "true"}
+                          disabled={
+                            readOnly || (hasWorkflow && !canEditWorkflowForm)
+                          }
+                          onChange={(event) => {
+                            if (!canEditWorkflowForm) return;
+                            updateValue(
+                              field.id,
+                              event.target.checked ? "true" : "false",
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                        />
+                        {field.label || "Checkbox"}
+                      </label>
+                    ) : null}
+
+                    {field.kind === "signature" ? (
+                      <div
+                        className="flex h-full w-full items-end justify-end gap-2 text-[11px] text-slate-900"
+                        style={{ lineHeight: cellLineHeight }}
+                      >
+                        <span className="whitespace-nowrap">
+                          (Signature with date)
+                        </span>
+                        <div className="relative min-w-0 flex-1 border-b border-dashed border-slate-400 pb-0.5">
+                          {values[field.id] ? (
+                            values[field.id] === DIGITAL_SIGNATURE_VALUE ? (
+                              <span className="block truncate text-[11px] text-slate-900">
+                                Digital signature captured
+                              </span>
+                            ) : (
+                              <span className="block truncate text-[11px] text-slate-900">
+                                {values[field.id]}
+                              </span>
+                            )
                           ) : null}
                         </div>
-                      ) : null}
-
-                      {field.kind === "textarea" ? (
-                        <div className="flex h-full w-full flex-col gap-1">
-                          {field.label ? (
-                            <Label className="text-[11px] text-slate-700">
-                              {field.label}
-                              {field.required ? " *" : ""}
-                            </Label>
-                          ) : null}
-                          <textarea
-                            value={values[field.id] ?? ""}
-                            onChange={(event) =>
-                              updateValue(field.id, event.target.value)
-                            }
-                            className="h-full w-full resize-none border border-dashed border-slate-300 bg-transparent p-1 text-[12px] text-slate-900 focus:border-slate-500 focus:outline-none"
-                            style={{ lineHeight: cellLineHeight }}
-                          />
-                          {field.helpText ? (
-                            <p className="text-[10px] text-slate-500">
-                              {field.helpText}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {field.kind === "checkbox" ? (
-                        <label className="flex h-full w-full items-center gap-2 text-[12px] text-slate-800">
-                          <input
-                            type="checkbox"
-                            checked={values[field.id] === "true"}
-                            onChange={(event) =>
-                              updateValue(
-                                field.id,
-                                event.target.checked ? "true" : "false",
-                              )
-                            }
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                          />
-                          {field.label || "Checkbox"}
-                        </label>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
-            </SurfaceCard>
-          ))
-        : null}
+            </div>
+          </SurfaceCard>
+        ))}
+      </div>
 
-      {signatureFields.length > 0 && showFormCanvas ? (
-        <SurfaceCard className="space-y-4 border-slate-200/80 p-4">
-          <div className="space-y-1">
+      {hasSignatureField && !isApprovalView ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+          <div className="flex flex-col gap-1">
             <p className="text-base font-semibold text-slate-900">
               Digital signature
             </p>
             <p className="text-xs text-slate-500">
-              Complete the signature step below the form.
+              Choose a digital signature mode used in leave forms.
             </p>
           </div>
 
-          <div className="space-y-4">
-            {signatureFields.map((field) => (
-              <FormSignatureField
-                key={field.id}
-                fieldId={field.id}
-                label="Signature"
-                required={field.required ?? true}
-                value={values[field.id] ?? ""}
-                onChange={(nextValue) => updateValue(field.id, nextValue)}
-              />
-            ))}
+          <SignatureOtpVerificationCard
+            storageScope={`form-template:${templateId}`}
+            signatureMode={signature.signatureMode}
+            onSignatureModeChange={signature.onSignatureModeChange}
+            typedSignature={signature.typedSignature}
+            onTypedSignatureChange={signature.onTypedSignatureChange}
+            otpEmail={signature.otpEmail}
+            otpCode={signature.otpCode}
+            onOtpCodeChange={signature.setOtpCode}
+            otpStatusMessage={signature.otpStatusMessage}
+            isSendingOtp={signature.isSendingOtp}
+            isVerifyingOtp={signature.isVerifyingOtp}
+            isSubmitting={isSubmitting}
+            onSendOtp={signature.handleSendOtp}
+            onVerifyOtp={signature.handleVerifyOtp}
+            onSignatureChange={signature.onSignatureChange}
+            isOtpVerified={signature.isOtpVerified}
+          />
+        </SurfaceCard>
+      ) : null}
+
+      {showCompleteTaskButton ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-base font-semibold text-slate-900">
+              Approver signature
+            </p>
+            <p className="text-xs text-slate-500">
+              Sign this approval step without changing the submitted form.
+            </p>
+          </div>
+
+          <SignatureOtpVerificationCard
+            storageScope={`approval-signature:${templateId}:${pendingForActor?.id ?? "unknown"}`}
+            signatureMode={approvalSignature.signatureMode}
+            onSignatureModeChange={approvalSignature.onSignatureModeChange}
+            typedSignature={approvalSignature.typedSignature}
+            onTypedSignatureChange={approvalSignature.onTypedSignatureChange}
+            otpEmail={approvalSignature.otpEmail}
+            otpCode={approvalSignature.otpCode}
+            onOtpCodeChange={approvalSignature.setOtpCode}
+            otpStatusMessage={approvalSignature.otpStatusMessage}
+            isSendingOtp={approvalSignature.isSendingOtp}
+            isVerifyingOtp={approvalSignature.isVerifyingOtp}
+            isSubmitting={isSubmitting}
+            onSendOtp={approvalSignature.handleSendOtp}
+            onVerifyOtp={approvalSignature.handleVerifyOtp}
+            onSignatureChange={approvalSignature.onSignatureChange}
+            isOtpVerified={approvalSignature.isOtpVerified}
+          />
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleCompleteSignatureTask}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Submitting..." : "Complete task"}
+            </Button>
           </div>
         </SurfaceCard>
       ) : null}
@@ -720,6 +942,20 @@ export const TemplateFormRenderer = ({
         </SurfaceCard>
       ) : null}
 
+      {showFillFormWorkflow ? (
+        <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-base font-semibold text-slate-900">
+              Fill this step
+            </p>
+            <p className="text-xs text-slate-500">
+              This step is assigned to you. Fill the form below, then submit to
+              move the workflow forward.
+            </p>
+          </div>
+        </SurfaceCard>
+      ) : null}
+
       {shouldShowWorkflowTaskDetails ? (
         <SurfaceCard className="space-y-3">
           <p className="text-base font-semibold text-slate-900">
@@ -737,28 +973,7 @@ export const TemplateFormRenderer = ({
         </SurfaceCard>
       ) : null}
 
-      {showCompleteTaskButton ? (
-        <SurfaceCard className="space-y-3">
-          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-            <div className="space-y-1">
-              <p className="text-base font-semibold text-slate-900">
-                Complete signature task
-              </p>
-              <p className="text-xs text-slate-500">
-                Any one assigned user can complete this signature step.
-              </p>
-            </div>
-            <Button
-              onClick={handleCompleteSignatureTask}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Submitting..." : "Complete task"}
-            </Button>
-          </div>
-        </SurfaceCard>
-      ) : null}
-
-      {showFormCanvas ? (
+      {canEditWorkflowForm ? (
         <SurfaceCard className="space-y-3">
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <div className="space-y-1">
@@ -773,13 +988,22 @@ export const TemplateFormRenderer = ({
                   : "Your input values will be saved in the database."}
               </p>
             </div>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting
-                ? "Submitting..."
-                : hasWorkflow && canActOnCurrentTask
-                  ? "Finish task"
-                  : "Submit"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleDownloadPdf}
+                disabled={isDownloading}
+              >
+                {isDownloading ? "Preparing..." : "Download PDF"}
+              </Button>
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting
+                  ? "Submitting..."
+                  : hasWorkflow && canActOnCurrentTask
+                    ? "Finish task"
+                    : "Submit"}
+              </Button>
+            </div>
           </div>
 
           {submitMessage ? (

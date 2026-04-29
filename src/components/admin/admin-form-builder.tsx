@@ -118,11 +118,22 @@ type PersistedBuilderState = {
 
 type TaskType = "fillform" | "signature";
 
-type AssignmentMode = "specific" | "role" | "department" | "all";
+type AssignmentMode =
+  | "specific"
+  | "role"
+  | "department"
+  | "sameDepartmentRole"
+  | "all";
 
 type TaskAssignment = {
   mode: AssignmentMode;
   values: string[]; // e.g. user ids, role keys, department ids or empty for all
+};
+
+type TaskRoutingRule = {
+  id: string;
+  sourceRoles: RoleOptionKey[];
+  assignment: TaskAssignment;
 };
 
 type FormTask = {
@@ -131,7 +142,9 @@ type FormTask = {
   type: TaskType;
   formTemplateId?: string | null; // null means use current form
   assignment: TaskAssignment;
+  routes?: TaskRoutingRule[];
   status: "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "DONE";
+  order?: number; // task sequence in workflow (0-based)
 };
 
 type WorkflowUserOption = {
@@ -147,11 +160,22 @@ type WorkflowDepartmentOption = {
   name: string;
 };
 
+type TaskInstanceOption = {
+  id: string;
+  userId: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  status?: string;
+};
+
 type SelectableOption = {
   id: string;
   label: string;
   meta?: string;
 };
+
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
 
 type DragState =
   | {
@@ -475,6 +499,7 @@ export const AdminFormBuilder = () => {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskWizardStep, setTaskWizardStep] = useState(1);
   const [taskDraft, setTaskDraft] = useState<Partial<FormTask> | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workflowUsers, setWorkflowUsers] = useState<WorkflowUserOption[]>([]);
   const [workflowDepartments, setWorkflowDepartments] = useState<
     WorkflowDepartmentOption[]
@@ -496,6 +521,13 @@ export const AdminFormBuilder = () => {
   const [createdTemplateId, setCreatedTemplateId] = useState<string | null>(
     null,
   );
+  const [templatesList, setTemplatesList] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
+  const [taskInstancesMap, setTaskInstancesMap] = useState<
+    Record<string, TaskInstanceOption[]>
+  >({});
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const currentTemplateId = queryTemplateId ?? createdTemplateId;
   const [isBootstrapped, setIsBootstrapped] = useState(false);
   const gridRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -506,6 +538,55 @@ export const AdminFormBuilder = () => {
   const [resizeState, setResizeState] = useState<ResizeState>(null);
   const [heightResizeState, setHeightResizeState] =
     useState<HeightResizeState>(null);
+
+  const openTaskModal = useCallback(
+    (task?: FormTask) => {
+      setIsTaskModalOpen(true);
+      setTaskWizardStep(1);
+      if (task) {
+        setEditingTaskId(task.id);
+        setTaskDraft({
+          ...task,
+          assignment: task.assignment ?? { mode: "all", values: [] },
+          routes: task.routes ?? [],
+        });
+        return;
+      }
+
+      setEditingTaskId(null);
+      setTaskDraft({
+        id: createId(),
+        title: "New task",
+        type: "fillform",
+        formTemplateId: currentTemplateId,
+        assignment: { mode: "all", values: [] },
+        routes: [],
+        status: "PENDING",
+      });
+    },
+    [currentTemplateId],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTemplates = async () => {
+      try {
+        const res = await fetch(`/api/admin/form-templates`);
+        const body = await res.json();
+        if (!res.ok || !body.ok) return;
+        const items = body.data?.items ?? [];
+        if (!cancelled) setTemplatesList(items);
+      } catch {
+        // ignore
+      }
+    };
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const maxWizardSteps = taskDraft?.type === "fillform" ? 3 : 2;
 
   const setTextAreaRef =
     (fieldId: string) => (node: HTMLTextAreaElement | null) => {
@@ -527,6 +608,12 @@ export const AdminFormBuilder = () => {
   }, []);
 
   const cellLineHeight = `${GRID_UNIT_MM}mm`;
+
+  const normalizeTaskOrder = useCallback((items: FormTask[]) => {
+    return [...items]
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((task, index) => ({ ...task, order: index }));
+  }, []);
 
   const taskRoleOptions = useMemo<SelectableOption[]>(
     () => roleOptions.map((role) => ({ id: role.key, label: role.label })),
@@ -552,53 +639,6 @@ export const AdminFormBuilder = () => {
     [workflowUsers],
   );
 
-  const toggleTaskAssignmentValue = useCallback((value: string) => {
-    setTaskDraft((prev) => {
-      if (!prev) return prev;
-      if (!prev.assignment) return prev;
-      const current = prev.assignment?.values ?? [];
-      const next = current.includes(value)
-        ? current.filter((entry) => entry !== value)
-        : [...current, value];
-      return {
-        ...prev,
-        assignment: {
-          mode: prev.assignment.mode,
-          values: next,
-        },
-      };
-    });
-  }, []);
-
-  const selectedTaskRoleLabels = (
-    taskDraft?.assignment?.mode === "role" ? taskDraft.assignment.values : []
-  )
-    .map(
-      (value) => taskRoleOptions.find((option) => option.id === value)?.label,
-    )
-    .filter((value): value is string => Boolean(value));
-
-  const selectedTaskDepartmentLabels = (
-    taskDraft?.assignment?.mode === "department"
-      ? taskDraft.assignment.values
-      : []
-  )
-    .map(
-      (value) =>
-        taskDepartmentOptions.find((option) => option.id === value)?.label,
-    )
-    .filter((value): value is string => Boolean(value));
-
-  const selectedTaskUserOptions = (
-    taskDraft?.assignment?.mode === "specific"
-      ? taskDraft.assignment.values
-      : []
-  )
-    .map((value) => taskUserOptions.find((option) => option.id === value))
-    .filter((value): value is SelectableOption => Boolean(value));
-
-  const selectedTaskAssignmentValues = taskDraft?.assignment?.values ?? [];
-
   const renderSelectedChips = (labels: string[]) =>
     labels.length > 0 ? (
       <div className="mt-3 flex flex-wrap gap-2">
@@ -618,49 +658,349 @@ export const AdminFormBuilder = () => {
   const renderSelectableGrid = (
     options: SelectableOption[],
     selectedIds: string[],
+    onToggle: (value: string) => void,
   ) => (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {options.map((option) => {
-        const selected = selectedIds.includes(option.id);
+    <div className="max-h-64 overflow-y-auto">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const selected = selectedIds.includes(option.id);
 
-        return (
-          <div
-            key={option.id}
-            className={cn(
-              "flex items-center justify-between rounded-2xl border px-4 py-3 transition",
-              selected
-                ? "border-cyan-200 bg-cyan-50/80 shadow-sm"
-                : "border-slate-200 bg-white/90 hover:border-slate-300 hover:bg-white",
-            )}
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {option.label}
+          return (
+            <div
+              key={option.id}
+              className={cn(
+                "flex items-center justify-between rounded-2xl border px-4 py-3 transition",
+                selected
+                  ? "border-cyan-200 bg-cyan-50/80 shadow-sm"
+                  : "border-slate-200 bg-white/90 hover:border-slate-300 hover:bg-white",
+              )}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {option.label}
+                </p>
+                {option.meta ? (
+                  <p className="truncate text-xs text-slate-500">
+                    {option.meta}
+                  </p>
+                ) : null}
+              </div>
+              <div className="ml-3 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onToggle(option.id)}
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold transition",
+                    selected
+                      ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                  )}
+                  aria-label={
+                    selected ? `Remove ${option.label}` : `Add ${option.label}`
+                  }
+                >
+                  {selected ? "−" : "+"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const updateTaskRoute = useCallback(
+    (routeId: string, updater: (route: TaskRoutingRule) => TaskRoutingRule) => {
+      setTaskDraft((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          routes: (prev.routes ?? []).map((route) =>
+            route.id === routeId ? updater(route) : route,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  const addTaskRoute = useCallback(() => {
+    setTaskDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        routes: [
+          ...(prev.routes ?? []),
+          {
+            id: createId(),
+            sourceRoles: [],
+            assignment: { mode: "all", values: [] },
+          },
+        ],
+      };
+    });
+  }, []);
+
+  const renderAssignmentEditor = (
+    title: string,
+    assignment: TaskAssignment,
+    onChange: (next: TaskAssignment) => void,
+    groupKey: string,
+  ) => {
+    const assignmentValues = assignment.values ?? [];
+    const selectedRoleLabels = (
+      assignment.mode === "role" || assignment.mode === "sameDepartmentRole"
+        ? assignmentValues
+        : []
+    )
+      .map(
+        (value) => taskRoleOptions.find((option) => option.id === value)?.label,
+      )
+      .filter((value): value is string => Boolean(value));
+    const selectedDepartmentLabels = (
+      assignment.mode === "department" ? assignmentValues : []
+    )
+      .map(
+        (value) =>
+          taskDepartmentOptions.find((option) => option.id === value)?.label,
+      )
+      .filter((value): value is string => Boolean(value));
+    const selectedUserOptions = (
+      assignment.mode === "specific" ? assignmentValues : []
+    )
+      .map((value) => taskUserOptions.find((option) => option.id === value))
+      .filter((value): value is SelectableOption => Boolean(value));
+
+    const toggleValue = (value: string) => {
+      const nextValues = assignmentValues.includes(value)
+        ? assignmentValues.filter((entry) => entry !== value)
+        : [...assignmentValues, value];
+      onChange({ ...assignment, values: nextValues });
+    };
+
+    return (
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label>{title}</Label>
+          <p className="text-xs text-slate-500">
+            Choose who should receive this task when the route is active.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+            <input
+              type="radio"
+              name={`${groupKey}-assign-mode-all`}
+              checked={assignment.mode === "all"}
+              onChange={() => onChange({ mode: "all", values: [] })}
+            />
+            <span className="text-sm">Everyone (all users)</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+            <input
+              type="radio"
+              name={`${groupKey}-assign-mode-role`}
+              checked={assignment.mode === "role"}
+              onChange={() => onChange({ mode: "role", values: [] })}
+            />
+            <span className="text-sm">By role</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+            <input
+              type="radio"
+              name={`${groupKey}-assign-mode-department`}
+              checked={assignment.mode === "department"}
+              onChange={() => onChange({ mode: "department", values: [] })}
+            />
+            <span className="text-sm">By department</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+            <input
+              type="radio"
+              name={`${groupKey}-assign-mode-same-dept-role`}
+              checked={assignment.mode === "sameDepartmentRole"}
+              onChange={() =>
+                onChange({ mode: "sameDepartmentRole", values: [] })
+              }
+            />
+            <span className="text-sm">
+              By role in submitter&apos;s department
+            </span>
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
+            <input
+              type="radio"
+              name={`${groupKey}-assign-mode-specific`}
+              checked={assignment.mode === "specific"}
+              onChange={() => onChange({ mode: "specific", values: [] })}
+            />
+            <span className="text-sm">Specific users</span>
+          </label>
+        </div>
+
+        {assignment.mode === "role" ||
+        assignment.mode === "sameDepartmentRole" ? (
+          <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+            <div className="space-y-1">
+              <Label>Select roles</Label>
+              <p className="text-xs text-slate-500">
+                Tap + to add or − to remove roles assigned to this task.
               </p>
-              {option.meta ? (
-                <p className="truncate text-xs text-slate-500">{option.meta}</p>
-              ) : null}
             </div>
-            <div className="ml-3 flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => toggleTaskAssignmentValue(option.id)}
-                className={cn(
-                  "inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold transition",
-                  selected
-                    ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                )}
-                aria-label={
-                  selected ? `Remove ${option.label}` : `Add ${option.label}`
-                }
-              >
-                {selected ? "−" : "+"}
-              </button>
-            </div>
+            {renderSelectableGrid(
+              taskRoleOptions,
+              assignmentValues,
+              toggleValue,
+            )}
+            {renderSelectedChips(selectedRoleLabels)}
           </div>
-        );
-      })}
+        ) : null}
+
+        {assignment.mode === "department" ? (
+          <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+            <div className="space-y-1">
+              <Label>Select departments</Label>
+              <p className="text-xs text-slate-500">
+                Tap + to add or − to remove departments assigned to this task.
+              </p>
+            </div>
+            {renderSelectableGrid(
+              taskDepartmentOptions,
+              assignmentValues,
+              toggleValue,
+            )}
+            {renderSelectedChips(selectedDepartmentLabels)}
+          </div>
+        ) : null}
+
+        {assignment.mode === "specific" ? (
+          <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
+            <div className="space-y-1">
+              <Label>Select users</Label>
+              <p className="text-xs text-slate-500">
+                Tap + to add or − to remove specific users assigned to this
+                task.
+              </p>
+            </div>
+            {renderSelectableGrid(
+              taskUserOptions,
+              assignmentValues,
+              toggleValue,
+            )}
+            {renderSelectedChips(
+              selectedUserOptions.map(
+                (option) =>
+                  `${option.label}${option.meta ? ` · ${option.meta}` : ""}`,
+              ),
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderAssignmentSection = () => (
+    <div className="space-y-4">
+      {renderAssignmentEditor(
+        "Default assignee rule",
+        taskDraft?.assignment ?? { mode: "all", values: [] },
+        (next) =>
+          setTaskDraft((prev) => (prev ? { ...prev, assignment: next } : prev)),
+        "base-assignment",
+      )}
+
+      <div className="space-y-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <Label>Submitter-based routes</Label>
+            <p className="text-xs text-slate-500">
+              Add overrides so different submitter roles route the same task to
+              different approvers.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={addTaskRoute} type="button">
+            Add route
+          </Button>
+        </div>
+
+        {(taskDraft?.routes ?? []).length === 0 ? (
+          <p className="text-xs text-slate-500">No custom routes added yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {(taskDraft?.routes ?? []).map((route, routeIndex) => (
+              <SurfaceCard
+                key={route.id}
+                className="space-y-4 border-slate-200/80 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Route {routeIndex + 1}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Applies when the submission is created by the selected
+                      roles.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setTaskDraft((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              routes: (prev.routes ?? []).filter(
+                                (entry) => entry.id !== route.id,
+                              ),
+                            }
+                          : prev,
+                      );
+                    }}
+                  >
+                    Remove route
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>When submitted by roles</Label>
+                  {renderSelectableGrid(
+                    taskRoleOptions,
+                    route.sourceRoles,
+                    (value) => {
+                      updateTaskRoute(route.id, (currentRoute) => {
+                        const nextRoles = currentRoute.sourceRoles.includes(
+                          value as RoleOptionKey,
+                        )
+                          ? currentRoute.sourceRoles.filter(
+                              (role) => role !== value,
+                            )
+                          : [
+                              ...currentRoute.sourceRoles,
+                              value as RoleOptionKey,
+                            ];
+                        return { ...currentRoute, sourceRoles: nextRoles };
+                      });
+                    },
+                  )}
+                </div>
+
+                {renderAssignmentEditor(
+                  "Route assignee rule",
+                  route.assignment,
+                  (nextAssignment) => {
+                    updateTaskRoute(route.id, (currentRoute) => ({
+                      ...currentRoute,
+                      assignment: nextAssignment,
+                    }));
+                  },
+                  route.id,
+                )}
+              </SurfaceCard>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -721,7 +1061,9 @@ export const AdminFormBuilder = () => {
           ? state.visibilityRoles
           : roleOptions.map((role) => role.key),
       );
-      setTasks(Array.isArray(state.tasks) ? state.tasks : []);
+      setTasks(
+        normalizeTaskOrder(Array.isArray(state.tasks) ? state.tasks : []),
+      );
       setSelectedItem(null);
       setSettingsDraft(null);
       setSettingsPageId(null);
@@ -843,7 +1185,7 @@ export const AdminFormBuilder = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentTemplateId, storageKey]);
+  }, [currentTemplateId, normalizeTaskOrder, storageKey]);
 
   useEffect(() => {
     if (!isBootstrapped || typeof window === "undefined") return;
@@ -1529,7 +1871,10 @@ export const AdminFormBuilder = () => {
     closeSettings();
   };
 
-  const handleSave = async (roles: RoleOptionKey[], mode: SaveMode) => {
+  const handleSave = async (
+    roles: RoleOptionKey[],
+    mode: SaveMode,
+  ): Promise<string | null> => {
     setStatusMessage(null);
     setStatusTone(null);
 
@@ -1537,7 +1882,7 @@ export const AdminFormBuilder = () => {
     if (!trimmedName) {
       setStatusTone("error");
       setStatusMessage("Form name is required.");
-      return;
+      return null;
     }
 
     const totalFields = pages.reduce(
@@ -1552,7 +1897,7 @@ export const AdminFormBuilder = () => {
     if (mode === "published" && (totalFields === 0 || totalNonBrand === 0)) {
       setStatusTone("error");
       setStatusMessage("Add at least one field before saving.");
-      return;
+      return null;
     }
 
     setIsSaving(true);
@@ -1562,6 +1907,7 @@ export const AdminFormBuilder = () => {
         ...(currentTemplateId ? { id: currentTemplateId } : {}),
         name: trimmedName,
         description: formDescription.trim() || null,
+        isPublished: mode === "published",
         schema: {
           version: 3,
           title: trimmedName,
@@ -1577,7 +1923,7 @@ export const AdminFormBuilder = () => {
             rows: GRID_ROWS,
           },
           pages,
-          tasks,
+          tasks: normalizeTaskOrder(tasks),
         },
       };
 
@@ -1598,7 +1944,7 @@ export const AdminFormBuilder = () => {
       if (!response.ok) {
         setStatusTone("error");
         setStatusMessage(data.message ?? "Unable to save the form.");
-        return;
+        return null;
       }
 
       const savedId = data.data?.id;
@@ -1625,29 +1971,99 @@ export const AdminFormBuilder = () => {
             ? "Draft saved successfully."
             : "Form published successfully."),
       );
+
+      return savedId ?? currentTemplateId ?? null;
     } catch (error) {
       console.error("Form save failed", error);
       setStatusTone("error");
       setStatusMessage("Something went wrong while saving the form.");
+      return null;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDispatchTask = async (taskId: string) => {
+  const dispatchTaskByTemplateId = async (
+    templateId: string,
+    taskId: string,
+  ) => {
+    const res = await fetch(`/api/admin/tasks/dispatch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateId, taskId }),
+    });
+    const body = await res.json();
+    if (!res.ok || !body.ok)
+      throw new Error(body?.message || "Dispatch failed");
+
+    const instances = body.data?.instances ?? [];
+    setTaskInstancesMap((prev) => ({ ...prev, [taskId]: instances }));
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, status: "ASSIGNED" } : t)),
     );
-    setStatusTone("success");
-    setStatusMessage("Task dispatched.");
-    // TODO: integrate with backend to actually assign to users based on filters
+  };
+
+  const handleDispatchTask = async (taskId: string) => {
+    try {
+      const templateId = await handleSave(visibilityRoles, "draft");
+      if (!templateId) {
+        throw new Error("Unable to save form before dispatch.");
+      }
+
+      await dispatchTaskByTemplateId(templateId, taskId);
+      setStatusTone("success");
+      setStatusMessage("Task dispatched.");
+    } catch (error) {
+      setStatusTone("error");
+      setStatusMessage(getErrorMessage(error, "Unable to dispatch task"));
+    }
   };
 
   const handleDispatchAll = async () => {
-    setTasks((prev) => prev.map((t) => ({ ...t, status: "ASSIGNED" })));
-    setStatusTone("success");
-    setStatusMessage("All tasks dispatched.");
-    // TODO: call backend API to create task instances for each assigned user
+    try {
+      const templateId = await handleSave(visibilityRoles, "draft");
+      if (!templateId) {
+        throw new Error("Unable to save form before dispatch.");
+      }
+
+      for (const t of normalizeTaskOrder(tasks)) {
+        await dispatchTaskByTemplateId(templateId, t.id);
+      }
+      setStatusTone("success");
+      setStatusMessage("All tasks dispatched.");
+    } catch (error) {
+      setStatusTone("error");
+      setStatusMessage(getErrorMessage(error, "Unable to dispatch all tasks"));
+    }
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    setTasks((prev) => {
+      const next = prev.filter((t) => t.id !== taskId);
+      return next.map((t, i) => ({ ...t, order: i }));
+    });
+    setTaskInstancesMap((prev) => {
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+  };
+
+  const handleTaskDrop = (targetTaskId: string) => {
+    if (!draggedTaskId || draggedTaskId === targetTaskId) return;
+
+    setTasks((prev) => {
+      const sorted = normalizeTaskOrder(prev);
+      const fromIndex = sorted.findIndex((t) => t.id === draggedTaskId);
+      const toIndex = sorted.findIndex((t) => t.id === targetTaskId);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+      const next = [...sorted];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next.map((t, i) => ({ ...t, order: i }));
+    });
+
+    setDraggedTaskId(null);
   };
 
   return (
@@ -1678,21 +2094,7 @@ export const AdminFormBuilder = () => {
             <Button variant="secondary" onClick={handleAddPage}>
               Add page
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setIsTaskModalOpen(true);
-                setTaskWizardStep(1);
-                setTaskDraft({
-                  id: createId(),
-                  title: "New task",
-                  type: "fillform",
-                  formTemplateId: currentTemplateId,
-                  assignment: { mode: "all", values: [] },
-                  status: "PENDING",
-                });
-              }}
-            >
+            <Button variant="secondary" onClick={() => openTaskModal()}>
               Add task
             </Button>
             <Button
@@ -1733,7 +2135,7 @@ export const AdminFormBuilder = () => {
         </div>
       </SurfaceCard>
 
-      <div className="grid gap-6 lg:grid-cols-[240px_1fr_240px]">
+      <div className="grid gap-6 lg:grid-cols-[240px_minmax(860px,1fr)_360px]">
         <SurfaceCard className="space-y-4">
           <div>
             <p className="text-base font-semibold text-slate-900">
@@ -2237,47 +2639,136 @@ export const AdminFormBuilder = () => {
               {tasks.length === 0 ? (
                 <p className="text-xs text-slate-500">No tasks created yet.</p>
               ) : (
-                tasks.map((t) => (
+                normalizeTaskOrder(tasks).map((t, idx) => (
                   <div
                     key={t.id}
-                    className="rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm"
+                    draggable
+                    onDragStart={() => setDraggedTaskId(t.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleTaskDrop(t.id)}
+                    onDragEnd={() => setDraggedTaskId(null)}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white/60 px-3 py-2 text-sm"
                   >
                     <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-slate-900">
-                          {t.title}
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                          {(t.order ?? idx) + 1}
                         </div>
-                        <div className="text-xs text-slate-500">
-                          {t.type === "fillform"
-                            ? "Fill form"
-                            : "Signature only"}{" "}
-                          • {t.assignment.mode}
+                        <div>
+                          <div className="font-semibold text-slate-900">
+                            {t.title}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {t.type === "fillform"
+                              ? "Fill form"
+                              : "Signature only"}{" "}
+                            • {t.assignment.mode}
+                          </div>
                         </div>
                       </div>
                       <div className="text-xs font-medium text-slate-700">
                         {t.status}
                       </div>
                     </div>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex flex-wrap items-start gap-2">
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                        Drag to reorder
+                      </span>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleDeleteTask(t.id)}
+                      >
+                        Delete
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => openTaskModal(t)}
+                      >
+                        Edit
+                      </Button>
                       <Button
                         variant="secondary"
                         onClick={() => handleDispatchTask(t.id)}
                       >
                         Dispatch
                       </Button>
-                      <Button
-                        onClick={() =>
-                          setTasks((prev) =>
-                            prev.map((entry) =>
-                              entry.id === t.id
-                                ? { ...entry, status: "DONE" }
-                                : entry,
-                            ),
-                          )
-                        }
-                      >
-                        Mark done
-                      </Button>
+                      <div className="flex w-full flex-wrap items-center gap-2">
+                        <select
+                          className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                          value={
+                            (taskInstancesMap[t.id] &&
+                              taskInstancesMap[t.id][0]?.id) ??
+                            ""
+                          }
+                          onChange={(e) => {
+                            // store selected instance id temporarily on DOM element via dataset or state
+                            const sel = e.target as HTMLSelectElement;
+                            sel.dataset.selectedInstanceId = sel.value;
+                          }}
+                        >
+                          <option value="">— select instance —</option>
+                          {(taskInstancesMap[t.id] ?? []).map((ins) => (
+                            <option key={ins.id} value={ins.id}>
+                              {ins.userName ?? ins.userEmail ?? ins.userId}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          onClick={async (e) => {
+                            const select = (
+                              e.currentTarget.parentElement as HTMLElement
+                            )?.querySelector("select");
+                            const instanceId = select
+                              ? (select as HTMLSelectElement).dataset
+                                  .selectedInstanceId ||
+                                (select as HTMLSelectElement).value
+                              : undefined;
+                            if (!instanceId) {
+                              setStatusTone("error");
+                              setStatusMessage(
+                                "Select an instance to mark done.",
+                              );
+                              return;
+                            }
+
+                            try {
+                              const res = await fetch(
+                                `/api/admin/tasks/instances/${instanceId}`,
+                                { method: "POST" },
+                              );
+                              const body = await res.json();
+                              if (!res.ok || !body.ok)
+                                throw new Error(
+                                  body?.message || "Unable to mark done",
+                                );
+                              // update instance state
+                              setTaskInstancesMap((prev) => {
+                                const list = prev[t.id] ?? [];
+                                return {
+                                  ...prev,
+                                  [t.id]: list.map((it) =>
+                                    it.id === instanceId
+                                      ? { ...it, status: "DONE" }
+                                      : it,
+                                  ),
+                                };
+                              });
+                              setStatusTone("success");
+                              setStatusMessage("Instance marked done.");
+                            } catch (error) {
+                              setStatusTone("error");
+                              setStatusMessage(
+                                getErrorMessage(
+                                  error,
+                                  "Unable to mark instance done",
+                                ),
+                              );
+                            }
+                          }}
+                        >
+                          Mark done
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -2286,16 +2777,7 @@ export const AdminFormBuilder = () => {
             <div className="mt-3 flex gap-2">
               <Button
                 onClick={() => {
-                  setIsTaskModalOpen(true);
-                  setTaskWizardStep(1);
-                  setTaskDraft({
-                    id: createId(),
-                    title: "New task",
-                    type: "fillform",
-                    formTemplateId: currentTemplateId,
-                    assignment: { mode: "all", values: [] },
-                    status: "PENDING",
-                  });
+                  openTaskModal();
                 }}
               >
                 Add task
@@ -2912,14 +3394,15 @@ export const AdminFormBuilder = () => {
             onClick={() => {
               setIsTaskModalOpen(false);
               setTaskDraft(null);
+              setEditingTaskId(null);
             }}
             aria-label="Close task modal"
           />
-          <SurfaceCard className="relative w-full max-w-2xl space-y-5">
+          <SurfaceCard className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden space-y-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-lg font-semibold text-slate-900">
-                  Create task
+                  {editingTaskId ? "Edit task" : "Create task"}
                 </p>
                 <p className="text-xs text-slate-500">
                   Define a task and who should perform it.
@@ -2930,6 +3413,7 @@ export const AdminFormBuilder = () => {
                 onClick={() => {
                   setIsTaskModalOpen(false);
                   setTaskDraft(null);
+                  setEditingTaskId(null);
                 }}
                 className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300"
               >
@@ -2937,9 +3421,9 @@ export const AdminFormBuilder = () => {
               </button>
             </div>
 
-            <div>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="mb-3 text-sm font-medium">
-                Step {taskWizardStep} of {taskDraft.type === "fillform" ? 3 : 2}
+                Step {taskWizardStep} of {maxWizardSteps}
               </div>
 
               {taskWizardStep === 1 ? (
@@ -2989,12 +3473,10 @@ export const AdminFormBuilder = () => {
                 <div className="space-y-3">
                   {taskDraft.type === "fillform" ? (
                     <>
-                      <Label htmlFor="task-template-id">
-                        Template id (required)
-                      </Label>
-                      <Input
+                      <Label htmlFor="task-template-id">Select form</Label>
+                      <select
                         id="task-template-id"
-                        placeholder="Enter template id"
+                        className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                         value={taskDraft.formTemplateId ?? ""}
                         onChange={(e) =>
                           setTaskDraft((prev) =>
@@ -3006,11 +3488,20 @@ export const AdminFormBuilder = () => {
                               : prev,
                           )
                         }
-                      />
+                      >
+                        <option value="">— Select a form —</option>
+                        {templatesList.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} {t.description ? `— ${t.description}` : ""}
+                          </option>
+                        ))}
+                      </select>
                       <p className="text-xs text-slate-500">
-                        Fill-form tasks must reference a template id.
+                        Fill-form tasks must reference a saved form template.
                       </p>
                     </>
+                  ) : taskDraft.type === "signature" ? (
+                    renderAssignmentSection()
                   ) : (
                     <p className="text-sm">
                       Signature-only tasks are added directly. Continue to
@@ -3019,142 +3510,7 @@ export const AdminFormBuilder = () => {
                   )}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <Label>Assign to</Label>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
-                      <input
-                        type="radio"
-                        name="assign-mode"
-                        checked={taskDraft.assignment?.mode === "all"}
-                        onChange={() =>
-                          setTaskDraft((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  assignment: { mode: "all", values: [] },
-                                }
-                              : prev,
-                          )
-                        }
-                      />
-                      <span className="text-sm">Everyone (all users)</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
-                      <input
-                        type="radio"
-                        name="assign-mode"
-                        checked={taskDraft.assignment?.mode === "role"}
-                        onChange={() =>
-                          setTaskDraft((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  assignment: { mode: "role", values: [] },
-                                }
-                              : prev,
-                          )
-                        }
-                      />
-                      <span className="text-sm">By role</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
-                      <input
-                        type="radio"
-                        name="assign-mode"
-                        checked={taskDraft.assignment?.mode === "department"}
-                        onChange={() =>
-                          setTaskDraft((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  assignment: {
-                                    mode: "department",
-                                    values: [],
-                                  },
-                                }
-                              : prev,
-                          )
-                        }
-                      />
-                      <span className="text-sm">By department</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3">
-                      <input
-                        type="radio"
-                        name="assign-mode"
-                        checked={taskDraft.assignment?.mode === "specific"}
-                        onChange={() =>
-                          setTaskDraft((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  assignment: { mode: "specific", values: [] },
-                                }
-                              : prev,
-                          )
-                        }
-                      />
-                      <span className="text-sm">Specific users</span>
-                    </label>
-                  </div>
-
-                  {taskDraft.assignment?.mode === "role" ? (
-                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                      <div className="space-y-1">
-                        <Label>Select roles</Label>
-                        <p className="text-xs text-slate-500">
-                          Tap + to add or − to remove roles assigned to this
-                          task.
-                        </p>
-                      </div>
-                      {renderSelectableGrid(
-                        taskRoleOptions,
-                        selectedTaskAssignmentValues,
-                      )}
-                      {renderSelectedChips(selectedTaskRoleLabels)}
-                    </div>
-                  ) : null}
-
-                  {taskDraft.assignment?.mode === "department" ? (
-                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                      <div className="space-y-1">
-                        <Label>Select departments</Label>
-                        <p className="text-xs text-slate-500">
-                          Tap + to add or − to remove departments assigned to
-                          this task.
-                        </p>
-                      </div>
-                      {renderSelectableGrid(
-                        taskDepartmentOptions,
-                        selectedTaskAssignmentValues,
-                      )}
-                      {renderSelectedChips(selectedTaskDepartmentLabels)}
-                    </div>
-                  ) : null}
-
-                  {taskDraft.assignment?.mode === "specific" ? (
-                    <div className="mt-2 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                      <div className="space-y-1">
-                        <Label>Select users</Label>
-                        <p className="text-xs text-slate-500">
-                          Tap + to add or − to remove specific users assigned to
-                          this task.
-                        </p>
-                      </div>
-                      {renderSelectableGrid(
-                        taskUserOptions,
-                        selectedTaskAssignmentValues,
-                      )}
-                      {renderSelectedChips(
-                        selectedTaskUserOptions.map(
-                          (option) =>
-                            `${option.label}${option.meta ? ` · ${option.meta}` : ""}`,
-                        ),
-                      )}
-                    </div>
-                  ) : null}
-                </div>
+                renderAssignmentSection()
               )}
             </div>
 
@@ -3163,27 +3519,20 @@ export const AdminFormBuilder = () => {
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    if (
-                      taskDraft.type === "signature" &&
-                      taskWizardStep === 3
-                    ) {
-                      setTaskWizardStep(1);
-                      return;
-                    }
                     setTaskWizardStep((s) => Math.max(1, s - 1));
                   }}
                 >
                   Back
                 </Button>
               ) : null}
-              {taskWizardStep < 3 ? (
+              {taskWizardStep < maxWizardSteps ? (
                 <Button
                   onClick={() => {
                     if (
                       taskWizardStep === 1 &&
                       taskDraft.type === "signature"
                     ) {
-                      setTaskWizardStep(3);
+                      setTaskWizardStep(2);
                       return;
                     }
 
@@ -3197,7 +3546,7 @@ export const AdminFormBuilder = () => {
                       }
                     }
 
-                    setTaskWizardStep((s) => Math.min(3, s + 1));
+                    setTaskWizardStep((s) => Math.min(maxWizardSteps, s + 1));
                   }}
                 >
                   Next
@@ -3205,6 +3554,8 @@ export const AdminFormBuilder = () => {
               ) : (
                 <Button
                   onClick={() => {
+                    const isEditingTask = editingTaskId != null;
+
                     if (taskDraft.type === "fillform") {
                       if (!taskDraft.formTemplateId?.trim()) {
                         setStatusTone("error");
@@ -3228,7 +3579,8 @@ export const AdminFormBuilder = () => {
 
                     // finalize and save
                     const finalTask: FormTask = {
-                      id: (taskDraft.id as string) ?? createId(),
+                      id:
+                        editingTaskId ?? (taskDraft.id as string) ?? createId(),
                       title: (taskDraft.title as string) ?? "Task",
                       type: (taskDraft.type as TaskType) ?? "fillform",
                       formTemplateId: taskDraft.formTemplateId ?? null,
@@ -3236,16 +3588,36 @@ export const AdminFormBuilder = () => {
                         mode: "all",
                         values: [],
                       },
+                      routes: (taskDraft.routes ?? []).map((route) => ({
+                        id: route.id,
+                        sourceRoles: route.sourceRoles,
+                        assignment: route.assignment,
+                      })),
                       status: "PENDING",
+                      order: isEditingTask
+                        ? (tasks.find((task) => task.id === editingTaskId)
+                            ?.order ?? tasks.length)
+                        : tasks.length,
                     };
-                    setTasks((prev) => [...prev, finalTask]);
+                    setTasks((prev) =>
+                      normalizeTaskOrder(
+                        isEditingTask
+                          ? prev.map((task) =>
+                              task.id === editingTaskId ? finalTask : task,
+                            )
+                          : [...prev, finalTask],
+                      ),
+                    );
                     setIsTaskModalOpen(false);
                     setTaskDraft(null);
+                    setEditingTaskId(null);
                     setStatusTone("success");
-                    setStatusMessage("Task created.");
+                    setStatusMessage(
+                      isEditingTask ? "Task updated." : "Task created.",
+                    );
                   }}
                 >
-                  Save task
+                  {editingTaskId ? "Update task" : "Save task"}
                 </Button>
               )}
             </div>

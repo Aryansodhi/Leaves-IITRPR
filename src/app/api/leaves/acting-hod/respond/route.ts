@@ -26,6 +26,7 @@ export async function POST(request: Request) {
         : "";
 
     await logAuditEvent({
+      request,
       action: "ACTING_HOD_RESPOND",
       entityType: "LEAVE_APPLICATION",
       entityId: applicationId || null,

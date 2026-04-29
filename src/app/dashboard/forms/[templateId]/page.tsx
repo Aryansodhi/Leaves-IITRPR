@@ -30,7 +30,9 @@ export default async function FormTemplatePage({ params }: PageProps) {
   }
 
   const schema = template.schema as unknown as FormTemplateSchema;
-  if (schema.lifecycle?.status === "draft") {
+  const isAdmin = actor.roleKey === "ADMIN";
+
+  if (schema.lifecycle?.status === "draft" && !isAdmin) {
     return (
       <DashboardShell>
         <SurfaceCard className="border-slate-200/80 p-6">
@@ -71,7 +73,11 @@ export default async function FormTemplatePage({ params }: PageProps) {
           ) : null}
         </header>
 
-        <TemplateFormRenderer templateId={template.id} schema={schema} />
+        <TemplateFormRenderer
+          templateId={template.id}
+          schema={schema}
+          userEmail={actor.email}
+        />
       </div>
     </DashboardShell>
   );

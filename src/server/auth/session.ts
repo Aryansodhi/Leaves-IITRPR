@@ -167,7 +167,7 @@ export const requireSessionActor = async (
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    include: { role: true },
+    include: { role: true, department: true },
   });
 
   if (!user || !user.isActive) {
@@ -185,5 +185,6 @@ export const requireSessionActor = async (
     name: user.name,
     roleKey,
     roleSlug: getRoleSlugFromKey(roleKey),
+    departmentId: user.departmentId,
   };
 };

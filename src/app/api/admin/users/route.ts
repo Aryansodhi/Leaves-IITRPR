@@ -63,6 +63,7 @@ export async function POST(request: Request) {
         : "";
 
     await logAuditEvent({
+      request,
       action: "ADMIN_CREATE_USER",
       entityType: "USER",
       entityId: null,

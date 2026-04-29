@@ -89,6 +89,13 @@ export default async function AdminFormsPage() {
                           Continue editing
                         </Link>
                       </Button>
+                      <Button asChild variant="secondary">
+                        <Link
+                          href={`/dashboard/forms/${form.id}?autoDownload=1`}
+                        >
+                          Download PDF
+                        </Link>
+                      </Button>
                       {status === "published" ? (
                         <Button asChild variant="secondary">
                           <Link href={`/dashboard/forms/${form.id}`}>

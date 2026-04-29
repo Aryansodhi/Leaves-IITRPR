@@ -3,9 +3,15 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/server/db/prisma";
-import { getRequestIp } from "@/server/audit/ip";
+import {
+  getRequestDestinationHost,
+  getRequestHostIp,
+  getRequestIp,
+  resolveRequestDestinationIp,
+} from "@/server/audit/ip";
 
 export type AuditEventInput = {
+  request?: Request;
   action: string;
   entityType: string;
   entityId?: string | null;
@@ -131,8 +137,22 @@ export const logAuditEvent = async (input: AuditEventInput) => {
 
   if (!auditLog) return;
 
+  const sourceIp =
+    input.ipAddress ?? (input.request ? getRequestIp(input.request) : null);
+  const destinationHost = input.request
+    ? getRequestDestinationHost(input.request)
+    : null;
+  const destinationIp = input.request
+    ? await resolveRequestDestinationIp(input.request)
+    : null;
+  const currentHostIp = input.request ? getRequestHostIp(input.request) : null;
+
   const details = {
     ...(input.details ?? {}),
+    sourceIp,
+    destinationHost,
+    destinationIp,
+    currentHostIp,
     _source: "system-audit",
   };
 
@@ -147,7 +167,7 @@ export const logAuditEvent = async (input: AuditEventInput) => {
         userId: input.userId ?? null,
         userEmail: input.userEmail ?? null,
         userName: input.userName ?? null,
-        ipAddress: input.ipAddress ?? null,
+        ipAddress: sourceIp,
         userAgent: input.userAgent ?? null,
         details,
         createdAt: timestamp,
@@ -173,7 +193,7 @@ export const logAuditEvent = async (input: AuditEventInput) => {
             userId: input.userId ?? null,
             userEmail: input.userEmail ?? null,
             userName: input.userName ?? null,
-            ipAddress: input.ipAddress ?? null,
+            ipAddress: sourceIp,
             userAgent: input.userAgent ?? null,
             details,
             createdAt: timestamp,

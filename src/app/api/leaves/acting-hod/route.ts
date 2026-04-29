@@ -59,6 +59,7 @@ export async function POST(request: Request) {
     });
 
     await logAuditEvent({
+      request,
       action: "ACTING_HOD_ASSIGN",
       entityType: "ACTING_HOD_ASSIGNMENT",
       entityId:

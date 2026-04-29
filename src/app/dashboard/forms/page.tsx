@@ -50,9 +50,14 @@ export default async function FormsPage() {
               </p>
             </div>
 
-            <Button asChild variant="secondary">
-              <Link href="/dashboard/forms/approvals">Approvals inbox</Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="secondary">
+                <Link href="/dashboard/forms/submissions">My submissions</Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href="/dashboard/forms/approvals">Approvals inbox</Link>
+              </Button>
+            </div>
           </div>
         </header>
 

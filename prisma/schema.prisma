@@ -121,6 +121,8 @@ model User {
   actingHodAssigned    ActingHodAssignment[] @relation("ActingHodAssignedBy")
   createdFormTemplates FormTemplate[]        @relation("FormTemplateCreator")
   formSubmissions      FormSubmission[]
+  formTaskInstances    FormTaskInstance[]
+  formSubmissionStepActions FormSubmissionStepAction[]
   auditLogs            AuditLog[]
 }
 
@@ -319,30 +321,79 @@ model OtpToken {
 }
 
 model FormTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  schema      Json
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  schema         Json
+  createdById    String?
+  isPublished    Boolean   @default(false)
+  lastPublishedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  createdBy User? @relation("FormTemplateCreator", fields: [createdById], references: [id])
-  submissions FormSubmission[]
+  createdBy      User? @relation("FormTemplateCreator", fields: [createdById], references: [id])
+  submissions    FormSubmission[]
+  taskInstances  FormTaskInstance[]
 
   @@index([createdById, createdAt])
+  @@index([isPublished, lastPublishedAt])
 }
 
 model FormSubmission {
-  id            String   @id @default(cuid())
-  templateId    String
-  submittedById String?
-  data          Json
-  createdAt     DateTime @default(now())
+  id                       String   @id @default(cuid())
+  templateId               String
+  submittedById            String?
+  data                     Json
+  currentWorkflowStepIndex Int      @default(0)
+  taskOrderSnapshot        Json?    // JSON copy of tasks at submission time for audit/tracking
+  createdAt                DateTime @default(now())
 
-  template    FormTemplate @relation(fields: [templateId], references: [id])
-  submittedBy User?        @relation(fields: [submittedById], references: [id])
+  template             FormTemplate @relation(fields: [templateId], references: [id])
+  submittedBy          User?        @relation(fields: [submittedById], references: [id])
+  workflowStepActions  FormSubmissionStepAction[]
 
   @@index([templateId, createdAt])
   @@index([submittedById, createdAt])
+  @@index([currentWorkflowStepIndex])
+}
+
+enum TaskInstanceStatus {
+  ASSIGNED
+  DONE
+}
+
+model FormSubmissionStepAction {
+  id                 String   @id @default(cuid())
+  submissionId       String
+  stepIndex          Int      // which task step (0-based)
+  taskId             String
+  action             String   // "ASSIGNED", "COMPLETED", "REJECTED", etc.
+  completedByUserId  String?
+  remarks            String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  completedBy User? @relation(fields: [completedByUserId], references: [id])
+
+  @@index([submissionId, stepIndex])
+  @@index([completedByUserId, createdAt])
+  @@index([taskId])
+}
+
+model FormTaskInstance {
+  id           String             @id @default(cuid())
+  templateId   String
+  taskId       String
+  assignedToId String
+  status       TaskInstanceStatus @default(ASSIGNED)
+  actedAt      DateTime?
+  metadata     Json?
+  createdAt    DateTime           @default(now())
+
+  assignedTo User         @relation(fields: [assignedToId], references: [id])
+  template   FormTemplate  @relation(fields: [templateId], references: [id])
+
+  @@index([templateId, taskId])
+  @@index([assignedToId, status])
 }

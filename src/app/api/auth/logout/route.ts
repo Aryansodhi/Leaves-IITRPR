@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     : null;
 
   await logAuditEvent({
+    request,
     action: "AUTH_LOGOUT",
     entityType: "AUTH",
     entityId: actor?.userId ?? null,

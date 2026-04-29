@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const ipAddress = getRequestIp(request);
     const userAgent = request.headers.get("user-agent");
     await logAuditEvent({
+      request,
       action: "AUTH_REQUEST_OTP",
       entityType: "AUTH",
       entityId: null,

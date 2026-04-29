@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       const ipAddress = getRequestIp(request);
       const userAgent = request.headers.get("user-agent");
       await logAuditEvent({
+        request,
         action: "SUBMIT_EARNED_LEAVE",
         entityType: "LEAVE_APPLICATION",
         entityId: result.data.id,

@@ -73,13 +73,26 @@ export default async function FormsApprovalsPage() {
     <DashboardShell>
       <div className="space-y-6">
         <header className="space-y-2">
-          <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
-            Approve forms
-          </h1>
-          <p className="text-base text-slate-600">
-            Review the forms and tasks currently waiting on your next workflow
-            step.
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
+                Approve forms
+              </h1>
+              <p className="text-base text-slate-600">
+                Review the forms and tasks currently waiting on your next
+                workflow step.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="secondary">
+                <Link href="/dashboard/forms">Available forms</Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href="/dashboard/forms/submissions">My submissions</Link>
+              </Button>
+            </div>
+          </div>
         </header>
 
         <div className="grid gap-4">
@@ -111,8 +124,8 @@ export default async function FormsApprovalsPage() {
                 </div>
 
                 <Button asChild>
-                  <Link href={`/dashboard/forms/${item.templateId}`}>
-                    Open form
+                  <Link href={`/dashboard/forms/approvals/${item.id}`}>
+                    Open request
                   </Link>
                 </Button>
               </SurfaceCard>

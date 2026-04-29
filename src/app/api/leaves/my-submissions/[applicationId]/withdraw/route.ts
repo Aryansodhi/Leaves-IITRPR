@@ -121,6 +121,7 @@ export async function POST(_request: Request, context: Params) {
     const ipAddress = getRequestIp(_request);
     const userAgent = _request.headers.get("user-agent");
     await logAuditEvent({
+      request: _request,
       action: "WITHDRAW_LEAVE",
       entityType: "LEAVE_APPLICATION",
       entityId: application.id,

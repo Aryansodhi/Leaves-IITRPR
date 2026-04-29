@@ -1,20 +1,43 @@
-import { z } from "zod";
+import { RoleKey } from "@prisma/client";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
   AuthError,
   SESSION_COOKIE_NAME,
   requireSessionActor,
 } from "@/server/auth/session";
-import { prisma } from "@/server/db/prisma";
 import { getRequestIp, logAuditEvent } from "@/server/audit/logger";
+import { prisma } from "@/server/db/prisma";
+import { resolveTaskAssignees } from "@/server/workflow/task-routing";
+
+const signaturePointSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  time: z.number(),
+});
+
+const signatureStrokeSchema = z.object({
+  points: z.array(signaturePointSchema),
+  color: z.string().optional(),
+});
+
+const signatureCaptureSchema = z.object({
+  animation: z.array(signatureStrokeSchema),
+  image: z.string().min(1),
+});
 
 const submissionSchema = z.object({
   templateId: z.string().min(1),
   data: z.record(z.string(), z.string()).default({}),
   submissionId: z.string().min(1).optional(),
   action: z.enum(["SUBMIT", "COMPLETE_TASK"]).optional().default("SUBMIT"),
+  signatureMode: z.enum(["digital", "upload", "typed"]).optional(),
+  typedSignature: z.string().optional(),
+  signature: signatureCaptureSchema.optional(),
+  otpVerified: z.boolean().optional().default(false),
+  approverSignature: z.string().optional(),
 });
 
 type WorkflowTask = {
@@ -23,9 +46,14 @@ type WorkflowTask = {
   type: "fillform" | "signature";
   formTemplateId?: string | null;
   assignment: {
-    mode: "specific" | "role" | "department" | "all";
+    mode: "specific" | "role" | "department" | "sameDepartmentRole" | "all";
     values: string[];
   };
+  routes?: Array<{
+    id: string;
+    sourceRoles: RoleKey[];
+    assignment: WorkflowTask["assignment"];
+  }>;
 };
 
 type WorkflowRuntimeTask = WorkflowTask & {
@@ -40,75 +68,61 @@ type WorkflowState = {
   status: "PENDING" | "APPROVED";
   currentTaskIndex: number | null;
   tasks: WorkflowRuntimeTask[];
+  context?: {
+    submittedByRoleKey: RoleKey;
+    submittedByDepartmentId: string | null;
+  };
 };
 
-type SubmissionDataPayload = {
+type SubmissionPayload = {
   values?: Record<string, string>;
   workflow?: WorkflowState;
 };
 
-const resolveAssignmentUserIds = async (task: WorkflowTask) => {
-  if (task.assignment.mode === "all") {
-    const users = await prisma.user.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    return users.map((user) => user.id);
-  }
-
-  if (task.assignment.mode === "role") {
-    const users = await prisma.user.findMany({
-      where: {
-        isActive: true,
-        role: {
-          key: {
-            in: task.assignment.values as Array<
-              | "FACULTY"
-              | "STAFF"
-              | "HOD"
-              | "ASSOCIATE_HOD"
-              | "DEAN"
-              | "REGISTRAR"
-              | "DIRECTOR"
-              | "ACCOUNTS"
-              | "ESTABLISHMENT"
-              | "ADMIN"
-            >,
-          },
-        },
-      },
-      select: { id: true },
-    });
-    return users.map((user) => user.id);
-  }
-
-  if (task.assignment.mode === "department") {
-    const users = await prisma.user.findMany({
-      where: {
-        isActive: true,
-        departmentId: { in: task.assignment.values },
-      },
-      select: { id: true },
-    });
-    return users.map((user) => user.id);
-  }
-
-  const users = await prisma.user.findMany({
-    where: {
-      isActive: true,
-      OR: [
-        { id: { in: task.assignment.values } },
-        { email: { in: task.assignment.values } },
-      ],
-    },
-    select: { id: true },
-  });
-  return users.map((user) => user.id);
+type WorkflowSubmissionItem = {
+  id: string;
+  createdAt: string;
+  status: "PENDING" | "APPROVED";
+  currentTaskIndex: number | null;
+  currentTaskTitle: string | null;
+  currentTaskType: "fillform" | "signature" | null;
+  canAct: boolean;
+  submittedBy?: {
+    name?: string | null;
+    email?: string | null;
+  } | null;
 };
 
-const parseSubmissionData = (value: unknown): SubmissionDataPayload => {
+const parseSubmissionData = (value: unknown): SubmissionPayload => {
   if (!value || typeof value !== "object") return {};
-  return value as SubmissionDataPayload;
+  return value as SubmissionPayload;
+};
+
+const toWorkflowItem = (
+  submissionId: string,
+  createdAt: Date,
+  data: SubmissionPayload,
+  submittedBy: { name: string | null; email: string | null } | null,
+  actorUserId: string,
+): WorkflowSubmissionItem | null => {
+  const workflow = data.workflow;
+  if (!workflow) return null;
+
+  const currentTask =
+    workflow.currentTaskIndex != null
+      ? (workflow.tasks[workflow.currentTaskIndex] ?? null)
+      : null;
+
+  return {
+    id: submissionId,
+    createdAt: createdAt.toISOString(),
+    status: workflow.status,
+    currentTaskIndex: workflow.currentTaskIndex,
+    currentTaskTitle: currentTask?.title ?? null,
+    currentTaskType: currentTask?.type ?? null,
+    canAct: Boolean(currentTask?.assigneeIds.includes(actorUserId)),
+    submittedBy,
+  };
 };
 
 export async function GET(request: Request) {
@@ -118,8 +132,7 @@ export async function GET(request: Request) {
     const actor = await requireSessionActor(token);
 
     const url = new URL(request.url);
-    const templateId = url.searchParams.get("templateId")?.trim();
-
+    const templateId = url.searchParams.get("templateId");
     if (!templateId) {
       return NextResponse.json(
         { ok: false, message: "Template id is required." },
@@ -127,51 +140,67 @@ export async function GET(request: Request) {
       );
     }
 
+    const template = await prisma.formTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true, schema: true },
+    });
+
+    if (!template) {
+      return NextResponse.json(
+        { ok: false, message: "Form template not found." },
+        { status: 404 },
+      );
+    }
+
+    const schema = template.schema as unknown as {
+      visibilityRoles?: string[];
+      lifecycle?: {
+        status?: "draft" | "published";
+      };
+    };
+
+    if (schema?.lifecycle?.status === "draft") {
+      return NextResponse.json(
+        { ok: false, message: "This form is not published yet." },
+        { status: 400 },
+      );
+    }
+
+    if (
+      schema?.visibilityRoles?.length &&
+      !schema.visibilityRoles.includes(actor.roleKey)
+    ) {
+      return NextResponse.json(
+        { ok: false, message: "You do not have access to this form." },
+        { status: 403 },
+      );
+    }
+
     const submissions = await prisma.formSubmission.findMany({
       where: { templateId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
       select: {
         id: true,
         createdAt: true,
-        submittedById: true,
         submittedBy: { select: { name: true, email: true } },
         data: true,
       },
-      orderBy: [{ createdAt: "desc" }],
-      take: 100,
     });
 
     const items = submissions
-      .map((entry) => {
-        const payload = parseSubmissionData(entry.data);
-        const workflow = payload.workflow;
-        if (!workflow) return null;
-        const currentTask =
-          workflow.currentTaskIndex != null
-            ? workflow.tasks[workflow.currentTaskIndex]
-            : null;
-        const canAct = Boolean(currentTask?.assigneeIds.includes(actor.userId));
-        const isParticipant = workflow.tasks.some(
-          (task) =>
-            task.assigneeIds.includes(actor.userId) ||
-            task.completedById === actor.userId,
-        );
-        const visible = isParticipant || entry.submittedById === actor.userId;
-        if (!visible) return null;
-        return {
-          id: entry.id,
-          createdAt: entry.createdAt,
-          status: workflow.status,
-          currentTaskIndex: workflow.currentTaskIndex,
-          currentTaskTitle: currentTask?.title ?? null,
-          currentTaskType: currentTask?.type ?? null,
-          canAct,
-          submittedBy: entry.submittedBy,
-        };
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+      .map((entry) =>
+        toWorkflowItem(
+          entry.id,
+          entry.createdAt,
+          parseSubmissionData(entry.data),
+          entry.submittedBy,
+          actor.userId,
+        ),
+      )
+      .filter((entry): entry is WorkflowSubmissionItem => Boolean(entry));
 
-    const pendingForActor =
-      items.find((item) => item.canAct && item.status === "PENDING") ?? null;
+    const pendingForActor = items.find((item) => item.canAct) ?? null;
 
     return NextResponse.json({
       ok: true,
@@ -188,8 +217,16 @@ export async function GET(request: Request) {
       );
     }
 
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { ok: false, message: error.message },
+        { status: 400 },
+      );
+    }
+
+    console.error("Failed to load form submissions", error);
     return NextResponse.json(
-      { ok: false, message: "Unable to load workflow submissions." },
+      { ok: false, message: "Unable to load form submissions." },
       { status: 500 },
     );
   }
@@ -222,7 +259,16 @@ export async function POST(request: Request) {
         status?: "draft" | "published";
       };
       tasks?: WorkflowTask[];
+      pages?: Array<{
+        fields?: Array<{ kind?: string }>;
+      }>;
     };
+
+    const hasSignatureField = Boolean(
+      schema.pages?.some((page) =>
+        page.fields?.some((field) => field.kind === "signature"),
+      ),
+    );
 
     if (schema?.lifecycle?.status === "draft") {
       return NextResponse.json(
@@ -241,57 +287,103 @@ export async function POST(request: Request) {
       );
     }
 
-    const workflowTasks = Array.isArray(schema.tasks) ? schema.tasks : [];
-
-    const submission = await (async () => {
-      if (workflowTasks.length === 0) {
-        return prisma.formSubmission.create({
-          data: {
-            templateId: parsed.templateId,
-            submittedById: actor.userId,
-            data: parsed.data,
-          },
-        });
-      }
-
-      if (parsed.action === "SUBMIT" && !parsed.submissionId) {
-        const runtimeTasks: WorkflowRuntimeTask[] = await Promise.all(
-          workflowTasks.map(async (task, index) => {
-            const assigneeIds = await resolveAssignmentUserIds(task);
-            return {
-              ...task,
-              sequence: index + 1,
-              status: "PENDING",
-              assigneeIds,
-              completedById: null,
-              completedAt: null,
-            };
-          }),
-        );
-
-        const firstTask = runtimeTasks[0];
-        if (!firstTask || firstTask.assigneeIds.length === 0) {
-          throw new Error("The first workflow task has no assignees.");
+    if (parsed.action === "SUBMIT" && hasSignatureField) {
+      if (parsed.signatureMode === "typed") {
+        if (
+          !parsed.typedSignature ||
+          parsed.typedSignature.trim().length === 0
+        ) {
+          return NextResponse.json(
+            { ok: false, message: "Typed signature is required." },
+            { status: 400 },
+          );
+        }
+      } else {
+        if (!parsed.signature) {
+          return NextResponse.json(
+            { ok: false, message: "Digital signature image is required." },
+            { status: 400 },
+          );
         }
 
-        firstTask.status = "IN_PROGRESS";
+        if (!parsed.otpVerified) {
+          return NextResponse.json(
+            {
+              ok: false,
+              message: "OTP verification is required for digital signature.",
+            },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
-        return prisma.formSubmission.create({
+    const workflowTasks = Array.isArray(schema.tasks)
+      ? [...schema.tasks]
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .map((task, index) => ({ ...task, order: index }))
+      : [];
+    const payloadValues = parsed.data;
+
+    let submissionId: string;
+
+    if (workflowTasks.length === 0) {
+      const submission = await prisma.formSubmission.create({
+        data: {
+          templateId: parsed.templateId,
+          submittedById: actor.userId,
+          data: payloadValues,
+        },
+      });
+      submissionId = submission.id;
+    } else if (parsed.action === "SUBMIT" && !parsed.submissionId) {
+      const runtimeTasks: WorkflowRuntimeTask[] = await Promise.all(
+        workflowTasks.map(async (task, index) => {
+          const assigneeIds = await resolveTaskAssignees(task, {
+            roleKey: actor.roleKey,
+            departmentId: actor.departmentId,
+          });
+          return {
+            ...task,
+            sequence: index + 1,
+            status: "PENDING",
+            assigneeIds,
+            completedById: null,
+            completedAt: null,
+          };
+        }),
+      );
+
+      const firstTask = runtimeTasks[0];
+      if (!firstTask || firstTask.assigneeIds.length === 0) {
+        throw new Error("The first workflow task has no assignees.");
+      }
+
+      firstTask.status = "IN_PROGRESS";
+
+      const submission = await prisma.formSubmission.create({
+        data: {
+          templateId: parsed.templateId,
+          submittedById: actor.userId,
           data: {
-            templateId: parsed.templateId,
-            submittedById: actor.userId,
-            data: {
-              values: parsed.data,
-              workflow: {
-                status: "PENDING",
-                currentTaskIndex: 0,
-                tasks: runtimeTasks,
+            values: payloadValues,
+            workflow: {
+              status: "PENDING",
+              currentTaskIndex: 0,
+              tasks: runtimeTasks,
+              context: {
+                submittedByRoleKey: actor.roleKey,
+                submittedByDepartmentId: actor.departmentId ?? null,
               },
             },
           },
-        });
-      }
+          taskOrderSnapshot: workflowTasks,
+          currentWorkflowStepIndex: 0,
+        },
+      });
 
+      submissionId = submission.id;
+    } else {
       if (!parsed.submissionId) {
         throw new Error("Submission id is required to complete a task.");
       }
@@ -332,6 +424,37 @@ export async function POST(request: Request) {
         throw new Error("You are not assigned to this pending task.");
       }
 
+      if (currentTask.type === "signature") {
+        if (parsed.signatureMode === "typed") {
+          if (
+            !parsed.typedSignature ||
+            parsed.typedSignature.trim().length === 0
+          ) {
+            return NextResponse.json(
+              { ok: false, message: "Typed signature is required." },
+              { status: 400 },
+            );
+          }
+        } else {
+          if (!parsed.signature) {
+            return NextResponse.json(
+              { ok: false, message: "Digital signature image is required." },
+              { status: 400 },
+            );
+          }
+
+          if (!parsed.otpVerified) {
+            return NextResponse.json(
+              {
+                ok: false,
+                message: "OTP verification is required for digital signature.",
+              },
+              { status: 400 },
+            );
+          }
+        }
+      }
+
       const updatedTasks = [...workflow.tasks];
       updatedTasks[workflow.currentTaskIndex] = {
         ...currentTask,
@@ -365,6 +488,37 @@ export async function POST(request: Request) {
         tasks: updatedTasks,
       };
 
+      // Create audit log entry for step completion
+      await prisma.formSubmissionStepAction.create({
+        data: {
+          submissionId: existing.id,
+          stepIndex: workflow.currentTaskIndex,
+          taskId: currentTask.id,
+          action: "COMPLETED",
+          completedByUserId: actor.userId,
+          remarks: null,
+          metadata:
+            currentTask.type === "signature"
+              ? {
+                  approverSignature:
+                    parsed.approverSignature ??
+                    (parsed.signatureMode === "typed"
+                      ? (parsed.typedSignature?.trim() ?? null)
+                      : "DIGITAL_SIGNATURE_VALUE"),
+                  signatureMode: parsed.signatureMode ?? null,
+                  typedSignature:
+                    parsed.signatureMode === "typed"
+                      ? (parsed.typedSignature?.trim() ?? null)
+                      : null,
+                  otpVerified:
+                    parsed.signatureMode === "typed"
+                      ? false
+                      : parsed.otpVerified,
+                }
+              : undefined,
+        },
+      });
+
       await prisma.formSubmission.update({
         where: { id: existing.id },
         data: {
@@ -372,22 +526,27 @@ export async function POST(request: Request) {
             ...existingData,
             values: {
               ...(existingData.values ?? {}),
-              ...parsed.data,
+              ...payloadValues,
             },
             workflow: nextWorkflow,
           },
+          currentWorkflowStepIndex: nextTaskIndex ?? updatedTasks.length,
         },
       });
 
-      return {
-        id: existing.id,
-      };
-    })();
+      submissionId = existing.id;
+    }
 
     await logAuditEvent({
-      action: "SUBMIT_FORM_TEMPLATE",
+      request,
+      action:
+        workflowTasks.length === 0
+          ? "SUBMIT_FORM_TEMPLATE"
+          : parsed.action === "COMPLETE_TASK"
+            ? "COMPLETE_FORM_TASK"
+            : "SUBMIT_FORM_TEMPLATE",
       entityType: "FORM_SUBMISSION",
-      entityId: submission.id,
+      entityId: submissionId,
       referenceCode: null,
       userId: actor.userId,
       userEmail: actor.email,
@@ -396,16 +555,19 @@ export async function POST(request: Request) {
       userAgent: request.headers.get("user-agent"),
       details: {
         templateId: parsed.templateId,
+        action: parsed.action,
       },
     });
 
     const message =
-      parsed.action === "COMPLETE_TASK"
-        ? "Task completed and workflow moved to the next step."
-        : "Form submitted successfully and forwarded to approvers.";
+      workflowTasks.length === 0
+        ? "Form submitted successfully."
+        : parsed.action === "COMPLETE_TASK"
+          ? "Task completed and workflow moved to the next step."
+          : "Form submitted successfully and forwarded to approvers.";
 
     return NextResponse.json(
-      { ok: true, message, data: { id: submission.id } },
+      { ok: true, message, data: { id: submissionId } },
       { status: 201 },
     );
   } catch (error) {

@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     const user = ok && "user" in result.body ? result.body.user : null;
 
     await logAuditEvent({
+      request,
       action: ok ? "AUTH_VERIFY_OTP_SUCCESS" : "AUTH_VERIFY_OTP_FAIL",
       entityType: "AUTH",
       entityId:

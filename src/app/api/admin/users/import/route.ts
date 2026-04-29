@@ -28,6 +28,7 @@ export async function POST(request: Request) {
         : null;
 
     await logAuditEvent({
+      request,
       action: "ADMIN_IMPORT_USERS",
       entityType: "USER",
       entityId: null,

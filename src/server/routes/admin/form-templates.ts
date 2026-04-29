@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, RoleKey } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/server/db/prisma";
@@ -89,8 +89,14 @@ const pageSchema = z.object({
 });
 
 const taskAssignmentSchema = z.object({
-  mode: z.enum(["specific", "role", "department", "all"]),
+  mode: z.enum(["specific", "role", "department", "sameDepartmentRole", "all"]),
   values: z.array(z.string().min(1)).default([]),
+});
+
+const taskRoutingRuleSchema = z.object({
+  id: z.string().min(1),
+  sourceRoles: z.array(z.nativeEnum(RoleKey)).min(1),
+  assignment: taskAssignmentSchema,
 });
 
 const formTaskSchema = z
@@ -100,7 +106,9 @@ const formTaskSchema = z
     type: z.enum(["fillform", "signature"]),
     formTemplateId: z.string().min(1).nullable().optional(),
     assignment: taskAssignmentSchema,
+    routes: z.array(taskRoutingRuleSchema).optional().default([]),
     status: z.enum(["PENDING", "ASSIGNED", "IN_PROGRESS", "DONE"]).optional(),
+    order: z.number().int().min(0).optional(),
   })
   .superRefine((task, ctx) => {
     if (task.type === "fillform" && !task.formTemplateId) {
@@ -110,7 +118,17 @@ const formTaskSchema = z
         path: ["formTemplateId"],
       });
     }
+
+    if (task.assignment.mode !== "all" && task.assignment.values.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Select at least one assignee target for the task.",
+        path: ["assignment", "values"],
+      });
+    }
   });
+
+type FormTask = z.infer<typeof formTaskSchema>;
 
 const builderSchema = z.object({
   version: z.number().int().min(1),
@@ -137,6 +155,7 @@ const builderSchema = z.object({
 const createSchema = z.object({
   name: z.string().min(3),
   description: z.string().nullable().optional(),
+  isPublished: z.boolean().optional().default(false),
   schema: builderSchema,
 });
 
@@ -152,6 +171,11 @@ type HandlerResult = {
 const deleteSchema = z.object({
   id: z.string().min(1),
 });
+
+const normalizeTaskOrder = <T extends { order?: number }>(tasks: T[]) =>
+  [...tasks]
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((task, index) => ({ ...task, order: index }));
 
 export const createFormTemplateHandler = async (
   payload: unknown,
@@ -256,6 +280,7 @@ export const createFormTemplateHandler = async (
       },
       title: data.schema.title?.trim() || trimmedName,
       description: data.schema.description?.trim() || null,
+      tasks: normalizeTaskOrder(data.schema.tasks ?? []),
     };
 
     const formTemplateModel = (prisma as unknown as { formTemplate?: unknown })
@@ -282,6 +307,10 @@ export const createFormTemplateHandler = async (
         description: description && description.length > 0 ? description : null,
         schema,
         createdById: actorId,
+        ...(data.isPublished && {
+          isPublished: true,
+          lastPublishedAt: new Date(),
+        }),
       },
     });
 
@@ -432,6 +461,7 @@ export const updateFormTemplateHandler = async (
       },
       title: data.schema.title?.trim() || trimmedName,
       description: data.schema.description?.trim() || null,
+      tasks: normalizeTaskOrder(data.schema.tasks ?? []),
     };
 
     const formTemplateModel = (prisma as unknown as { formTemplate?: unknown })
@@ -452,14 +482,89 @@ export const updateFormTemplateHandler = async (
       };
     }
 
+    // Fetch previous version for change detection
+    const previousVersion = await prisma.formTemplate.findUnique({
+      where: { id: data.id },
+      select: { schema: true, isPublished: true },
+    });
+
     const record = await formTemplateModel.update({
       where: { id: data.id },
       data: {
         name: trimmedName,
         description: description && description.length > 0 ? description : null,
         schema,
+        ...(data.isPublished && {
+          isPublished: true,
+          lastPublishedAt: new Date(),
+        }),
       },
     });
+
+    // Create notifications if publishing with changes
+    if (data.isPublished && previousVersion?.isPublished) {
+      const previousTasks =
+        (previousVersion.schema as { tasks?: FormTask[] }).tasks ?? [];
+      const newTasks = normalizeTaskOrder(data.schema.tasks ?? []);
+
+      // Check if tasks have changed
+      const tasksChanged =
+        JSON.stringify(previousTasks) !== JSON.stringify(newTasks);
+
+      if (tasksChanged) {
+        // Collect all users assigned to tasks
+        const usersToNotify = new Set<string>();
+
+        for (const task of newTasks) {
+          const assignmentMode = task.assignment?.mode;
+          const assignmentValues = task.assignment?.values ?? [];
+
+          if (assignmentMode === "specific") {
+            assignmentValues.forEach((userId) => usersToNotify.add(userId));
+          } else if (assignmentMode === "role") {
+            const users = await prisma.user.findMany({
+              where: {
+                isActive: true,
+                role: { key: { in: assignmentValues as RoleKey[] } },
+              },
+              select: { id: true },
+            });
+            users.forEach((u) => usersToNotify.add(u.id));
+          } else if (assignmentMode === "department") {
+            const users = await prisma.user.findMany({
+              where: {
+                isActive: true,
+                departmentId: { in: assignmentValues },
+              },
+              select: { id: true },
+            });
+            users.forEach((u) => usersToNotify.add(u.id));
+          } else if (assignmentMode === "all") {
+            const users = await prisma.user.findMany({
+              where: { isActive: true },
+              select: { id: true },
+            });
+            users.forEach((u) => usersToNotify.add(u.id));
+          }
+        }
+
+        // Create notifications for affected users
+        if (usersToNotify.size > 0) {
+          await prisma.notification.createMany({
+            data: Array.from(usersToNotify).map((userId) => ({
+              userId,
+              title: `Form "${trimmedName}" workflow has been updated`,
+              body: "The task sequence for this form has changed. Please review the updated workflow.",
+              type: "FORM_WORKFLOW_UPDATED",
+              metadata: {
+                formId: data.id,
+                updatedAt: new Date().toISOString(),
+              },
+            })),
+          });
+        }
+      }
+    }
 
     return {
       status: 200,

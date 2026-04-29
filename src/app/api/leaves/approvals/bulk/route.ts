@@ -57,6 +57,7 @@ export async function POST(request: Request) {
         successIds.map((applicationId, index) => {
           const application = byId.get(applicationId);
           return logAuditEvent({
+            request,
             action:
               decision === "APPROVE"
                 ? "BULK_APPROVE_LEAVE"
