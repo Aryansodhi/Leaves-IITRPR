@@ -45,6 +45,7 @@ type WorkflowTask = {
   title: string;
   type: "fillform" | "signature";
   formTemplateId?: string | null;
+  order?: number;
   assignment: {
     mode: "specific" | "role" | "department" | "sameDepartmentRole" | "all";
     values: string[];
