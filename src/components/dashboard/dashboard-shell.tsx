@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 
 import { DashboardLogoutButton } from "@/components/dashboard/dashboard-logout-button";
+import { GuideButton } from "@/components/dashboard/guide-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -199,84 +200,92 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
   }, [mobileNavOpen]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 py-3 sm:space-y-6 sm:py-8">
-      <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-sm sm:p-3">
-        <div className="sm:hidden space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                className="px-2.5 py-2"
-                aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
-                aria-expanded={mobileNavOpen}
-                aria-controls="dashboard-mobile-nav"
-                onClick={() => setMobileNavOpen((open) => !open)}
-              >
-                {mobileNavOpen ? (
-                  <X className="h-5 w-5" />
-                ) : (
-                  <Menu className="h-5 w-5" />
-                )}
-              </Button>
+    <div className="min-h-screen">
+      <header className="fixed left-0 right-0 top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto w-full max-w-6xl px-3 py-2 sm:px-6 sm:py-3">
+          <div className="sm:hidden space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  className="px-2.5 py-2"
+                  aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={mobileNavOpen}
+                  aria-controls="dashboard-mobile-nav"
+                  onClick={() => setMobileNavOpen((open) => !open)}
+                >
+                  {mobileNavOpen ? (
+                    <X className="h-5 w-5" />
+                  ) : (
+                    <Menu className="h-5 w-5" />
+                  )}
+                </Button>
 
+                <Image
+                  src="/iit_ropar.png"
+                  alt="IIT Ropar Logo"
+                  width={48}
+                  height={48}
+                  className="h-10 w-10 object-contain"
+                  priority
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <GuideButton />
+                <DashboardLogoutButton />
+              </div>
+            </div>
+
+            <div className="pl-11 text-[11px] font-semibold leading-tight tracking-normal text-slate-500">
+              {userName ? `Welcome, ${userName}` : "Leave Workspace"}
+              {userRole ? ` (${userRole})` : ""}
+            </div>
+          </div>
+
+          <div className="hidden items-center justify-between gap-3 sm:flex">
+            <div className="flex min-w-0 items-center gap-3">
               <Image
                 src="/iit_ropar.png"
                 alt="IIT Ropar Logo"
                 width={48}
                 height={48}
-                className="h-10 w-10 object-contain"
+                className="h-12 w-12 object-contain"
                 priority
               />
-            </div>
 
-            <DashboardLogoutButton />
-          </div>
+              <div className="min-w-0 space-y-2">
+                <div className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {userName ? `Welcome, ${userName}` : "Leave Workspace"}
+                  {userRole ? ` (${userRole})` : ""}
+                </div>
 
-          <div className="pl-11 text-[11px] font-semibold leading-tight tracking-normal text-slate-500">
-            {userName ? `Welcome, ${userName}` : "Leave Workspace"}
-            {userRole ? ` (${userRole})` : ""}
-          </div>
-        </div>
-
-        <div className="hidden items-center justify-between gap-3 sm:flex">
-          <div className="flex min-w-0 items-center gap-3">
-            <Image
-              src="/iit_ropar.png"
-              alt="IIT Ropar Logo"
-              width={48}
-              height={48}
-              className="h-12 w-12 object-contain"
-              priority
-            />
-
-            <div className="min-w-0 space-y-2">
-              <div className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {userName ? `Welcome, ${userName}` : "Leave Workspace"}
-                {userRole ? ` (${userRole})` : ""}
+                <nav className="flex flex-1 flex-wrap items-center gap-2">
+                  {navItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                        item.active
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </nav>
               </div>
+            </div>
 
-              <nav className="flex flex-1 flex-wrap items-center gap-2">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-xs font-semibold transition",
-                      item.active
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+            <div className="flex items-center gap-2">
+              <GuideButton />
+              <DashboardLogoutButton />
             </div>
           </div>
-
-          <DashboardLogoutButton />
         </div>
-      </div>
+      </header>
 
       {mobileNavOpen && (
         <div
@@ -335,14 +344,19 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
                 <p className="text-xs text-slate-500">{userRole}</p>
               ) : null}
               <div className="mt-3">
-                <DashboardLogoutButton />
+                <div className="flex items-center gap-2">
+                  <GuideButton />
+                  <DashboardLogoutButton />
+                </div>
               </div>
             </div>
           </aside>
         </div>
       )}
 
-      {children}
+      <main className="mx-auto w-full max-w-6xl px-3 pb-10 pt-24 sm:px-6 sm:pt-28">
+        {children}
+      </main>
     </div>
   );
 };

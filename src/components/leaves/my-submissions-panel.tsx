@@ -88,7 +88,13 @@ export const MySubmissionsPanel = () => {
   };
 
   useEffect(() => {
-    void load();
+    const timeout = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, []);
 
   const handleWithdraw = async (applicationId: string) => {
@@ -199,7 +205,7 @@ export const MySubmissionsPanel = () => {
   );
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <SurfaceCard className="space-y-2 border-slate-200/80 p-5">
         <p className="text-lg font-semibold text-slate-900">
           My leave submissions
@@ -209,7 +215,7 @@ export const MySubmissionsPanel = () => {
         </p>
       </SurfaceCard>
 
-      <SurfaceCard className="space-y-4 border-slate-200/80 p-5">
+      <SurfaceCard className="space-y-5 border-slate-200/80 p-5">
         <div className="flex flex-wrap items-center gap-5">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
@@ -239,7 +245,7 @@ export const MySubmissionsPanel = () => {
             Rejected / other
           </label>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           <label className="space-y-2 text-sm text-slate-700">
             <span className="font-medium text-slate-900">Submitted from</span>
             <input
@@ -273,7 +279,7 @@ export const MySubmissionsPanel = () => {
         </SurfaceCard>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-5 xl:grid-cols-3">
         {showPending ? (
           <SurfaceCard className="space-y-3 border-slate-200/80 p-5">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -286,7 +292,7 @@ export const MySubmissionsPanel = () => {
             ) : pendingItems.length === 0 ? (
               <p className="text-sm text-slate-500">No pending approvals.</p>
             ) : (
-              <div className="space-y-2">{pendingItems.map(renderRow)}</div>
+              <div className="space-y-3">{pendingItems.map(renderRow)}</div>
             )}
           </SurfaceCard>
         ) : null}
@@ -303,7 +309,7 @@ export const MySubmissionsPanel = () => {
             ) : approvedItems.length === 0 ? (
               <p className="text-sm text-slate-500">No approved submissions.</p>
             ) : (
-              <div className="space-y-2">{approvedItems.map(renderRow)}</div>
+              <div className="space-y-3">{approvedItems.map(renderRow)}</div>
             )}
           </SurfaceCard>
         ) : null}
@@ -322,7 +328,7 @@ export const MySubmissionsPanel = () => {
                 No other submissions yet.
               </p>
             ) : (
-              <div className="space-y-2">{otherItems.map(renderRow)}</div>
+              <div className="space-y-3">{otherItems.map(renderRow)}</div>
             )}
           </SurfaceCard>
         ) : null}
