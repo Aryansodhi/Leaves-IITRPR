@@ -21,9 +21,10 @@ export const leaveGuides: LeaveGuide[] = [
       "Leave period with sessions and auto-calculated total days.",
       "Rejoining date/session with office order number and date.",
       "Leave category selection (earned, half pay, medical, EOL, vacation).",
+      "Typed or digital signature with OTP verification before submit.",
     ],
     workflow:
-      "Routed through HOD/Reporting Officer and recorded by the institute office.",
+      "Faculty routes to HoD, Staff to Registrar, HoD to Dean. Dean/Registrar cannot submit.",
   },
   {
     key: "earned-leave",
@@ -34,6 +35,7 @@ export const leaveGuides: LeaveGuide[] = [
       "Nature of leave, date range, sessions, and total days.",
       "Purpose and alternative work arrangements/reliever.",
       "LTC choice, address during leave, and station leave requirement.",
+      "Typed or digital signature with OTP verification before submit.",
     ],
     workflow:
       "Reviewed by HOD/Section In-charge and completed by Administration.",
@@ -46,7 +48,8 @@ export const leaveGuides: LeaveGuide[] = [
     details: [
       "Leave type with from/to sessions and total days.",
       "Purpose of visit, alternative arrangements, and documents.",
-      "Address during leave and applicant signature.",
+      "Attach: application to Director and undertaking/agreement (Form I & Form II).",
+      "Address during leave and digital signature with OTP verification.",
     ],
     workflow:
       "Moves via HOD recommendations and Administration/Director approval.",
@@ -59,7 +62,8 @@ export const leaveGuides: LeaveGuide[] = [
     details: [
       "Onward/return journey dates with sessions and total travel days.",
       "Place, purpose, sectors, and reason for non-Air India travel.",
-      "Budget head and required permissions/approvals.",
+      "Budget head and MHRD permission status (attach email if Yes).",
+      "Digital signature with OTP verification before submit.",
     ],
     workflow: "Requires HOD and higher authority approvals before travel.",
   },
@@ -71,7 +75,9 @@ export const leaveGuides: LeaveGuide[] = [
     details: [
       "Leave period, journey dates, LTC type, and block year.",
       "Family members, travel mode, and fare estimates.",
-      "Declarations and office section verification.",
+      "Attach proof for the estimated fare of entitled class.",
+      "Declarations, undertakings, and office section verification.",
+      "Typed or digital signature with OTP verification before submit.",
     ],
     workflow:
       "Reviewed by HOD/Section and processed by Establishment/Accounts.",
@@ -86,7 +92,9 @@ export const leaveGuides: LeaveGuide[] = [
       "Leave dates/sessions with total days computed.",
       "Purpose, out-of-station details, and contact address.",
       "Routing panel and recent history after submission.",
+      "Typed or digital signature with OTP verification before submit.",
     ],
-    workflow: "Follow the routing panel on the page for approval progress.",
+    workflow:
+      "Faculty routes to HoD, Staff to Registrar, HoD to Dean; over 30 days also to Director. Dean/Registrar cannot submit.",
   },
 ];
