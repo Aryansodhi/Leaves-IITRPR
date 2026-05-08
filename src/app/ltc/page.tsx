@@ -604,6 +604,7 @@ function LtcPageContent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
+  const [isDirty, setIsDirty] = useState(false);
   const [leaveFrom, setLeaveFrom] = useState("");
   const [leaveTo, setLeaveTo] = useState("");
   const [leaveFromSession, setLeaveFromSession] =
@@ -648,6 +649,12 @@ function LtcPageContent() {
     if (page > 0) {
       setPage((p) => p - 1);
       return;
+    }
+    if (isDirty && !confirmed) {
+      const shouldLeave = window.confirm(
+        "You have unsaved changes. If you leave now, your data may be lost. Do you want to continue?",
+      );
+      if (!shouldLeave) return;
     }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -755,6 +762,17 @@ function LtcPageContent() {
   }, [leaveFrom, leaveFromSession, leaveTo, leaveToSession]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty || confirmed) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [confirmed, isDirty]);
+
+  useEffect(() => {
     if (!leaveFrom || !leaveTo) return;
     if (leaveTo < leaveFrom) {
       setLeaveTo(leaveFrom);
@@ -775,6 +793,10 @@ function LtcPageContent() {
       );
     }
   }, [leaveFrom, leaveFromSession, leaveTo, leaveToSession]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [page]);
 
   const handleConfirmSubmit = async () => {
     const signatureError = signature.ensureReadyForSubmit({
@@ -829,6 +851,7 @@ function LtcPageContent() {
       setSubmitMessage(
         result.message || "LTC application submitted successfully.",
       );
+      setIsDirty(false);
       clearFormDraft("ltc");
       signature.resetAfterSubmit();
       setDialogState("success");
@@ -872,6 +895,7 @@ function LtcPageContent() {
       <form
         ref={formRef}
         onSubmit={handleSubmit}
+        onChange={() => setIsDirty(true)}
         className="space-y-3 sm:space-y-4"
       >
         <div className="flex items-center gap-2 sm:gap-3">

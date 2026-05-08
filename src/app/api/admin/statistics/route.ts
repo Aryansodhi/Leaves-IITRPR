@@ -70,6 +70,7 @@ export async function GET(request: Request) {
     const leaveTypeRaw = url.searchParams.get("leaveType")?.trim();
     const departmentId = url.searchParams.get("departmentId")?.trim() ?? null;
     const roleKey = url.searchParams.get("roleKey")?.trim() ?? null;
+    const userId = url.searchParams.get("userId")?.trim() ?? null;
     const includeDraft = url.searchParams.get("includeDraft") === "1";
     const allowLarge = url.searchParams.get("allowLarge") === "1";
 
@@ -88,6 +89,12 @@ export async function GET(request: Request) {
       ],
     };
 
+    const applicantFilter: Prisma.UserWhereInput = {
+      ...(userId ? { id: userId } : {}),
+      ...(departmentId ? { departmentId } : {}),
+      ...(roleKey ? { role: { key: roleKey as RoleKey } } : {}),
+    };
+
     const where: Prisma.LeaveApplicationWhereInput = {
       ...(includeDraft ? {} : { status: { not: LeaveStatus.DRAFT } }),
       ...(status ? { status } : {}),
@@ -103,8 +110,9 @@ export async function GET(request: Request) {
             ],
           }
         : {}),
-      ...(departmentId ? { applicant: { departmentId } } : {}),
-      ...(roleKey ? { applicant: { role: { key: roleKey as RoleKey } } } : {}),
+      ...(Object.keys(applicantFilter).length > 0
+        ? { applicant: applicantFilter }
+        : {}),
       ...dateFilter,
     };
 
@@ -266,6 +274,7 @@ export async function GET(request: Request) {
           leaveType: leaveTypeRaw ?? null,
           departmentId,
           roleKey,
+          userId,
           includeDraft,
           totalCount,
         },

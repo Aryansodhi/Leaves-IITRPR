@@ -1,3 +1,11 @@
+type EarnedLeaveBalance = {
+  leaveType: string;
+  totalAllocated: number;
+  totalConsumed: number;
+  totalEncashed: number;
+  available: number;
+};
+
 export type AutofillProfile = {
   userId: string;
   name: string;
@@ -9,9 +17,10 @@ export type AutofillProfile = {
   roleKey: string;
   roleSlug: string;
   todayDisplay: string;
+  earnedLeaveBalance?: EarnedLeaveBalance | null;
 };
 
-const PROFILE_CACHE_KEY = "lf-autofill-profile-v1";
+const PROFILE_CACHE_KEY = "lf-autofill-profile-v2";
 const FORM_DRAFT_PREFIX = "lf-form-draft-v1:";
 
 const isNonEmpty = (value?: string | null) => Boolean(value && value.trim());

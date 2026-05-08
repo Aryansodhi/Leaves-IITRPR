@@ -24,8 +24,6 @@ import {
   SESSION_OFFSET,
   computeSessionLeaveDaysFromInput,
   formatSessionDays,
-  getTodayIso,
-  resolveCurrentSession,
 } from "@/lib/leave-session";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -369,6 +367,7 @@ function JoiningReportPageContent() {
   const formRef = useRef<HTMLFormElement>(null);
   const pendingDataRef = useRef<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -404,6 +403,10 @@ function JoiningReportPageContent() {
   });
   const [fromSession, setFromSession] = useState<DaySession>("MORNING");
   const [toSession, setToSession] = useState<DaySession>("EVENING");
+  const [englishFromSession, setEnglishFromSession] =
+    useState<DaySession>("MORNING");
+  const [englishToSession, setEnglishToSession] =
+    useState<DaySession>("EVENING");
   const [fromDateValue, setFromDateValue] = useState("");
   const [toDateValue, setToDateValue] = useState("");
   const [computedDays, setComputedDays] = useState("");
@@ -426,11 +429,21 @@ function JoiningReportPageContent() {
       : option.english,
   }));
 
+  const englishDutySessionOptions = DUTY_SESSION_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.english,
+  }));
+
   const leaveCategoryOptions = LEAVE_CATEGORY_OPTIONS.map((option) => ({
     value: option.value,
     label: option.hindi
       ? `${translateHindi(option.hindi)} / ${option.english}`
       : option.english,
+  }));
+
+  const englishLeaveCategoryOptions = LEAVE_CATEGORY_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.english || option.value,
   }));
 
   const markMissingInputs = (form: HTMLFormElement, missing: Set<string>) => {
@@ -453,6 +466,12 @@ function JoiningReportPageContent() {
   };
 
   const handleBack = () => {
+    if (isDirty && !confirmed) {
+      const shouldLeave = window.confirm(
+        "You have unsaved changes. If you leave now, your data may be lost. Do you want to continue?",
+      );
+      if (!shouldLeave) return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
@@ -479,12 +498,21 @@ function JoiningReportPageContent() {
 
     data.fromSession = fromSession;
     data.toSession = toSession;
+    data.englishFromSession = englishFromSession;
+    data.englishToSession = englishToSession;
     data.totalDays = computedDays;
     data.englishDays = computedDays;
     data.englishFrom = data.fromDate;
     data.englishTo = data.toDate;
     data.englishRejoin = data.rejoinDate;
     data.englishOrderDate = data.orderDate;
+    data.englishLeaveCategory = choiceValues.leaveCategory;
+    const mirroredOrderNo = data.orderNo || data.englishOrder;
+    if (mirroredOrderNo) {
+      data.orderNo = mirroredOrderNo;
+      data.englishOrder = mirroredOrderNo;
+    }
+
     data.signature =
       signatureMode === "typed"
         ? typedSignature.trim()
@@ -506,32 +534,39 @@ function JoiningReportPageContent() {
       invalid.add("englishDays");
     }
 
-    const toDateParsed = toDateValue
-      ? new Date(`${toDateValue}T00:00:00`)
-      : null;
-    const toMarker =
-      (toDateParsed?.getTime() ?? 0) / 86400000 + SESSION_OFFSET[toSession];
-    const today = new Date();
-    const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
-    const nowMarker =
-      todayDate.getTime() / 86400000 + SESSION_OFFSET[resolveCurrentSession()];
-    if (toDateValue && toMarker <= nowMarker) {
+    // Chronological validations: from <= to and to <= rejoin
+    const fromDate = data.fromDate;
+    const toDate = data.toDate;
+    const rejoinDate = data.rejoinDate || data.englishRejoin;
+    if (fromDate && toDate && fromDate > toDate) {
+      invalid.add("fromDate");
       invalid.add("toDate");
-      invalid.add("toSession");
+    }
+
+    if (toDate && rejoinDate && toDate > rejoinDate) {
+      invalid.add("toDate");
+      invalid.add("rejoinDate");
+      invalid.add("englishRejoin");
     }
 
     const flagged = new Set([...missing, ...invalid]);
     markMissingInputs(form, flagged);
     if (flagged.size > 0) {
       setMissingFields(Array.from(flagged));
-      if (invalid.has("toSession")) {
-        setSubmitError(
-          "End date/session must be after the current date session and after start date/session.",
-        );
-      } else if (invalid.size > 0) {
-        setSubmitError(
-          "Please select a valid leave period. The To date must be the same as or later than the From date.",
-        );
+      if (invalid.size > 0) {
+        if (fromDate && toDate && fromDate > toDate) {
+          setSubmitError(
+            "Please select a valid leave period. The From date must be the same as or earlier than the To date.",
+          );
+        } else if (toDate && rejoinDate && toDate > rejoinDate) {
+          setSubmitError(
+            "Joining date must be the same as or after the leave end date.",
+          );
+        } else {
+          setSubmitError(
+            "Please select a valid leave period. The To date must be the same as or later than the From date.",
+          );
+        }
       }
       return;
     }
@@ -629,10 +664,37 @@ function JoiningReportPageContent() {
 
       if (field === "fromSession") {
         setFromSession(nextSession);
+        setEnglishFromSession(nextSession);
         syncDurationFields(fromValue, nextSession, toValue, toSession);
         return;
       }
 
+      setToSession(nextSession);
+      setEnglishToSession(nextSession);
+      syncDurationFields(fromValue, fromSession, toValue, nextSession);
+    };
+  };
+
+  const handleEnglishPeriodSessionChange = (
+    field: "fromSession" | "toSession",
+  ) => {
+    return (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const nextSession = event.target.value as DaySession;
+      const fromValue =
+        formRef.current?.querySelector<HTMLInputElement>('[name="fromDate"]')
+          ?.value ?? "";
+      const toValue =
+        formRef.current?.querySelector<HTMLInputElement>('[name="toDate"]')
+          ?.value ?? "";
+
+      if (field === "fromSession") {
+        setEnglishFromSession(nextSession);
+        setFromSession(nextSession);
+        syncDurationFields(fromValue, nextSession, toValue, toSession);
+        return;
+      }
+
+      setEnglishToSession(nextSession);
       setToSession(nextSession);
       syncDurationFields(fromValue, fromSession, toValue, nextSession);
     };
@@ -647,6 +709,17 @@ function JoiningReportPageContent() {
   ) => {
     return (event: React.ChangeEvent<HTMLInputElement>) => {
       setFormFieldValue(targetField, event.target.value);
+    };
+  };
+
+  const handleMirroredTextChange = (
+    sourceField: "orderNo" | "englishOrder",
+    targetField: "orderNo" | "englishOrder",
+  ) => {
+    return (event: React.ChangeEvent<HTMLInputElement>) => {
+      const nextValue = event.target.value;
+      setFormFieldValue(sourceField, nextValue);
+      setFormFieldValue(targetField, nextValue);
     };
   };
 
@@ -705,6 +778,7 @@ function JoiningReportPageContent() {
         `${result.message ?? "Joining report submitted successfully."}${result.data?.referenceCode ? ` Reference: ${result.data.referenceCode}.` : ""}`,
       );
       setConfirmed(true);
+      setIsDirty(false);
       setDialogState("success");
       resetAfterSubmit();
       await loadBootstrap();
@@ -788,9 +862,20 @@ function JoiningReportPageContent() {
 
         setFromSession(bootFromSession);
         setToSession(bootToSession);
+        setEnglishFromSession(bootFromSession);
+        setEnglishToSession(bootToSession);
         setFromDateValue(fromValue);
         setToDateValue(toValue);
         syncDurationFields(fromValue, bootFromSession, toValue, bootToSession);
+        const orderNoValue =
+          form.querySelector<HTMLInputElement>('[name="orderNo"]')?.value ??
+          form.querySelector<HTMLInputElement>('[name="englishOrder"]')
+            ?.value ??
+          "";
+        if (orderNoValue) {
+          setFormFieldValue("orderNo", orderNoValue);
+          setFormFieldValue("englishOrder", orderNoValue);
+        }
         setChoiceValues({
           dutySession:
             form.querySelector<HTMLSelectElement>('[name="dutySession"]')
@@ -799,6 +884,9 @@ function JoiningReportPageContent() {
             form.querySelector<HTMLSelectElement>('[name="leaveCategory"]')
               ?.value ?? "",
         });
+        // ensure english session selects reflect bootstrap
+        setFormFieldValue("englishFromSession", bootFromSession);
+        setFormFieldValue("englishToSession", bootToSession);
       }
 
       setHistory(result.data?.history ?? []);
@@ -809,7 +897,7 @@ function JoiningReportPageContent() {
           : "Unable to load joining report profile data.",
       );
     }
-  }, [syncDurationFields]);
+  }, [setFormFieldValue, syncDurationFields]);
 
   useEffect(() => {
     if (!fromDateValue || !toDateValue) return;
@@ -818,7 +906,9 @@ function JoiningReportPageContent() {
       setToDateValue(fromDateValue);
       setFormFieldValue("toDate", fromDateValue);
       setToSession("EVENING");
+      setEnglishToSession("EVENING");
       setFormFieldValue("toSession", "EVENING");
+      setFormFieldValue("englishToSession", "EVENING");
       return;
     }
 
@@ -833,7 +923,9 @@ function JoiningReportPageContent() {
             ? "EVENING"
             : "EVENING";
       setToSession(nextSession);
+      setEnglishToSession(nextSession);
       setFormFieldValue("toSession", nextSession);
+      setFormFieldValue("englishToSession", nextSession);
     }
   }, [fromDateValue, fromSession, toDateValue, toSession, setFormFieldValue]);
 
@@ -891,6 +983,17 @@ function JoiningReportPageContent() {
     }
   }, [history.length]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty || confirmed) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [confirmed, isDirty]);
+
   return (
     <DashboardShell>
       <div className="space-y-4 sm:space-y-6">
@@ -905,6 +1008,7 @@ function JoiningReportPageContent() {
         <form
           ref={formRef}
           onSubmit={handleSubmit}
+          onChange={() => setIsDirty(true)}
           className="space-y-3 sm:space-y-4"
         >
           <SurfaceCard className="mx-auto max-w-3xl space-y-4 border-slate-200/80 bg-white p-4 sm:space-y-5 sm:p-6 md:p-10">
@@ -1012,7 +1116,6 @@ function JoiningReportPageContent() {
                 <DateUnderlineInput
                   id="fromDate"
                   width="w-28 sm:w-36"
-                  min={getTodayIso()}
                   onChange={handlePeriodDateChange("fromDate", "englishFrom")}
                 />
                 <InlineSelect
@@ -1026,7 +1129,7 @@ function JoiningReportPageContent() {
                 <DateUnderlineInput
                   id="toDate"
                   width="w-28 sm:w-36"
-                  min={fromDateValue || getTodayIso()}
+                  min={fromDateValue || undefined}
                   onChange={handlePeriodDateChange("toDate", "englishTo")}
                 />
                 <InlineSelect
@@ -1068,7 +1171,18 @@ function JoiningReportPageContent() {
                     "को अपना कार्यग्रहण प्रतिवेदन जमा कर रहा / रही हूँ, जो की कार्यालय आदेश सं.",
                   )}
                 </span>
-                <UnderlineInput id="orderNo" width="w-48" />
+                <UnderlineInput
+                  id="orderNo"
+                  width="w-48"
+                  onChange={handleMirroredTextChange("orderNo", "englishOrder")}
+                />
+                <input
+                  id="englishOrder"
+                  name="englishOrder"
+                  type="text"
+                  className="inline-block align-baseline border-0 border-b border-dashed border-slate-400 bg-transparent px-1 pt-0 pb-0.5 text-[13px] leading-[1rem] text-slate-900 focus:border-slate-800 focus:outline-none sm:text-sm sm:leading-[1.05rem] w-48"
+                  onChange={handleMirroredTextChange("orderNo", "englishOrder")}
+                />
                 <span>{translateHindi("दिनांक")}</span>
                 <DateUnderlineInput
                   id="orderDate"
@@ -1086,14 +1200,21 @@ function JoiningReportPageContent() {
                   className="ml-2"
                   onChange={handleMirroredDateChange("rejoinDate")}
                 />{" "}
-                <span>
-                  {choiceValues.dutySession || "forenoon / afternoon"} after
-                  availing
-                </span>
-                <span>
-                  {choiceValues.leaveCategory ||
-                    "Earned Leave / Half Pay Leave / Medical Leave / Extra Ordinary Leave / Vacation Leave"}
-                </span>
+                <InlineSelect
+                  id="englishDutySession"
+                  width="w-44 sm:w-52"
+                  options={englishDutySessionOptions}
+                  value={choiceValues.dutySession}
+                  onChange={handleChoiceChange("dutySession")}
+                />
+                <span>after availing</span>
+                <InlineSelect
+                  id="englishLeaveCategory"
+                  width="w-full sm:w-80"
+                  options={englishLeaveCategoryOptions}
+                  value={choiceValues.leaveCategory}
+                  onChange={handleChoiceChange("leaveCategory")}
+                />
                 <span>for</span>
                 <UnderlineInput
                   id="englishDays"
@@ -1108,18 +1229,33 @@ function JoiningReportPageContent() {
                   className="ml-2"
                   onChange={handlePeriodDateChange("englishFrom", "fromDate")}
                 />{" "}
-                <span>to</span>
+                <InlineSelect
+                  id="englishFromSession"
+                  width="w-28 sm:w-32 ml-2"
+                  options={PERIOD_SESSION_OPTIONS}
+                  value={englishFromSession}
+                  onChange={handleEnglishPeriodSessionChange("fromSession")}
+                />
+                <span className="ml-2">to</span>
                 <DateUnderlineInput
                   id="englishTo"
                   width="w-40"
                   className="ml-2"
                   onChange={handlePeriodDateChange("englishTo", "toDate")}
                 />{" "}
-                <span>sanctioned vide Office Order No.</span>
+                <InlineSelect
+                  id="englishToSession"
+                  width="w-28 sm:w-32 ml-2"
+                  options={PERIOD_SESSION_OPTIONS}
+                  value={englishToSession}
+                  onChange={handleEnglishPeriodSessionChange("toSession")}
+                />
+                <span className="ml-2">sanctioned vide Office Order No.</span>
                 <UnderlineInput
                   id="englishOrder"
                   width="w-48"
                   className="ml-2"
+                  onChange={handleMirroredTextChange("englishOrder", "orderNo")}
                 />{" "}
                 <span>dated</span>
                 <DateUnderlineInput

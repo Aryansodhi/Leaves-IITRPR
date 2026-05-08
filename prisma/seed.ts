@@ -6,7 +6,7 @@ import {
   RoleKey,
   WorkflowActor,
 } from "@prisma/client";
-import { addDays, startOfYear } from "date-fns";
+import { addDays, startOfYear, endOfYear } from "date-fns";
 
 const prisma = new PrismaClient();
 const emailAlias = (slug: string) => `2023csb1288+${slug}@iitrpr.ac.in`;
@@ -399,29 +399,43 @@ async function main() {
       "Seed prerequisites missing: ensure faculty user and EL leave type exist.",
     );
   }
+  // Initialize a default earned leave balance (20 days) for applicant roles
+  const applicantRoles = [
+    "FACULTY",
+    "STAFF",
+    "HOD",
+    "ASSOCIATE_HOD",
+    "DEAN",
+    "REGISTRAR",
+  ];
 
-  await prisma.leaveBalance.upsert({
-    where: {
-      userId_leaveTypeId_periodStart: {
-        userId: facultyUser.id,
-        leaveTypeId: earnedLeave.id,
-        periodStart: currentYearStart,
+  for (const seed of userSeeds) {
+    const user = userMap[seed.key];
+    if (!user) continue;
+    if (!applicantRoles.includes(seed.role)) continue;
+
+    await prisma.leaveBalance.upsert({
+      where: {
+        userId_leaveTypeId_periodStart: {
+          userId: user.id,
+          leaveTypeId: earnedLeave.id,
+          periodStart: currentYearStart,
+        },
       },
-    },
-    update: {
-      totalAllocated: 60,
-      totalConsumed: 12,
-    },
-    create: {
-      userId: facultyUser.id,
-      leaveTypeId: earnedLeave.id,
-      totalAllocated: 60,
-      totalConsumed: 8,
-      totalEncashed: 0,
-      periodStart: currentYearStart,
-      periodEnd: addDays(currentYearStart, 364),
-    },
-  });
+      update: {
+        // Keep existing allocations if present
+      },
+      create: {
+        userId: user.id,
+        leaveTypeId: earnedLeave.id,
+        totalAllocated: 20,
+        totalConsumed: 0,
+        totalEncashed: 0,
+        periodStart: currentYearStart,
+        periodEnd: endOfYear(currentYearStart),
+      },
+    });
+  }
 
   const referenceCode = "EL-2026-0001";
   const leaveStart = addDays(new Date(), 14);

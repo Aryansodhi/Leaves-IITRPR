@@ -291,6 +291,7 @@ function NonAirIndiaPageContent() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formLanguage, setFormLanguage] = useState<FormLanguage>("HI");
   const [onwardJourney, setOnwardJourney] = useState("");
@@ -317,7 +318,7 @@ function NonAirIndiaPageContent() {
     handleSendOtp,
     handleVerifyOtp,
     resetAfterSubmit,
-  } = useSignatureOtp({ enableTyped: false });
+  } = useSignatureOtp({ enableTyped: true });
 
   const translateHindi = useCallback(
     (text: string) => {
@@ -348,6 +349,12 @@ function NonAirIndiaPageContent() {
   };
 
   const handleBack = () => {
+    if (isDirty && !confirmed) {
+      const shouldLeave = window.confirm(
+        "You have unsaved changes. If you leave now, your data may be lost. Do you want to continue?",
+      );
+      if (!shouldLeave) return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
@@ -476,6 +483,17 @@ function NonAirIndiaPageContent() {
   }, [onwardJourney, onwardSession, returnJourney, returnSession]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty || confirmed) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [confirmed, isDirty]);
+
+  useEffect(() => {
     if (!onwardJourney || !returnJourney) return;
 
     if (returnJourney < onwardJourney) {
@@ -526,6 +544,7 @@ function NonAirIndiaPageContent() {
       }
 
       setConfirmed(true);
+      setIsDirty(false);
       setDialogState("success");
       resetAfterSubmit();
 
@@ -568,6 +587,7 @@ function NonAirIndiaPageContent() {
       <form
         ref={formRef}
         onSubmit={handleSubmit}
+        onChange={() => setIsDirty(true)}
         className="space-y-3 sm:space-y-4"
       >
         <Button

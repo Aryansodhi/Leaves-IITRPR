@@ -34,6 +34,7 @@ type ApprovalRecord = LeaveRequestDetails & {
   approvalStepId?: string;
   applicationId: string;
   currentApprovalActor?: string | null;
+  isWitnessStep?: boolean;
   status: string;
   applicationStatus: string;
   appliedAt: string;
@@ -169,6 +170,8 @@ const isLtcRecord = (item: ApprovalRecord) =>
   (item.leaveTypeCode ?? "").toUpperCase() === "LTC" ||
   item.leaveType.toLowerCase().includes("ltc");
 
+const isWitnessRecord = (item: ApprovalRecord) => Boolean(item.isWitnessStep);
+
 export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [items, setItems] = useState<ApprovalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,6 +203,9 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const [showHandled, setShowHandled] = useState(true);
   const [approvalMode, setApprovalMode] = useState<"individual" | "bulk">(
     "individual",
+  );
+  const [pendingTab, setPendingTab] = useState<"approvals" | "witness">(
+    "approvals",
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const roleKey = role.toLowerCase().replace(/_/g, "-");
@@ -464,8 +470,21 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
     [filteredItems],
   );
 
+  const witnessItems = useMemo(
+    () => pendingItems.filter((item) => isWitnessRecord(item)),
+    [pendingItems],
+  );
+
+  const nonWitnessPendingItems = useMemo(
+    () => pendingItems.filter((item) => !isWitnessRecord(item)),
+    [pendingItems],
+  );
+
   const bulkSelectableItems = useMemo(
-    () => pendingItems.filter((item) => item.decisionRequired),
+    () =>
+      pendingItems.filter(
+        (item) => item.decisionRequired && !isWitnessRecord(item),
+      ),
     [pendingItems],
   );
 
@@ -574,10 +593,12 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       }
 
       await loadItems();
+      return true;
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to update request.",
       );
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -586,6 +607,48 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
   const selectedFooter: ReactNode = (() => {
     if (!selected) return null;
     if (!selected.decisionRequired) return null;
+
+    if (isWitnessRecord(selected)) {
+      const disabled = busyId === selected.applicationId;
+
+      return (
+        <div className="space-y-3">
+          <textarea
+            value={remarksById[selected.applicationId] ?? ""}
+            onChange={(event) =>
+              setRemarksById((prev) => ({
+                ...prev,
+                [selected.applicationId]: event.target.value,
+              }))
+            }
+            placeholder="Remarks (optional)"
+            className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                const ok = await runDecision(selected.applicationId, "REJECT");
+                if (ok) setSelected(null);
+              }}
+              disabled={disabled}
+            >
+              {disabled ? "Saving..." : "No"}
+            </Button>
+            <Button
+              onClick={async () => {
+                const ok = await runDecision(selected.applicationId, "APPROVE");
+                if (ok) setSelected(null);
+              }}
+              disabled={disabled}
+            >
+              {disabled ? "Saving..." : "Approve as witness"}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     if (!isLtcRecord(selected)) return null;
 
     const defaultRemarks = remarksById[selected.applicationId] || "NA";
@@ -1278,10 +1341,25 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
       {showPending ? (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Pending approvals
-            </p>
-            {canBulkAct ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={pendingTab === "approvals" ? "primary" : "secondary"}
+                onClick={() => setPendingTab("approvals")}
+                className="px-4 py-2 text-xs"
+              >
+                Pending approvals ({nonWitnessPendingItems.length})
+              </Button>
+              <Button
+                type="button"
+                variant={pendingTab === "witness" ? "primary" : "secondary"}
+                onClick={() => setPendingTab("witness")}
+                className="px-4 py-2 text-xs"
+              >
+                Act as witness ({witnessItems.length})
+              </Button>
+            </div>
+            {canBulkAct && pendingTab === "approvals" ? (
               <Button
                 variant="secondary"
                 onClick={() =>
@@ -1311,9 +1389,19 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
             <SurfaceCard className="p-4 text-sm text-slate-600">
               No pending leave records mapped to you.
             </SurfaceCard>
+          ) : pendingTab === "witness" && witnessItems.length === 0 ? (
+            <SurfaceCard className="p-4 text-sm text-slate-600">
+              No Ex-India witness tasks mapped to you.
+            </SurfaceCard>
+          ) : pendingTab === "approvals" &&
+            nonWitnessPendingItems.length === 0 ? (
+            <SurfaceCard className="p-4 text-sm text-slate-600">
+              No pending approval tasks mapped to you.
+            </SurfaceCard>
           ) : (
             <>
               {canBulkAct &&
+              pendingTab === "approvals" &&
               approvalMode === "bulk" &&
               bulkEligibleItems.length > 0 ? (
                 <SurfaceCard className="space-y-3 border-slate-200/80 p-4">
@@ -1452,300 +1540,371 @@ export const StationLeaveApprovals = ({ role }: { role: string }) => {
                 </SurfaceCard>
               ) : null}
 
-              {pendingItems.map((item) => (
-                <SurfaceCard
-                  key={
-                    item.approvalStepId ??
-                    `${item.applicationId}-${item.currentApprovalActor ?? "step"}`
-                  }
-                  className="space-y-3 border-slate-200/80 p-5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      {canBulkAct &&
-                      approvalMode === "bulk" &&
-                      bulkEligibleIdSet.has(item.applicationId) ? (
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(item.applicationId)}
-                          onChange={() => toggleSelectedId(item.applicationId)}
-                          className="mt-1 h-4 w-4 rounded border-slate-300"
-                        />
-                      ) : null}
-                      <div>
-                        <p className="text-base font-semibold text-slate-900">
-                          {item.referenceCode}
+              {pendingTab === "witness" && witnessItems.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    Act as witness to Ex-India leave
+                  </p>
+                  {witnessItems.map((item) => (
+                    <SurfaceCard
+                      key={`witness-${item.approvalStepId ?? item.applicationId}`}
+                      className="space-y-3 border-slate-200/80 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-slate-900">
+                            {item.referenceCode}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Applied by {item.applicant.name} (
+                            {item.applicant.role}) - {item.applicant.department}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
+                        >
+                          WITNESS
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <p>
+                          <span className="font-semibold">Leave window:</span>{" "}
+                          {new Date(item.startDate).toLocaleDateString("en-GB")}{" "}
+                          to{" "}
+                          {new Date(item.endDate).toLocaleDateString("en-GB")}
                         </p>
-                        <p className="text-xs text-slate-500">
-                          Applied by {item.applicant.name} (
-                          {item.applicant.role}) - {item.applicant.department}
+                        <p>
+                          <span className="font-semibold">Leave type:</span>{" "}
+                          {item.leaveType}
+                        </p>
+                        <p>
+                          This request is waiting for your witness signature.
                         </p>
                       </div>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          onClick={() => setSelected(item)}
+                          disabled={busyId === item.applicationId}
+                        >
+                          Open witness task
+                        </Button>
+                      </div>
+                    </SurfaceCard>
+                  ))}
+                </div>
+              ) : null}
 
-                  <div className="space-y-1 text-sm text-slate-700">
-                    <p>
-                      <span className="font-semibold">Leave window:</span>{" "}
-                      {new Date(item.startDate).toLocaleDateString("en-GB")} to{" "}
-                      {new Date(item.endDate).toLocaleDateString("en-GB")} (
-                      {item.totalDays} days)
-                    </p>
-                    <p>
-                      <span className="font-semibold">Leave type:</span>{" "}
-                      {item.leaveType}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Processing mode:</span>{" "}
-                      {item.decisionRequired
-                        ? "Approval required"
-                        : "View only"}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Purpose:</span>{" "}
-                      {item.purpose}
-                    </p>
-                    <p>
-                      <span className="font-semibold">Contact:</span>{" "}
-                      {item.contactDuringLeave || "Not provided"}
-                    </p>
-                    {(roleKey === "faculty" || roleKey === "associate-hod") &&
-                    item.currentApprovalActor === "HOD" &&
-                    item.delegatedFromHodName ? (
-                      <p>
-                        <span className="font-semibold">
-                          Originally assigned to:
-                        </span>{" "}
-                        {item.delegatedFromHodName}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  {item.decisionRequired ? (
-                    <textarea
-                      value={remarksById[item.applicationId] ?? ""}
-                      onChange={(event) =>
-                        setRemarksById((prev) => ({
-                          ...prev,
-                          [item.applicationId]: event.target.value,
-                        }))
+              {pendingTab === "approvals"
+                ? nonWitnessPendingItems.map((item) => (
+                    <SurfaceCard
+                      key={
+                        item.approvalStepId ??
+                        `${item.applicationId}-${item.currentApprovalActor ?? "step"}`
                       }
-                      placeholder="Remarks (optional)"
-                      className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
-                    />
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                      This record has been routed to you for viewing only. No
-                      approval action is required.
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        if (
-                          isEarnedLeaveRecord(item) &&
-                          item.decisionRequired
-                        ) {
-                          openEarnedLeaveApproval(item);
-                        } else {
-                          setSelected(item);
-                        }
-                      }}
-                      disabled={busyId === item.applicationId}
+                      className="space-y-3 border-slate-200/80 p-5"
                     >
-                      Open
-                    </Button>
-                    {item.decisionRequired ? (
-                      <>
-                        {isEarnedLeaveRecord(item) ? (
-                          <Button
-                            onClick={() => openEarnedLeaveApproval(item)}
-                            disabled={busyId === item.applicationId}
-                          >
-                            {busyId === item.applicationId
-                              ? "Opening..."
-                              : "Approve"}
-                          </Button>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          {canBulkAct &&
+                          approvalMode === "bulk" &&
+                          bulkEligibleIdSet.has(item.applicationId) ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(item.applicationId)}
+                              onChange={() =>
+                                toggleSelectedId(item.applicationId)
+                              }
+                              className="mt-1 h-4 w-4 rounded border-slate-300"
+                            />
+                          ) : null}
+                          <div>
+                            <p className="text-base font-semibold text-slate-900">
+                              {item.referenceCode}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Applied by {item.applicant.name} (
+                              {item.applicant.role}) -{" "}
+                              {item.applicant.department}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(item.status)}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <p>
+                          <span className="font-semibold">Leave window:</span>{" "}
+                          {new Date(item.startDate).toLocaleDateString("en-GB")}{" "}
+                          to{" "}
+                          {new Date(item.endDate).toLocaleDateString("en-GB")} (
+                          {item.totalDays} days)
+                        </p>
+                        <p>
+                          <span className="font-semibold">Leave type:</span>{" "}
+                          {item.leaveType}
+                        </p>
+                        <p>
+                          <span className="font-semibold">
+                            Processing mode:
+                          </span>{" "}
+                          {item.decisionRequired
+                            ? "Approval required"
+                            : "View only"}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Purpose:</span>{" "}
+                          {item.purpose}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Contact:</span>{" "}
+                          {item.contactDuringLeave || "Not provided"}
+                        </p>
+                        {(roleKey === "faculty" ||
+                          roleKey === "associate-hod") &&
+                        item.currentApprovalActor === "HOD" &&
+                        item.delegatedFromHodName ? (
+                          <p>
+                            <span className="font-semibold">
+                              Originally assigned to:
+                            </span>{" "}
+                            {item.delegatedFromHodName}
+                          </p>
                         ) : null}
-                        {!isJoiningReportRecord(item) &&
-                        !isEarnedLeaveRecord(item) &&
-                        item.currentApprovalActor !== "ACCOUNTS" ? (
-                          <Button
-                            variant="secondary"
-                            onClick={() =>
-                              runDecision(item.applicationId, "REJECT")
+                      </div>
+
+                      {item.decisionRequired ? (
+                        <textarea
+                          value={remarksById[item.applicationId] ?? ""}
+                          onChange={(event) =>
+                            setRemarksById((prev) => ({
+                              ...prev,
+                              [item.applicationId]: event.target.value,
+                            }))
+                          }
+                          placeholder="Remarks (optional)"
+                          className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                        />
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                          This record has been routed to you for viewing only.
+                          No approval action is required.
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            if (
+                              isEarnedLeaveRecord(item) &&
+                              item.decisionRequired
+                            ) {
+                              openEarnedLeaveApproval(item);
+                            } else {
+                              setSelected(item);
                             }
-                            disabled={busyId === item.applicationId}
-                          >
-                            Reject
-                          </Button>
-                        ) : null}
-                        {!isEarnedLeaveRecord(item) ? (
-                          <Button
-                            onClick={() => {
-                              if (
-                                item.decisionRequired &&
-                                item.currentApprovalActor === "HOD"
-                              ) {
-                                setSelectedHodApproval({
-                                  applicationId: item.applicationId,
-                                  referenceCode: item.referenceCode,
-                                  applicantName: item.applicant.name,
-                                  applicantDepartment:
-                                    item.applicant.department,
-                                  leaveType: item.leaveType,
-                                  defaultRemarks:
-                                    remarksById[item.applicationId] || "NA",
-                                  onApprove: async ({
-                                    remarks,
-                                    hodSignature,
-                                    approverSignatureProof,
-                                  }) => {
-                                    setBusyId(item.applicationId);
-                                    setError(null);
-                                    try {
-                                      const response = await fetch(
-                                        `/api/leaves/approvals/${item.applicationId}`,
-                                        {
-                                          method: "POST",
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                          },
-                                          body: JSON.stringify({
-                                            decision: "APPROVE",
-                                            remarks,
-                                            hodSignature,
-                                            approverSignatureProof,
-                                          }),
-                                        },
-                                      );
+                          }}
+                          disabled={busyId === item.applicationId}
+                        >
+                          Open
+                        </Button>
+                        {item.decisionRequired ? (
+                          <>
+                            {isEarnedLeaveRecord(item) ? (
+                              <Button
+                                onClick={() => openEarnedLeaveApproval(item)}
+                                disabled={busyId === item.applicationId}
+                              >
+                                {busyId === item.applicationId
+                                  ? "Opening..."
+                                  : "Approve"}
+                              </Button>
+                            ) : null}
+                            {!isJoiningReportRecord(item) &&
+                            !isEarnedLeaveRecord(item) &&
+                            item.currentApprovalActor !== "ACCOUNTS" ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() =>
+                                  runDecision(item.applicationId, "REJECT")
+                                }
+                                disabled={busyId === item.applicationId}
+                              >
+                                Reject
+                              </Button>
+                            ) : null}
+                            {!isEarnedLeaveRecord(item) ? (
+                              <Button
+                                onClick={() => {
+                                  if (
+                                    item.decisionRequired &&
+                                    item.currentApprovalActor === "HOD"
+                                  ) {
+                                    setSelectedHodApproval({
+                                      applicationId: item.applicationId,
+                                      referenceCode: item.referenceCode,
+                                      applicantName: item.applicant.name,
+                                      applicantDepartment:
+                                        item.applicant.department,
+                                      leaveType: item.leaveType,
+                                      defaultRemarks:
+                                        remarksById[item.applicationId] || "NA",
+                                      onApprove: async ({
+                                        remarks,
+                                        hodSignature,
+                                        approverSignatureProof,
+                                      }) => {
+                                        setBusyId(item.applicationId);
+                                        setError(null);
+                                        try {
+                                          const response = await fetch(
+                                            `/api/leaves/approvals/${item.applicationId}`,
+                                            {
+                                              method: "POST",
+                                              headers: {
+                                                "Content-Type":
+                                                  "application/json",
+                                              },
+                                              body: JSON.stringify({
+                                                decision: "APPROVE",
+                                                remarks,
+                                                hodSignature,
+                                                approverSignatureProof,
+                                              }),
+                                            },
+                                          );
 
-                                      const result =
-                                        (await response.json()) as {
-                                          ok?: boolean;
-                                          message?: string;
-                                        };
-                                      if (!response.ok || !result.ok) {
-                                        throw new Error(
-                                          result.message ??
-                                            "Unable to approve request.",
-                                        );
-                                      }
+                                          const result =
+                                            (await response.json()) as {
+                                              ok?: boolean;
+                                              message?: string;
+                                            };
+                                          if (!response.ok || !result.ok) {
+                                            throw new Error(
+                                              result.message ??
+                                                "Unable to approve request.",
+                                            );
+                                          }
 
-                                      setSelectedHodApproval(null);
-                                      await loadItems();
-                                    } finally {
-                                      setBusyId(null);
-                                    }
-                                  },
-                                  onClose: () => setSelectedHodApproval(null),
-                                });
-                                return;
-                              }
+                                          setSelectedHodApproval(null);
+                                          await loadItems();
+                                        } finally {
+                                          setBusyId(null);
+                                        }
+                                      },
+                                      onClose: () =>
+                                        setSelectedHodApproval(null),
+                                    });
+                                    return;
+                                  }
 
-                              if (
-                                isLtcRecord(item) &&
-                                roleKey === "establishment" &&
-                                item.currentApprovalActor === "ESTABLISHMENT"
-                              ) {
-                                setSelected(item);
-                                return;
-                              }
-
-                              if (
-                                isLtcRecord(item) &&
-                                roleKey === "accounts" &&
-                                item.currentApprovalActor === "ACCOUNTS"
-                              ) {
-                                setSelected(item);
-                                return;
-                              }
-
-                              if (item.decisionRequired) {
-                                setSelectedApproverOtpApproval({
-                                  applicationId: item.applicationId,
-                                  referenceCode: item.referenceCode,
-                                  applicantName: item.applicant.name,
-                                  applicantDepartment:
-                                    item.applicant.department,
-                                  leaveType: item.leaveType,
-                                  defaultRemarks:
-                                    remarksById[item.applicationId] || "NA",
-                                  onApprove: async ({
-                                    remarks,
-                                    approverSignatureProof,
-                                  }) => {
-                                    setBusyId(item.applicationId);
-                                    setError(null);
-                                    try {
-                                      const response = await fetch(
-                                        `/api/leaves/approvals/${item.applicationId}`,
-                                        {
-                                          method: "POST",
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                          },
-                                          body: JSON.stringify({
-                                            decision: "APPROVE",
-                                            remarks,
-                                            approverSignatureProof,
-                                          }),
-                                        },
-                                      );
-
-                                      const result =
-                                        (await response.json()) as {
-                                          ok?: boolean;
-                                          message?: string;
-                                        };
-                                      if (!response.ok || !result.ok) {
-                                        throw new Error(
-                                          result.message ??
-                                            "Unable to approve request.",
-                                        );
-                                      }
-
-                                      setSelectedApproverOtpApproval(null);
-                                      await loadItems();
-                                    } finally {
-                                      setBusyId(null);
-                                    }
-                                  },
-                                  onClose: () =>
-                                    setSelectedApproverOtpApproval(null),
-                                });
-                                return;
-                              }
-
-                              void runDecision(item.applicationId, "APPROVE");
-                            }}
-                            disabled={busyId === item.applicationId}
-                          >
-                            {busyId === item.applicationId
-                              ? "Saving..."
-                              : isLtcRecord(item) &&
-                                  item.decisionRequired &&
-                                  ((roleKey === "establishment" &&
+                                  if (
+                                    isLtcRecord(item) &&
+                                    roleKey === "establishment" &&
                                     item.currentApprovalActor ===
-                                      "ESTABLISHMENT") ||
-                                    (roleKey === "accounts" &&
-                                      item.currentApprovalActor === "ACCOUNTS"))
-                                ? "Enter"
-                                : "Approve"}
-                          </Button>
+                                      "ESTABLISHMENT"
+                                  ) {
+                                    setSelected(item);
+                                    return;
+                                  }
+
+                                  if (
+                                    isLtcRecord(item) &&
+                                    roleKey === "accounts" &&
+                                    item.currentApprovalActor === "ACCOUNTS"
+                                  ) {
+                                    setSelected(item);
+                                    return;
+                                  }
+
+                                  if (item.decisionRequired) {
+                                    setSelectedApproverOtpApproval({
+                                      applicationId: item.applicationId,
+                                      referenceCode: item.referenceCode,
+                                      applicantName: item.applicant.name,
+                                      applicantDepartment:
+                                        item.applicant.department,
+                                      leaveType: item.leaveType,
+                                      defaultRemarks:
+                                        remarksById[item.applicationId] || "NA",
+                                      onApprove: async ({
+                                        remarks,
+                                        approverSignatureProof,
+                                      }) => {
+                                        setBusyId(item.applicationId);
+                                        setError(null);
+                                        try {
+                                          const response = await fetch(
+                                            `/api/leaves/approvals/${item.applicationId}`,
+                                            {
+                                              method: "POST",
+                                              headers: {
+                                                "Content-Type":
+                                                  "application/json",
+                                              },
+                                              body: JSON.stringify({
+                                                decision: "APPROVE",
+                                                remarks,
+                                                approverSignatureProof,
+                                              }),
+                                            },
+                                          );
+
+                                          const result =
+                                            (await response.json()) as {
+                                              ok?: boolean;
+                                              message?: string;
+                                            };
+                                          if (!response.ok || !result.ok) {
+                                            throw new Error(
+                                              result.message ??
+                                                "Unable to approve request.",
+                                            );
+                                          }
+
+                                          setSelectedApproverOtpApproval(null);
+                                          await loadItems();
+                                        } finally {
+                                          setBusyId(null);
+                                        }
+                                      },
+                                      onClose: () =>
+                                        setSelectedApproverOtpApproval(null),
+                                    });
+                                    return;
+                                  }
+
+                                  void runDecision(
+                                    item.applicationId,
+                                    "APPROVE",
+                                  );
+                                }}
+                                disabled={busyId === item.applicationId}
+                              >
+                                {busyId === item.applicationId
+                                  ? "Saving..."
+                                  : isLtcRecord(item) &&
+                                      item.decisionRequired &&
+                                      ((roleKey === "establishment" &&
+                                        item.currentApprovalActor ===
+                                          "ESTABLISHMENT") ||
+                                        (roleKey === "accounts" &&
+                                          item.currentApprovalActor ===
+                                            "ACCOUNTS"))
+                                    ? "Enter"
+                                    : "Approve"}
+                              </Button>
+                            ) : null}
+                          </>
                         ) : null}
-                      </>
-                    ) : null}
-                  </div>
-                </SurfaceCard>
-              ))}
+                      </div>
+                    </SurfaceCard>
+                  ))
+                : null}
             </>
           )}
         </section>

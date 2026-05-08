@@ -15,7 +15,7 @@ export async function GET() {
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
     await requireSessionActor(token, { roles: [RoleKey.ADMIN] });
 
-    const [leaveTypes, departments, roles] = await Promise.all([
+    const [leaveTypes, departments, roles, users] = await Promise.all([
       prisma.leaveType.findMany({
         select: { id: true, name: true, code: true },
         orderBy: [{ name: "asc" }],
@@ -28,6 +28,17 @@ export async function GET() {
         select: { key: true, name: true },
         orderBy: [{ name: "asc" }],
       }),
+      prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          departmentId: true,
+          role: { select: { key: true } },
+        },
+        orderBy: [{ name: "asc" }, { email: "asc" }],
+      }),
     ]);
 
     return NextResponse.json({
@@ -36,6 +47,13 @@ export async function GET() {
         leaveTypes,
         departments,
         roles,
+        users: users.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          departmentId: user.departmentId,
+          roleKey: user.role?.key ?? null,
+        })),
       },
     });
   } catch (error) {
