@@ -13,6 +13,8 @@ LeaveFlow is the new digital cockpit for IIT Ropar’s leave, LTC and travel per
 
 ## Getting Started
 
+OS used for development: Windows 11
+
 ```bash
 npm install
 cp .env.example .env
