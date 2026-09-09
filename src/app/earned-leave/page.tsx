@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 export const dynamic = "force-dynamic";
 
@@ -754,8 +754,8 @@ function EarnedLeavePageContent() {
     setBalanceLoaded(false);
     void applyAutofillToForm(form, "earned-leave")
       .then((profile) => {
-        setOtpEmail(profile.email ?? "");
-        setLeaveBalance(profile.earnedLeaveBalance ?? null);
+        setOtpEmail(profile?.email ?? "");
+        setLeaveBalance(profile?.earnedLeaveBalance ?? null);
         const fromValue =
           form.querySelector<HTMLInputElement>("#fromDate")?.value ?? "";
         const toValue =

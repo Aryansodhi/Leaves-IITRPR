@@ -933,7 +933,7 @@ function JoiningReportPageContent() {
     const form = formRef.current;
     if (form) {
       void applyAutofillToForm(form, "joining-report").then((profile) => {
-        setOtpEmail(profile.email ?? "");
+        setOtpEmail(profile?.email ?? "");
       });
     }
 

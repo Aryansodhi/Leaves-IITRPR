@@ -477,9 +477,9 @@ function ExIndiaLeavePageContent() {
     setBalanceLoaded(false);
     void applyAutofillToForm(form, "ex-india-leave")
       .then((profile) => {
-        setOtpEmail(profile.email ?? "");
+        setOtpEmail(profile?.email ?? "");
         setApplicantProfile(profile);
-        setLeaveBalance(profile.earnedLeaveBalance ?? null);
+        setLeaveBalance(profile?.earnedLeaveBalance ?? null);
         const fromDateInput = form.querySelector<HTMLInputElement>("#fromDate");
         const toDateInput = form.querySelector<HTMLInputElement>("#toDate");
         const fromSessionInput =

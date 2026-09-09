@@ -452,7 +452,7 @@ function NonAirIndiaPageContent() {
     if (!form) return;
 
     void applyAutofillToForm(form, "non-air-india").then((profile) => {
-      setOtpEmail(profile.email ?? "");
+      setOtpEmail(profile?.email ?? "");
       setOnwardJourney(
         form.querySelector<HTMLInputElement>("#onwardJourney")?.value ?? "",
       );

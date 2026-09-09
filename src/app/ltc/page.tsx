@@ -728,8 +728,8 @@ function LtcPageContent() {
     if (!form) return;
 
     void applyAutofillToForm(form, "ltc").then((profile) => {
-      setViewerRoleKey(profile.roleKey ?? null);
-      setOtpEmail(profile.email ?? "");
+      setViewerRoleKey(profile?.roleKey ?? null);
+      setOtpEmail(profile?.email ?? "");
       setLeaveFrom(
         form.querySelector<HTMLInputElement>("#leaveFrom")?.value ?? "",
       );

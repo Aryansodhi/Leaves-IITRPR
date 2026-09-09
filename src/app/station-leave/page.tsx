@@ -718,7 +718,7 @@ function StationLeavePageContent() {
     const form = formRef.current;
     if (form) {
       void applyAutofillToForm(form, "station-leave").then((profile) => {
-        setOtpEmail(profile.email ?? "");
+        setOtpEmail(profile?.email ?? "");
       });
     }
 
