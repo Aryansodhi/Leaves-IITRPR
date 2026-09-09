@@ -6,6 +6,7 @@ import type { DragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useGuest } from "@/components/auth/guest-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -485,6 +486,7 @@ const createField = (
 };
 
 export const AdminFormBuilder = () => {
+  const { isGuest, promptLogin } = useGuest();
   const searchParams = useSearchParams();
   const queryTemplateId = searchParams.get("templateId");
   const [formName, setFormName] = useState("New form");
@@ -1897,6 +1899,11 @@ export const AdminFormBuilder = () => {
     if (mode === "published" && (totalFields === 0 || totalNonBrand === 0)) {
       setStatusTone("error");
       setStatusMessage("Add at least one field before saving.");
+      return null;
+    }
+
+    if (isGuest) {
+      promptLogin("Sign in to save or publish custom forms.");
       return null;
     }
 

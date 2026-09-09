@@ -19,23 +19,25 @@ export default async function RoleDashboardLayout({
   const { role } = await params;
 
   if (!isRoleSlug(role)) {
-    redirect("/login");
+    redirect("/dashboard/faculty/leaves");
   }
 
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-  try {
-    const actor = await requireSessionActor(token);
-    if (actor.roleSlug !== role) {
-      redirect(`/dashboard/${actor.roleSlug}`);
-    }
+  if (token) {
+    try {
+      const actor = await requireSessionActor(token);
+      if (actor.roleSlug !== role) {
+        redirect(`/dashboard/${actor.roleSlug}`);
+      }
 
-    if (role === "admin") {
-      redirect("/dashboard/admin");
+      if (role === "admin") {
+        redirect("/dashboard/admin");
+      }
+    } catch {
+      // Token invalid/expired — fall through to guest mode
     }
-  } catch {
-    redirect("/login");
   }
 
   return children;

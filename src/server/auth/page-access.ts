@@ -25,3 +25,17 @@ export const requireRoleForPage = async (role: RoleSlug) => {
   }
   return actor;
 };
+
+/** Returns the session actor or `null` when the user is not authenticated.
+ *  Unlike `requireSignedInForPage` this never redirects — it is used by
+ *  pages that support guest (read-only) access. */
+export const getOptionalActor = async () => {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) return null;
+  try {
+    return await requireSessionActor(token);
+  } catch {
+    return null;
+  }
+};

@@ -5,12 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { LogIn, Menu, X } from "lucide-react";
 
+import { useGuest } from "@/components/auth/guest-context";
 import { DashboardLogoutButton } from "@/components/dashboard/dashboard-logout-button";
 import { GuideButton } from "@/components/dashboard/guide-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isRoleSlug } from "@/modules/roles";
 
 const roleSlugByKey: Record<string, string> = {
   FACULTY: "faculty",
@@ -37,23 +39,37 @@ const resolveRoleSlug = (
   roleKey: string | null,
 ) => {
   const dashboardMatch = pathname.match(/^\/dashboard\/([^/]+)/);
-  if (dashboardMatch?.[1]) return dashboardMatch[1];
+  if (dashboardMatch?.[1] && isRoleSlug(dashboardMatch[1])) {
+    return dashboardMatch[1];
+  }
 
   const returnToMatch = returnTo?.match(/^\/dashboard\/([^/]+)/);
-  if (returnToMatch?.[1]) return returnToMatch[1];
+  if (returnToMatch?.[1] && isRoleSlug(returnToMatch[1])) {
+    return returnToMatch[1];
+  }
 
   if (roleKey && roleSlugByKey[roleKey]) return roleSlugByKey[roleKey];
   return "faculty";
 };
 
+/** Items in the guest navigation that should trigger the login modal. */
+const GUEST_PROTECTED_LABELS = new Set([
+  "My Applications",
+  "Approve Leaves",
+  "Profile",
+]);
+
 export const DashboardShell = ({ children }: { children: ReactNode }) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isGuest, promptLogin } = useGuest();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [showActingHodNav, setShowActingHodNav] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
+    if (isGuest) return; // Skip profile fetch for guests
+
     const loadProfile = async () => {
       try {
         const response = await fetch("/api/forms/autofill", {
@@ -101,7 +117,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     };
 
     void loadProfile();
-  }, []);
+  }, [isGuest]);
 
   const roleKey = profile?.roleKey ?? null;
   const roleSlug =
@@ -111,74 +127,77 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
   const isAdminShell = roleSlug === "admin" || roleKey === "ADMIN";
   const leavesActive = pathname.startsWith(`/dashboard/${roleSlug}/leaves`);
 
-  const userName = profile?.name ?? null;
-  const userRole = roleKey;
+  const userName = isGuest ? null : (profile?.name ?? null);
+  const userRole = isGuest ? null : roleKey;
   const isActingHodNavSelected =
     pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
     searchParams.get("section") === "acting-hod";
 
-  const navItems = isAdminShell
-    ? [
-        {
-          label: "Add Users",
-          href: "/dashboard/admin",
-          active: pathname === "/dashboard/admin",
-        },
-        {
-          label: "Create Form",
-          href: "/dashboard/admin/form-builder",
-          active: pathname.startsWith("/dashboard/admin/form-builder"),
-        },
-        {
-          label: "Forms",
-          href: "/dashboard/admin/forms",
-          active: pathname.startsWith("/dashboard/admin/forms"),
-        },
-        {
-          label: "Audit",
-          href: "/dashboard/admin/audit",
-          active: pathname.startsWith("/dashboard/admin/audit"),
-        },
-        {
-          label: "Statistics",
-          href: "/dashboard/admin/statistics",
-          active: pathname.startsWith("/dashboard/admin/statistics"),
-        },
-        {
-          label: "Track Applications",
-          href: "/dashboard/admin/track",
-          active: pathname.startsWith("/dashboard/admin/track"),
-        },
-      ]
-    : [
-        {
-          label: "Leaves",
-          href: `/dashboard/${roleSlug}/leaves`,
-          active: leavesActive,
-        },
-        {
-          label: "Forms",
-          href: "/dashboard/forms",
-          active: pathname.startsWith("/dashboard/forms"),
-        },
-        {
-          label: "My Applications",
-          href: `/dashboard/${roleSlug}/my-applications`,
-          active: pathname.startsWith(`/dashboard/${roleSlug}/my-applications`),
-        },
-        {
-          label: "Approve Leaves",
-          href: `/dashboard/${roleSlug}/approvals`,
-          active:
-            pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
-            !isActingHodNavSelected,
-        },
-        {
-          label: "Profile",
-          href: `/dashboard/${roleSlug}/profile`,
-          active: pathname.startsWith(`/dashboard/${roleSlug}/profile`),
-        },
-      ];
+  const navItems =
+    isAdminShell && !isGuest
+      ? [
+          {
+            label: "Add Users",
+            href: "/dashboard/admin",
+            active: pathname === "/dashboard/admin",
+          },
+          {
+            label: "Create Form",
+            href: "/dashboard/admin/form-builder",
+            active: pathname.startsWith("/dashboard/admin/form-builder"),
+          },
+          {
+            label: "Forms",
+            href: "/dashboard/admin/forms",
+            active: pathname.startsWith("/dashboard/admin/forms"),
+          },
+          {
+            label: "Audit",
+            href: "/dashboard/admin/audit",
+            active: pathname.startsWith("/dashboard/admin/audit"),
+          },
+          {
+            label: "Statistics",
+            href: "/dashboard/admin/statistics",
+            active: pathname.startsWith("/dashboard/admin/statistics"),
+          },
+          {
+            label: "Track Applications",
+            href: "/dashboard/admin/track",
+            active: pathname.startsWith("/dashboard/admin/track"),
+          },
+        ]
+      : [
+          {
+            label: "Leaves",
+            href: `/dashboard/${roleSlug}/leaves`,
+            active: leavesActive,
+          },
+          {
+            label: "Forms",
+            href: "/dashboard/forms",
+            active: pathname.startsWith("/dashboard/forms"),
+          },
+          {
+            label: "My Applications",
+            href: `/dashboard/${roleSlug}/my-applications`,
+            active: pathname.startsWith(
+              `/dashboard/${roleSlug}/my-applications`,
+            ),
+          },
+          {
+            label: "Approve Leaves",
+            href: `/dashboard/${roleSlug}/approvals`,
+            active:
+              pathname.startsWith(`/dashboard/${roleSlug}/approvals`) &&
+              !isActingHodNavSelected,
+          },
+          {
+            label: "Profile",
+            href: `/dashboard/${roleSlug}/profile`,
+            active: pathname.startsWith(`/dashboard/${roleSlug}/profile`),
+          },
+        ];
 
   if (!isAdminShell && roleKey === "HOD" && showActingHodNav) {
     navItems.splice(3, 0, {
@@ -198,6 +217,16 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [mobileNavOpen]);
+
+  /** Handle nav click — for guests, protected items trigger login prompt */
+  const handleNavClick = (e: React.MouseEvent, label: string) => {
+    if (isGuest && GUEST_PROTECTED_LABELS.has(label)) {
+      e.preventDefault();
+      promptLogin(
+        `Sign in to access ${label}. This section requires an authenticated session.`,
+      );
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -233,13 +262,29 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
 
               <div className="flex items-center gap-2">
                 <GuideButton />
-                <DashboardLogoutButton />
+                {isGuest ? (
+                  <Button
+                    asChild
+                    variant="primary"
+                    className="px-3 py-2 text-xs sm:px-5 sm:py-2.5 sm:text-sm"
+                  >
+                    <Link href="/login" className="flex items-center gap-2">
+                      <LogIn className="h-4 w-4" /> Sign In
+                    </Link>
+                  </Button>
+                ) : (
+                  <DashboardLogoutButton />
+                )}
               </div>
             </div>
 
             <div className="pl-11 text-[11px] font-semibold leading-tight tracking-normal text-slate-500">
-              {userName ? `Welcome, ${userName}` : "Leave Workspace"}
-              {userRole ? ` (${userRole})` : ""}
+              {isGuest
+                ? "Exploring as Guest"
+                : userName
+                  ? `Welcome, ${userName}`
+                  : "Leave Workspace"}
+              {!isGuest && userRole ? ` (${userRole})` : ""}
             </div>
           </div>
 
@@ -256,8 +301,12 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
 
               <div className="min-w-0 space-y-2">
                 <div className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {userName ? `Welcome, ${userName}` : "Leave Workspace"}
-                  {userRole ? ` (${userRole})` : ""}
+                  {isGuest
+                    ? "Guest"
+                    : userName
+                      ? `Welcome, ${userName}`
+                      : "Leave Workspace"}
+                  {!isGuest && userRole ? ` (${userRole})` : ""}
                 </div>
 
                 <nav className="flex flex-1 flex-wrap items-center gap-2">
@@ -265,6 +314,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={(e) => handleNavClick(e, item.label)}
                       className={cn(
                         "rounded-full px-3 py-1.5 text-xs font-semibold transition",
                         item.active
@@ -281,10 +331,33 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
 
             <div className="flex items-center gap-2">
               <GuideButton />
-              <DashboardLogoutButton />
+              {isGuest ? (
+                <Button
+                  asChild
+                  variant="primary"
+                  className="px-3 py-2 text-xs sm:px-5 sm:py-2.5 sm:text-sm"
+                >
+                  <Link href="/login" className="flex items-center gap-2">
+                    <LogIn className="h-4 w-4" /> Sign In
+                  </Link>
+                </Button>
+              ) : (
+                <DashboardLogoutButton />
+              )}
             </div>
           </div>
         </div>
+
+        {/* Guest info banner */}
+        {isGuest && (
+          <div className="border-t border-slate-100 bg-slate-50/90 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-3 py-1.5 sm:px-6">
+              <p className="text-xs text-slate-500">
+                You&apos;re exploring as a guest. Sign in for full access.
+              </p>
+            </div>
+          </div>
+        )}
       </header>
 
       {mobileNavOpen && (
@@ -321,7 +394,12 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileNavOpen(false)}
+                  onClick={(e) => {
+                    handleNavClick(e, item.label);
+                    if (!(isGuest && GUEST_PROTECTED_LABELS.has(item.label))) {
+                      setMobileNavOpen(false);
+                    }
+                  }}
                   className={cn(
                     "block rounded-2xl px-4 py-3 text-sm font-semibold transition",
                     item.active
@@ -335,18 +413,30 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
             </nav>
             <div className="border-t border-slate-200 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Signed in as
+                {isGuest ? "Browsing as" : "Signed in as"}
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
-                {userName ?? "IIT Ropar User"}
+                {isGuest ? "Guest" : (userName ?? "IIT Ropar User")}
               </p>
-              {userRole ? (
+              {!isGuest && userRole ? (
                 <p className="text-xs text-slate-500">{userRole}</p>
               ) : null}
               <div className="mt-3">
                 <div className="flex items-center gap-2">
                   <GuideButton />
-                  <DashboardLogoutButton />
+                  {isGuest ? (
+                    <Button
+                      asChild
+                      variant="primary"
+                      className="px-3 py-2 text-xs"
+                    >
+                      <Link href="/login" className="flex items-center gap-2">
+                        <LogIn className="h-3.5 w-3.5" /> Sign In
+                      </Link>
+                    </Button>
+                  ) : (
+                    <DashboardLogoutButton />
+                  )}
                 </div>
               </div>
             </div>
@@ -354,7 +444,12 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-6xl px-3 pb-10 pt-24 sm:px-6 sm:pt-28">
+      <main
+        className={cn(
+          "mx-auto w-full max-w-6xl px-3 pb-10 sm:px-6",
+          isGuest ? "pt-28 sm:pt-32" : "pt-24 sm:pt-28",
+        )}
+      >
         {children}
       </main>
     </div>

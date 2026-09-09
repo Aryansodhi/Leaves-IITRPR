@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+import { useGuest } from "@/components/auth/guest-context";
 import { SignatureOtpVerificationCard } from "@/components/leaves/signature-otp-verification-card";
 import {
   DIGITAL_SIGNATURE_VALUE,
@@ -150,6 +151,7 @@ type TemplateFormRendererProps = {
   userEmail: string;
   initialValues?: Record<string, string>;
   readOnly?: boolean;
+  isGuest?: boolean;
   workflowContext?: {
     items: WorkflowSubmissionItem[];
     pendingForActor: WorkflowSubmissionItem | null;
@@ -192,8 +194,11 @@ export const TemplateFormRenderer = ({
   userEmail,
   initialValues: initialValuesProp,
   readOnly = false,
+  isGuest: isGuestProp = false,
   workflowContext,
 }: TemplateFormRendererProps) => {
+  const guestCtx = useGuest();
+  const isGuest = isGuestProp || guestCtx.isGuest;
   const searchParams = useSearchParams();
   const shouldAutoDownload = searchParams.get("autoDownload") === "1";
   const pages = useMemo(() => schema.pages ?? [], [schema.pages]);
@@ -234,6 +239,12 @@ export const TemplateFormRenderer = ({
   }, [pages, initialValuesProp]);
 
   const [values, setValues] = useState<Record<string, string>>(initialValues);
+  const [prevInitialValues, setPrevInitialValues] = useState(initialValues);
+
+  if (prevInitialValues !== initialValues) {
+    setPrevInitialValues(initialValues);
+    setValues(initialValues);
+  }
   const [workflowItems, setWorkflowItems] = useState<WorkflowSubmissionItem[]>(
     [],
   );
@@ -305,10 +316,6 @@ export const TemplateFormRenderer = ({
     };
   }, [loadWorkflow]);
 
-  useEffect(() => {
-    setValues(initialValues);
-  }, [initialValues]);
-
   const handleDownloadPdf = useCallback(async () => {
     if (!printableRef.current) return;
 
@@ -344,6 +351,13 @@ export const TemplateFormRenderer = ({
   }, [handleDownloadPdf, shouldAutoDownload]);
 
   const handleSubmit = async () => {
+    if (isGuest) {
+      guestCtx.promptLogin(
+        "Sign in to submit this form. Submissions require an authenticated session.",
+      );
+      return;
+    }
+
     setSubmitMessage(null);
     setSubmitTone(null);
 

@@ -1,13 +1,16 @@
 import Link from "next/link";
 
+import { GuestProvider } from "@/components/auth/guest-context";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { GuestFormsActions } from "@/components/forms/guest-forms-actions";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { requireSignedInForPage } from "@/server/auth/page-access";
+import { getOptionalActor } from "@/server/auth/page-access";
 import { prisma } from "@/server/db/prisma";
 
 export default async function FormsPage() {
-  const actor = await requireSignedInForPage();
+  const actor = await getOptionalActor();
+  const isGuest = !actor;
 
   const forms = await prisma.formTemplate.findMany({
     orderBy: { createdAt: "desc" },
@@ -32,66 +35,66 @@ export default async function FormsPage() {
       return false;
     }
 
+    // Guests see all published forms (no role filtering)
+    if (isGuest) return true;
+
     if (!schema?.visibilityRoles?.length) return true;
     return schema.visibilityRoles.includes(actor.roleKey);
   });
 
   return (
-    <DashboardShell>
-      <div className="space-y-6">
-        <header className="space-y-2">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
-                Forms
-              </h1>
-              <p className="text-base text-slate-600">
-                Open a form, fill it, and submit your details.
-              </p>
+    <GuestProvider isGuest={isGuest}>
+      <DashboardShell>
+        <div className="space-y-6">
+          <header className="space-y-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="space-y-2">
+                <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl">
+                  Forms
+                </h1>
+                <p className="text-base text-slate-600">
+                  Open a form, fill it, and submit your details.
+                </p>
+              </div>
+
+              <GuestFormsActions isGuest={isGuest} />
             </div>
+          </header>
 
-            <div className="flex flex-wrap gap-2">
-              <Button asChild variant="secondary">
-                <Link href="/dashboard/forms/submissions">My submissions</Link>
-              </Button>
-              <Button asChild variant="secondary">
-                <Link href="/dashboard/forms/approvals">Approvals inbox</Link>
-              </Button>
-            </div>
-          </div>
-        </header>
-
-        <div className="grid gap-4">
-          {visibleForms.length === 0 ? (
-            <SurfaceCard className="border-slate-200/80 p-4">
-              <p className="text-sm text-slate-600">No forms available.</p>
-            </SurfaceCard>
-          ) : (
-            visibleForms.map((form) => (
-              <SurfaceCard
-                key={form.id}
-                className="flex flex-col gap-3 border-slate-200/80 p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="space-y-1">
-                  <p className="text-base font-semibold text-slate-900">
-                    {form.name}
-                  </p>
-                  {form.description ? (
-                    <p className="text-sm text-slate-600">{form.description}</p>
-                  ) : null}
-                  <p className="text-xs text-slate-500">
-                    Created {form.createdAt.toLocaleDateString("en-GB")}
-                  </p>
-                </div>
-
-                <Button asChild>
-                  <Link href={`/dashboard/forms/${form.id}`}>Open form</Link>
-                </Button>
+          <div className="grid gap-4">
+            {visibleForms.length === 0 ? (
+              <SurfaceCard className="border-slate-200/80 p-4">
+                <p className="text-sm text-slate-600">No forms available.</p>
               </SurfaceCard>
-            ))
-          )}
+            ) : (
+              visibleForms.map((form) => (
+                <SurfaceCard
+                  key={form.id}
+                  className="flex flex-col gap-3 border-slate-200/80 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="space-y-1">
+                    <p className="text-base font-semibold text-slate-900">
+                      {form.name}
+                    </p>
+                    {form.description ? (
+                      <p className="text-sm text-slate-600">
+                        {form.description}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-slate-500">
+                      Created {form.createdAt.toLocaleDateString("en-GB")}
+                    </p>
+                  </div>
+
+                  <Button asChild>
+                    <Link href={`/dashboard/forms/${form.id}`}>Open form</Link>
+                  </Button>
+                </SurfaceCard>
+              ))
+            )}
+          </div>
         </div>
-      </div>
-    </DashboardShell>
+      </DashboardShell>
+    </GuestProvider>
   );
 }
