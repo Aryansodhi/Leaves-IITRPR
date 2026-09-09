@@ -331,6 +331,7 @@ function StationLeavePageContent() {
   const printableRef = useRef<HTMLDivElement>(null);
   const pendingDataRef = useRef<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -390,6 +391,17 @@ function StationLeavePageContent() {
   }, [fromDate, fromSession, toDate, toSession]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty || confirmed) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [confirmed, isDirty]);
+
+  useEffect(() => {
     if (!fromDate || !toDate) return;
     if (toDate < fromDate) {
       setToDate(fromDate);
@@ -412,6 +424,12 @@ function StationLeavePageContent() {
   }, [fromDate, fromSession, toDate, toSession]);
 
   const handleBack = () => {
+    if (isDirty && !confirmed) {
+      const shouldLeave = window.confirm(
+        "You have unsaved changes. If you leave now, your data may be lost. Do you want to continue?",
+      );
+      if (!shouldLeave) return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
@@ -594,6 +612,7 @@ function StationLeavePageContent() {
         `${result.message ?? "Station leave submitted successfully."}${refCode ? ` Reference: ${refCode}.` : ""}${routeNote}`,
       );
       setConfirmed(true);
+      setIsDirty(false);
       setDialogState("success");
       signature.resetAfterSubmit({ clearSignature: false });
       await loadBootstrap();
@@ -765,9 +784,15 @@ function StationLeavePageContent() {
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
 
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 sm:px-4 sm:py-3 sm:text-sm">
+          No need to fill Station Leave separately if you have already selected
+          station leave in the Earned Leave form.
+        </div>
+
         <form
           ref={formRef}
           onSubmit={handleSubmit}
+          onChange={() => setIsDirty(true)}
           className="space-y-3 sm:space-y-4"
         >
           <div ref={printableRef}>

@@ -75,7 +75,13 @@ export const MySubmissionsPanel = () => {
         throw new Error(result.message ?? "Unable to load leave submissions.");
       }
 
-      setItems(result.data?.items ?? []);
+      const nextItems = result.data?.items ?? [];
+      setItems(nextItems);
+      setSelected((current) =>
+        current
+          ? (nextItems.find((item) => item.id === current.id) ?? current)
+          : null,
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -88,12 +94,13 @@ export const MySubmissionsPanel = () => {
   };
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
+    void load();
+    const interval = window.setInterval(() => {
       void load();
-    }, 0);
+    }, 30_000);
 
     return () => {
-      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -292,7 +299,9 @@ export const MySubmissionsPanel = () => {
             ) : pendingItems.length === 0 ? (
               <p className="text-sm text-slate-500">No pending approvals.</p>
             ) : (
-              <div className="space-y-3">{pendingItems.map(renderRow)}</div>
+              <div className="max-h-[22rem] space-y-3 overflow-y-auto pr-1">
+                {pendingItems.map(renderRow)}
+              </div>
             )}
           </SurfaceCard>
         ) : null}
@@ -309,7 +318,9 @@ export const MySubmissionsPanel = () => {
             ) : approvedItems.length === 0 ? (
               <p className="text-sm text-slate-500">No approved submissions.</p>
             ) : (
-              <div className="space-y-3">{approvedItems.map(renderRow)}</div>
+              <div className="max-h-[22rem] space-y-3 overflow-y-auto pr-1">
+                {approvedItems.map(renderRow)}
+              </div>
             )}
           </SurfaceCard>
         ) : null}
@@ -328,7 +339,9 @@ export const MySubmissionsPanel = () => {
                 No other submissions yet.
               </p>
             ) : (
-              <div className="space-y-3">{otherItems.map(renderRow)}</div>
+              <div className="max-h-[22rem] space-y-3 overflow-y-auto pr-1">
+                {otherItems.map(renderRow)}
+              </div>
             )}
           </SurfaceCard>
         ) : null}

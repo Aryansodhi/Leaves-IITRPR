@@ -11,6 +11,13 @@ type MetaResponse = {
     leaveTypes: Array<{ id: string; name: string; code: string }>;
     departments: Array<{ id: string; name: string }>;
     roles: Array<{ key: string; name: string }>;
+    users: Array<{
+      id: string;
+      name: string;
+      email: string;
+      departmentId: string | null;
+      roleKey: string | null;
+    }>;
   };
   message?: string;
 };
@@ -27,6 +34,7 @@ type StatsResponse = {
       leaveType: string | null;
       departmentId: string | null;
       roleKey: string | null;
+      userId: string | null;
       includeDraft: boolean;
       totalCount: number;
     };
@@ -153,6 +161,11 @@ const buildCsv = (stats: NonNullable<StatsResponse["data"]>) => {
   return rows.map((row) => row.map(escapeCsv).join(",")).join("\n");
 };
 
+type StatisticsUserOption = NonNullable<MetaResponse["data"]>["users"][number];
+
+const formatUserOption = (user: StatisticsUserOption) =>
+  `${user.name} (${user.email})`;
+
 export const AdminStatisticsPanel = () => {
   const [meta, setMeta] = useState<MetaResponse["data"] | null>(null);
   const [interval, setInterval] = useState("day");
@@ -162,6 +175,9 @@ export const AdminStatisticsPanel = () => {
   const [leaveType, setLeaveType] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [roleKey, setRoleKey] = useState("");
+  const [userId, setUserId] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
   const [includeDraft, setIncludeDraft] = useState(false);
   const [stats, setStats] = useState<StatsResponse["data"] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -189,6 +205,44 @@ export const AdminStatisticsPanel = () => {
     void loadMeta();
   }, []);
 
+  const eligibleUsers = useMemo(() => {
+    return (meta?.users ?? []).filter((user) => {
+      if (departmentId && user.departmentId !== departmentId) return false;
+      if (roleKey && user.roleKey !== roleKey) return false;
+      return true;
+    });
+  }, [departmentId, meta?.users, roleKey]);
+
+  const eligibleUserOptions = useMemo(
+    () =>
+      eligibleUsers.map((user) => ({
+        ...user,
+        label: formatUserOption(user),
+      })),
+    [eligibleUsers],
+  );
+
+  const visibleUserOptions = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    const options = query
+      ? eligibleUserOptions.filter(
+          (user) =>
+            user.name.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query),
+        )
+      : eligibleUserOptions;
+
+    return options.slice(0, 8);
+  }, [eligibleUserOptions, userSearch]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!eligibleUsers.some((user) => user.id === userId)) {
+      setUserId("");
+      setUserSearch("");
+    }
+  }, [eligibleUsers, userId]);
+
   const buildParams = () => {
     const params = new URLSearchParams();
     if (fromDate) {
@@ -204,6 +258,7 @@ export const AdminStatisticsPanel = () => {
     if (leaveType) params.set("leaveType", leaveType);
     if (departmentId) params.set("departmentId", departmentId);
     if (roleKey) params.set("roleKey", roleKey);
+    if (userId) params.set("userId", userId);
     if (includeDraft) params.set("includeDraft", "1");
     return params;
   };
@@ -374,6 +429,53 @@ export const AdminStatisticsPanel = () => {
               </option>
             ))}
           </select>
+        </label>
+        <label className="space-y-1 text-xs text-slate-600">
+          <span className="font-medium text-slate-800">User</span>
+          <div className="relative">
+            <input
+              value={userSearch}
+              onChange={(event) => {
+                setUserSearch(event.target.value);
+                setUserId("");
+                setIsUserSearchOpen(true);
+              }}
+              onFocus={() => setIsUserSearchOpen(true)}
+              onBlur={() => {
+                window.setTimeout(() => setIsUserSearchOpen(false), 120);
+              }}
+              placeholder="Search by name or email"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
+            />
+            {isUserSearchOpen && visibleUserOptions.length > 0 ? (
+              <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                {visibleUserOptions.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setUserId(user.id);
+                      setUserSearch(user.label);
+                      setIsUserSearchOpen(false);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                  >
+                    <span className="block truncate font-medium">
+                      {user.name}
+                    </span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {user.email}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <span className="block text-[11px] text-slate-500">
+            Suggestions match the selected department and role. Select a
+            suggestion to filter by that user.
+          </span>
         </label>
         <label className="flex items-center gap-2 text-xs text-slate-600">
           <input

@@ -152,50 +152,62 @@ export async function GET(request: Request) {
       ? (currentStep.assignedTo?.name ?? currentStep.actor)
       : null;
 
-    const approvalTrail = application.approvalSteps.map((entry) => {
-      const meta = entry.metadata as Prisma.JsonObject | null;
-      const approverSignatureProof =
-        meta?.approverSignatureProof &&
-        typeof meta.approverSignatureProof === "object"
-          ? {
-              image:
-                typeof (meta.approverSignatureProof as Prisma.JsonObject)
-                  ?.image === "string"
-                  ? ((meta.approverSignatureProof as Prisma.JsonObject)
-                      .image as string)
-                  : null,
-              animation: Array.isArray(
-                (meta.approverSignatureProof as Prisma.JsonObject)?.animation,
-              )
-                ? ((meta.approverSignatureProof as Prisma.JsonObject)
-                    .animation as unknown[])
-                : null,
-            }
-          : null;
+    const isExIndia =
+      (application.leaveType.code ?? "").toUpperCase() === "EXI" ||
+      application.leaveType.name.toLowerCase().includes("ex-india");
 
-      return {
-        sequence: entry.sequence,
-        actor: entry.actor,
-        status: entry.status,
-        assignedTo: entry.assignedTo?.name ?? entry.actor,
-        actedBy: entry.actedBy?.name ?? null,
-        actedAt: entry.actedAt?.toISOString() ?? null,
-        remarks: entry.remarks ?? null,
-        recommended:
-          typeof meta?.recommended === "string" ? meta.recommended : null,
-        hodSignature:
-          typeof meta?.hodSignature === "string" ? meta.hodSignature : null,
-        accountsSignature:
-          typeof meta?.accountsSignature === "string"
-            ? meta.accountsSignature
-            : null,
-        balance: typeof meta?.balance === "string" ? meta.balance : null,
-        decisionDate:
-          typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
-        ipAddress: typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
-        approverSignatureProof,
-      };
-    });
+    const approvalTrail = application.approvalSteps
+      .filter((entry) => {
+        if (!isExIndia) return true;
+
+        const meta = entry.metadata as Prisma.JsonObject | null;
+        return meta?.role !== "witness";
+      })
+      .map((entry, index) => {
+        const meta = entry.metadata as Prisma.JsonObject | null;
+        const approverSignatureProof =
+          meta?.approverSignatureProof &&
+          typeof meta.approverSignatureProof === "object"
+            ? {
+                image:
+                  typeof (meta.approverSignatureProof as Prisma.JsonObject)
+                    ?.image === "string"
+                    ? ((meta.approverSignatureProof as Prisma.JsonObject)
+                        .image as string)
+                    : null,
+                animation: Array.isArray(
+                  (meta.approverSignatureProof as Prisma.JsonObject)?.animation,
+                )
+                  ? ((meta.approverSignatureProof as Prisma.JsonObject)
+                      .animation as unknown[])
+                  : null,
+              }
+            : null;
+
+        return {
+          sequence: index + 1,
+          actor: entry.actor,
+          status: entry.status,
+          assignedTo: entry.assignedTo?.name ?? entry.actor,
+          actedBy: entry.actedBy?.name ?? null,
+          actedAt: entry.actedAt?.toISOString() ?? null,
+          remarks: entry.remarks ?? null,
+          recommended:
+            typeof meta?.recommended === "string" ? meta.recommended : null,
+          hodSignature:
+            typeof meta?.hodSignature === "string" ? meta.hodSignature : null,
+          accountsSignature:
+            typeof meta?.accountsSignature === "string"
+              ? meta.accountsSignature
+              : null,
+          balance: typeof meta?.balance === "string" ? meta.balance : null,
+          decisionDate:
+            typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
+          ipAddress:
+            typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
+          approverSignatureProof,
+        };
+      });
 
     return NextResponse.json({
       ok: true,

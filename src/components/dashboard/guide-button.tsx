@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { X, BookOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ const pages: { key: GuideKey; label: string }[] = [
   { key: "profile", label: "Profile" },
 ];
 
-const guideContent: Record<GuideKey, { title: string; body: JSX.Element }> = {
+const guideContent: Record<GuideKey, { title: string; body: ReactNode }> = {
   leaves: {
     title: "Leaves",
     body: (

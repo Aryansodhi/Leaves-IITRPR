@@ -438,6 +438,15 @@ function EarnedLeavePageContent() {
   const [fromSession, setFromSession] = useState<DaySession>("MORNING");
   const [toSession, setToSession] = useState<DaySession>("EVENING");
   const [computedLeaveDays, setComputedLeaveDays] = useState("");
+  const [leaveBalance, setLeaveBalance] = useState<{
+    totalAllocated: number;
+    totalConsumed: number;
+    totalEncashed: number;
+    available: number;
+  } | null>(null);
+  const [balanceLoaded, setBalanceLoaded] = useState(false);
+  const [balanceWarning, setBalanceWarning] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const {
     otpEmail,
     setOtpEmail,
@@ -487,6 +496,12 @@ function EarnedLeavePageContent() {
   };
 
   const handleBack = () => {
+    if (isDirty && !confirmed) {
+      const shouldLeave = window.confirm(
+        "You have unsaved changes. If you leave now, your data may be lost. Do you want to continue?",
+      );
+      if (!shouldLeave) return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
@@ -606,17 +621,30 @@ function EarnedLeavePageContent() {
       invalidSet.add("toSession");
     }
 
+    // Validate balance
+    if (leaveBalance && computedLeaveDays) {
+      const requestedDays = parseFloat(computedLeaveDays);
+      if (
+        !Number.isNaN(requestedDays) &&
+        requestedDays > leaveBalance.available
+      ) {
+        invalidSet.add("days");
+      }
+    }
+
     if (invalidSet.size > 0) {
       markMissingInputs(form, invalidSet);
       setMissingFields(Array.from(invalidSet));
-      setSubmitError(
-        "Please select LTC option, enter a valid 10-digit contact number, and a valid 6-digit PIN.",
-      );
+      let errorMsg =
+        "Please select LTC option, enter a valid 10-digit contact number, and a valid 6-digit PIN.";
       if (invalidSet.has("toSession")) {
-        setSubmitError(
-          "End date/session must be after the current date session and after start date/session.",
-        );
+        errorMsg =
+          "End date/session must be after the current date session and after start date/session.";
       }
+      if (invalidSet.has("days") && balanceWarning) {
+        errorMsg = balanceWarning;
+      }
+      setSubmitError(errorMsg);
       return;
     }
 
@@ -723,39 +751,48 @@ function EarnedLeavePageContent() {
       signatureDateInput.value = new Date().toISOString().split("T")[0];
     }
 
-    void applyAutofillToForm(form, "earned-leave").then((profile) => {
-      setOtpEmail(profile.email ?? "");
-      const fromValue =
-        form.querySelector<HTMLInputElement>("#fromDate")?.value ?? "";
-      const toValue =
-        form.querySelector<HTMLInputElement>("#toDate")?.value ?? "";
-      const fromSessionValue =
-        (form.querySelector<HTMLSelectElement>("#fromSession")?.value as
-          | DaySession
-          | undefined) ?? "MORNING";
-      const toSessionValue =
-        (form.querySelector<HTMLSelectElement>("#toSession")?.value as
-          | DaySession
-          | undefined) ?? "EVENING";
+    setBalanceLoaded(false);
+    void applyAutofillToForm(form, "earned-leave")
+      .then((profile) => {
+        setOtpEmail(profile.email ?? "");
+        setLeaveBalance(profile.earnedLeaveBalance ?? null);
+        const fromValue =
+          form.querySelector<HTMLInputElement>("#fromDate")?.value ?? "";
+        const toValue =
+          form.querySelector<HTMLInputElement>("#toDate")?.value ?? "";
+        const fromSessionValue =
+          (form.querySelector<HTMLSelectElement>("#fromSession")?.value as
+            | DaySession
+            | undefined) ?? "MORNING";
+        const toSessionValue =
+          (form.querySelector<HTMLSelectElement>("#toSession")?.value as
+            | DaySession
+            | undefined) ?? "EVENING";
 
-      setFromDate(fromValue);
-      setToDate(toValue);
-      setFromSession(fromSessionValue);
-      setToSession(toSessionValue);
+        setFromDate(fromValue);
+        setToDate(toValue);
+        setFromSession(fromSessionValue);
+        setToSession(toSessionValue);
 
-      const ltcInput = form.querySelector<HTMLInputElement>("#ltc");
-      if (!ltcInput) return;
-      const rawValue = (ltcInput.value ?? "").trim().toLowerCase();
-      if (rawValue === "not_propose" || rawValue.includes("not")) {
-        setLtcChoice("NOT_PROPOSE");
-        ltcInput.value = "NOT_PROPOSE";
-        return;
-      }
-      if (rawValue === "propose" || rawValue.includes("propose")) {
-        setLtcChoice("PROPOSE");
-        ltcInput.value = "PROPOSE";
-      }
-    });
+        const ltcInput = form.querySelector<HTMLInputElement>("#ltc");
+        if (!ltcInput) return;
+        const rawValue = (ltcInput.value ?? "").trim().toLowerCase();
+        if (rawValue === "not_propose" || rawValue.includes("not")) {
+          setLtcChoice("NOT_PROPOSE");
+          ltcInput.value = "NOT_PROPOSE";
+          return;
+        }
+        if (rawValue === "propose" || rawValue.includes("propose")) {
+          setLtcChoice("PROPOSE");
+          ltcInput.value = "PROPOSE";
+        }
+      })
+      .catch(() => {
+        setLeaveBalance(null);
+      })
+      .finally(() => {
+        setBalanceLoaded(true);
+      });
 
     // Set up date change listeners
     const prefixFromInput =
@@ -777,6 +814,40 @@ function EarnedLeavePageContent() {
       suffixToInput?.removeEventListener("change", handleSuffixDateChange);
     };
   }, [handlePrefixDateChange, handleSuffixDateChange, setOtpEmail]);
+
+  // Validate balance when computed leave days change
+  useEffect(() => {
+    if (!leaveBalance || !computedLeaveDays) {
+      setBalanceWarning(null);
+      return;
+    }
+
+    const requestedDays = parseFloat(computedLeaveDays);
+    if (Number.isNaN(requestedDays)) {
+      setBalanceWarning(null);
+      return;
+    }
+
+    if (requestedDays > leaveBalance.available) {
+      const shortage = (requestedDays - leaveBalance.available).toFixed(1);
+      setBalanceWarning(
+        `You are requesting ${requestedDays} days but only ${leaveBalance.available} days are available. You are short by ${shortage} days.`,
+      );
+    } else {
+      setBalanceWarning(null);
+    }
+  }, [computedLeaveDays, leaveBalance]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDirty || confirmed) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [confirmed, isDirty]);
 
   const handleConfirmSubmit = async () => {
     const signatureError = ensureReadyForSubmit({
@@ -813,6 +884,7 @@ function EarnedLeavePageContent() {
       }
 
       setConfirmed(true);
+      setIsDirty(false);
       setSubmitMessage(
         result.message || "Earned leave application submitted successfully.",
       );
@@ -864,6 +936,7 @@ function EarnedLeavePageContent() {
         <form
           ref={formRef}
           onSubmit={handleSubmit}
+          onChange={() => setIsDirty(true)}
           className="space-y-3 sm:space-y-4"
         >
           <SurfaceCard className="mx-auto max-w-4xl space-y-4 border border-slate-300 bg-white p-3 sm:space-y-5 sm:p-4 md:p-6">
@@ -954,6 +1027,9 @@ function EarnedLeavePageContent() {
                     fromSession={fromSession}
                     toSession={toSession}
                     computedLeaveDays={computedLeaveDays}
+                    leaveBalance={leaveBalance}
+                    balanceLoaded={balanceLoaded}
+                    balanceWarning={balanceWarning}
                     onFromDateChange={handlePeriodDateChange("fromDate")}
                     onToDateChange={handlePeriodDateChange("toDate")}
                     onFromSessionChange={setFromSession}
@@ -1335,6 +1411,9 @@ const RowPeriod = ({
   fromSession,
   toSession,
   computedLeaveDays,
+  leaveBalance,
+  balanceLoaded,
+  balanceWarning,
   onFromDateChange,
   onToDateChange,
   onFromSessionChange,
@@ -1346,6 +1425,14 @@ const RowPeriod = ({
   fromSession: DaySession;
   toSession: DaySession;
   computedLeaveDays: string;
+  leaveBalance: {
+    totalAllocated: number;
+    totalConsumed: number;
+    totalEncashed: number;
+    available: number;
+  } | null;
+  balanceLoaded: boolean;
+  balanceWarning: string | null;
   onFromDateChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onToDateChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onFromSessionChange: (value: DaySession) => void;
@@ -1355,6 +1442,27 @@ const RowPeriod = ({
   <tr className="border-t border-slate-400">
     <td className="bg-slate-50 px-3 py-2 align-top font-semibold">
       5. {translateHindi("छुट्टी की अवधि")}/ Period of Leave
+      <div className="mt-2 space-y-1 text-[11px] font-normal leading-snug text-slate-700">
+        {leaveBalance ? (
+          <p>
+            Remaining balance:{" "}
+            <span className="font-semibold text-slate-900">
+              {leaveBalance.available} days
+            </span>
+            <span className="block text-slate-600">
+              Allocated {leaveBalance.totalAllocated}, consumed{" "}
+              {leaveBalance.totalConsumed}
+              {leaveBalance.totalEncashed > 0
+                ? `, encashed ${leaveBalance.totalEncashed}`
+                : ""}
+            </span>
+          </p>
+        ) : balanceLoaded ? (
+          <p>Balance unavailable</p>
+        ) : (
+          <p>Loading balance...</p>
+        )}
+      </div>
     </td>
     <td className="px-3 py-2 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
@@ -1390,8 +1498,16 @@ const RowPeriod = ({
           width="w-20"
           readOnly
           value={computedLeaveDays}
+          className={
+            balanceWarning ? "border-rose-500 text-rose-700" : undefined
+          }
         />
       </div>
+      {balanceWarning && (
+        <p className="mt-2 text-[11px] font-semibold text-rose-700">
+          {balanceWarning}
+        </p>
+      )}
     </td>
   </tr>
 );

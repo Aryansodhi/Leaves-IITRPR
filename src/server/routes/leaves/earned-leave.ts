@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { startOfYear, endOfYear } from "date-fns";
 
 import { prisma } from "@/server/db/prisma";
 import {
@@ -783,6 +784,39 @@ export const approveEarnedLeave = async (
         },
       },
     });
+
+    // If Accounts acted and approved, update the leave balance immediately.
+    if (
+      step.actor === WorkflowActor.ACCOUNTS &&
+      decision === ApprovalStatus.APPROVED
+    ) {
+      const periodStart = startOfYear(application.startDate);
+      const periodEnd = endOfYear(periodStart);
+
+      await tx.leaveBalance.upsert({
+        where: {
+          userId_leaveTypeId_periodStart: {
+            userId: application.applicantId,
+            leaveTypeId: application.leaveTypeId,
+            periodStart,
+          },
+        },
+        update: {
+          totalConsumed: {
+            increment: application.totalDays,
+          },
+        },
+        create: {
+          userId: application.applicantId,
+          leaveTypeId: application.leaveTypeId,
+          totalAllocated: 20,
+          totalConsumed: application.totalDays,
+          totalEncashed: 0,
+          periodStart,
+          periodEnd,
+        },
+      });
+    }
 
     // Update application status
     if (decision === ApprovalStatus.REJECTED) {

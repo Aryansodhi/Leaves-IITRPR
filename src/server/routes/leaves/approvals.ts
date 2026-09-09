@@ -147,6 +147,18 @@ const isJoiningReportType = (input: {
   (input.code ?? "").toUpperCase() === "JR" ||
   (input.name ?? "").toLowerCase().includes("joining");
 
+const isExIndiaType = (input: { code?: string | null; name?: string | null }) =>
+  (input.code ?? "").toUpperCase() === "EXI" ||
+  (input.name ?? "").toLowerCase().includes("ex-india");
+
+const isWitnessStepMetadata = (metadata: Prisma.JsonValue | null) => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false;
+  }
+
+  return (metadata as Prisma.JsonObject).role === "witness";
+};
+
 const isMissingActingHodTableError = (error: unknown) => {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
     return false;
@@ -522,144 +534,204 @@ export const getLeaveApprovals = async (actor: SessionActor) => {
 
   return {
     ok: true,
-    data: steps.map((step) => {
-      const metadata = step.leaveApplication
-        .metadata as Prisma.JsonObject | null;
-      const formData =
-        metadata && typeof metadata.formData === "object"
-          ? (metadata.formData as Record<string, string>)
-          : null;
-      const storedDays = formData?.days;
-      const parsedDays = storedDays ? Number.parseFloat(storedDays) : null;
-      const signatureProof =
-        metadata && typeof metadata.signatureProof === "object"
-          ? (metadata.signatureProof as Record<string, unknown>)
-          : null;
-      const actingHodRequest = getActingHodRequestMeta(metadata);
-      const stepMetadata = step.metadata as Prisma.JsonObject | null;
-      const isJoiningReport = isJoiningReportType({
-        code: step.leaveApplication.leaveType.code,
-        name: step.leaveApplication.leaveType.name,
-      });
-      const baseDecisionRequired = isJoiningReport
-        ? true
-        : toBoolean(stepMetadata?.decisionRequired, true);
-      const baseViewerOnly = isJoiningReport
-        ? false
-        : toBoolean(stepMetadata?.viewerOnly, false);
-      const isHodStep = step.actor === "HOD";
-      const isOriginalHodViewingOwnStep =
-        isHodStep && step.assignedToId === actor.userId;
-      const isOriginalHodViewingActingStep =
-        isHodStep &&
-        actorProfile.role?.key === RoleKey.HOD &&
-        step.assignedToId !== actor.userId &&
-        Boolean(step.assignedToId && delegatedActingIds.has(step.assignedToId));
-      const isHodTemporarilyViewOnly =
-        Boolean(actorSelfDelegation) &&
-        (isOriginalHodViewingOwnStep || isOriginalHodViewingActingStep);
-      const decisionRequired =
-        baseDecisionRequired && !isHodTemporarilyViewOnly;
-      const viewerOnly = baseViewerOnly || isHodTemporarilyViewOnly;
-      const delegatedFromHodName =
-        isHodStep && step.assignedToId !== actor.userId
-          ? (step.assignedTo?.name ?? null)
-          : null;
+    data: steps
+      .filter((step) => {
+        const stepMetadata = step.metadata as Prisma.JsonObject | null;
+        const isWitnessStep = stepMetadata?.role === "witness";
 
-      return {
-        approvalStepId: step.id,
-        applicationId: step.leaveApplicationId,
-        currentApprovalActor: step.actor,
-        referenceCode: step.leaveApplication.referenceCode,
-        leaveType: step.leaveApplication.leaveType.name,
-        leaveTypeCode: step.leaveApplication.leaveType.code,
-        status: step.status,
-        applicationStatus: step.leaveApplication.status,
-        appliedAt:
-          step.leaveApplication.submittedAt?.toISOString() ??
-          step.leaveApplication.createdAt.toISOString(),
-        submittedAt:
-          step.leaveApplication.submittedAt?.toISOString() ??
-          step.leaveApplication.createdAt.toISOString(),
-        applicant: {
-          id: step.leaveApplication.applicant.id,
-          name: step.leaveApplication.applicant.name,
-          role: step.leaveApplication.applicant.role?.name ?? "Unknown",
-          roleKey: step.leaveApplication.applicant.role?.key ?? null,
-          department:
-            step.leaveApplication.applicant.department?.name ??
-            "Department not set",
-          designation: step.leaveApplication.applicant.designation ?? "",
-        },
-        startDate: step.leaveApplication.startDate.toISOString(),
-        endDate: step.leaveApplication.endDate.toISOString(),
-        totalDays:
-          parsedDays && Number.isFinite(parsedDays)
-            ? parsedDays
-            : step.leaveApplication.totalDays,
-        purpose: step.leaveApplication.purpose,
-        contactDuringLeave: step.leaveApplication.contactDuringLeave,
-        destination: step.leaveApplication.destination,
-        notes: step.leaveApplication.notes,
-        currentApprover:
-          step.assignedTo?.name ?? step.assignedTo?.role?.name ?? step.actor,
-        delegatedFromHodName,
-        formData,
-        signatureProof,
-        actingHodRequest,
-        remarks: step.remarks,
-        actedAt: step.actedAt?.toISOString() ?? null,
-        decisionRequired,
-        viewerOnly,
-        approvalTrail: step.leaveApplication.approvalSteps.map((entry) => {
-          const meta = entry.metadata as Prisma.JsonObject | null;
-          return {
-            sequence: entry.sequence,
-            actor: entry.actor,
-            status: entry.status,
-            assignedTo:
-              entry.assignedTo?.name ??
-              entry.assignedTo?.role?.name ??
-              entry.actor,
-            actedBy: entry.actedBy?.name ?? entry.actedBy?.role?.name ?? null,
-            actedAt: entry.actedAt?.toISOString() ?? null,
-            remarks: entry.remarks ?? null,
-            recommended:
-              typeof meta?.recommended === "string" ? meta.recommended : null,
-            hodSignature:
-              typeof meta?.hodSignature === "string" ? meta.hodSignature : null,
-            accountsSignature:
-              typeof meta?.accountsSignature === "string"
-                ? meta.accountsSignature
-                : null,
-            balance: typeof meta?.balance === "string" ? meta.balance : null,
-            decisionDate:
-              typeof meta?.decisionDate === "string" ? meta.decisionDate : null,
-            ipAddress:
-              typeof meta?.ipAddress === "string" ? meta.ipAddress : null,
-            approverSignatureProof:
-              meta?.approverSignatureProof &&
-              typeof meta.approverSignatureProof === "object"
-                ? {
-                    image:
-                      typeof (meta.approverSignatureProof as Prisma.JsonObject)
-                        ?.image === "string"
-                        ? ((meta.approverSignatureProof as Prisma.JsonObject)
-                            .image as string)
-                        : null,
-                    animation: Array.isArray(
-                      (meta.approverSignatureProof as Prisma.JsonObject)
-                        ?.animation,
-                    )
-                      ? ((meta.approverSignatureProof as Prisma.JsonObject)
-                          .animation as unknown[])
-                      : null,
+        if (isWitnessStep) return true;
+        if (
+          !isExIndiaType({
+            code: step.leaveApplication.leaveType.code,
+            name: step.leaveApplication.leaveType.name,
+          })
+        ) {
+          return true;
+        }
+
+        return !step.leaveApplication.approvalSteps.some((candidate) => {
+          const candidateMetadata =
+            candidate.metadata as Prisma.JsonObject | null;
+
+          return (
+            candidate.sequence < step.sequence &&
+            candidateMetadata?.role === "witness" &&
+            candidate.status !== ApprovalStatus.APPROVED &&
+            candidate.status !== ApprovalStatus.SKIPPED
+          );
+        });
+      })
+      .map((step) => {
+        const metadata = step.leaveApplication
+          .metadata as Prisma.JsonObject | null;
+        const formData =
+          metadata && typeof metadata.formData === "object"
+            ? (metadata.formData as Record<string, string>)
+            : null;
+        const storedDays = formData?.days;
+        const parsedDays = storedDays ? Number.parseFloat(storedDays) : null;
+        const signatureProof =
+          metadata && typeof metadata.signatureProof === "object"
+            ? (metadata.signatureProof as Record<string, unknown>)
+            : null;
+        const actingHodRequest = getActingHodRequestMeta(metadata);
+        const stepMetadata = step.metadata as Prisma.JsonObject | null;
+        const isWitnessStep = stepMetadata?.role === "witness";
+        const isJoiningReport = isJoiningReportType({
+          code: step.leaveApplication.leaveType.code,
+          name: step.leaveApplication.leaveType.name,
+        });
+        const baseDecisionRequired = isJoiningReport
+          ? true
+          : toBoolean(stepMetadata?.decisionRequired, true);
+        const baseViewerOnly = isJoiningReport
+          ? false
+          : toBoolean(stepMetadata?.viewerOnly, false);
+        const isHodStep = step.actor === "HOD";
+        const isOriginalHodViewingOwnStep =
+          isHodStep && step.assignedToId === actor.userId;
+        const isOriginalHodViewingActingStep =
+          isHodStep &&
+          actorProfile.role?.key === RoleKey.HOD &&
+          step.assignedToId !== actor.userId &&
+          Boolean(
+            step.assignedToId && delegatedActingIds.has(step.assignedToId),
+          );
+        const isHodTemporarilyViewOnly =
+          Boolean(actorSelfDelegation) &&
+          (isOriginalHodViewingOwnStep || isOriginalHodViewingActingStep);
+        const decisionRequired =
+          baseDecisionRequired && !isHodTemporarilyViewOnly;
+        const viewerOnly = baseViewerOnly || isHodTemporarilyViewOnly;
+        const delegatedFromHodName =
+          isHodStep && step.assignedToId !== actor.userId
+            ? (step.assignedTo?.name ?? null)
+            : null;
+
+        return {
+          approvalStepId: step.id,
+          applicationId: step.leaveApplicationId,
+          currentApprovalActor: step.actor,
+          isWitnessStep,
+          referenceCode: step.leaveApplication.referenceCode,
+          leaveType: step.leaveApplication.leaveType.name,
+          leaveTypeCode: step.leaveApplication.leaveType.code,
+          status: step.status,
+          applicationStatus: step.leaveApplication.status,
+          appliedAt:
+            step.leaveApplication.submittedAt?.toISOString() ??
+            step.leaveApplication.createdAt.toISOString(),
+          submittedAt:
+            step.leaveApplication.submittedAt?.toISOString() ??
+            step.leaveApplication.createdAt.toISOString(),
+          applicant: {
+            id: step.leaveApplication.applicant.id,
+            name: step.leaveApplication.applicant.name,
+            role: step.leaveApplication.applicant.role?.name ?? "Unknown",
+            roleKey: step.leaveApplication.applicant.role?.key ?? null,
+            department:
+              step.leaveApplication.applicant.department?.name ??
+              "Department not set",
+            designation: step.leaveApplication.applicant.designation ?? "",
+          },
+          startDate: step.leaveApplication.startDate.toISOString(),
+          endDate: step.leaveApplication.endDate.toISOString(),
+          totalDays:
+            parsedDays && Number.isFinite(parsedDays)
+              ? parsedDays
+              : step.leaveApplication.totalDays,
+          purpose: step.leaveApplication.purpose,
+          contactDuringLeave: step.leaveApplication.contactDuringLeave,
+          destination: step.leaveApplication.destination,
+          notes: step.leaveApplication.notes,
+          currentApprover:
+            step.assignedTo?.name ?? step.assignedTo?.role?.name ?? step.actor,
+          delegatedFromHodName,
+          formData,
+          signatureProof,
+          actingHodRequest,
+          remarks: step.remarks,
+          actedAt: step.actedAt?.toISOString() ?? null,
+          decisionRequired,
+          viewerOnly,
+          approvalTrail: isWitnessStep
+            ? []
+            : step.leaveApplication.approvalSteps
+                .filter((entry) => {
+                  if (
+                    !isExIndiaType({
+                      code: step.leaveApplication.leaveType.code,
+                      name: step.leaveApplication.leaveType.name,
+                    })
+                  ) {
+                    return true;
                   }
-                : null,
-          };
-        }),
-      };
-    }),
+
+                  const meta = entry.metadata as Prisma.JsonObject | null;
+                  return meta?.role !== "witness";
+                })
+                .map((entry, index) => {
+                  const meta = entry.metadata as Prisma.JsonObject | null;
+                  return {
+                    sequence: index + 1,
+                    actor: entry.actor,
+                    status: entry.status,
+                    assignedTo:
+                      entry.assignedTo?.name ??
+                      entry.assignedTo?.role?.name ??
+                      entry.actor,
+                    actedBy:
+                      entry.actedBy?.name ?? entry.actedBy?.role?.name ?? null,
+                    actedAt: entry.actedAt?.toISOString() ?? null,
+                    remarks: entry.remarks ?? null,
+                    recommended:
+                      typeof meta?.recommended === "string"
+                        ? meta.recommended
+                        : null,
+                    hodSignature:
+                      typeof meta?.hodSignature === "string"
+                        ? meta.hodSignature
+                        : null,
+                    accountsSignature:
+                      typeof meta?.accountsSignature === "string"
+                        ? meta.accountsSignature
+                        : null,
+                    balance:
+                      typeof meta?.balance === "string" ? meta.balance : null,
+                    decisionDate:
+                      typeof meta?.decisionDate === "string"
+                        ? meta.decisionDate
+                        : null,
+                    ipAddress:
+                      typeof meta?.ipAddress === "string"
+                        ? meta.ipAddress
+                        : null,
+                    approverSignatureProof:
+                      meta?.approverSignatureProof &&
+                      typeof meta.approverSignatureProof === "object"
+                        ? {
+                            image:
+                              typeof (
+                                meta.approverSignatureProof as Prisma.JsonObject
+                              )?.image === "string"
+                                ? ((
+                                    meta.approverSignatureProof as Prisma.JsonObject
+                                  ).image as string)
+                                : null,
+                            animation: Array.isArray(
+                              (meta.approverSignatureProof as Prisma.JsonObject)
+                                ?.animation,
+                            )
+                              ? ((
+                                  meta.approverSignatureProof as Prisma.JsonObject
+                                ).animation as unknown[])
+                              : null,
+                          }
+                        : null,
+                  };
+                }),
+        };
+      }),
   };
 };
 
@@ -782,6 +854,7 @@ export const decideLeaveApproval = async (
   }
 
   const stepMetadata = step.metadata as Prisma.JsonObject | null;
+  const isWitnessStep = stepMetadata?.role === "witness";
   const isJoiningReport = isJoiningReportType({
     code: step.leaveApplication.leaveType.code,
     name: step.leaveApplication.leaveType.name,
@@ -868,10 +941,17 @@ export const decideLeaveApproval = async (
   }
 
   const hasPriorPendingStep = step.leaveApplication.approvalSteps.some(
-    (candidate) =>
-      candidate.sequence < step.sequence &&
-      candidate.status !== ApprovalStatus.APPROVED &&
-      candidate.status !== ApprovalStatus.SKIPPED,
+    (candidate) => {
+      const candidateMetadata = candidate.metadata as Prisma.JsonObject | null;
+      const candidateIsWitness = candidateMetadata?.role === "witness";
+
+      return (
+        candidate.sequence < step.sequence &&
+        candidate.status !== ApprovalStatus.APPROVED &&
+        candidate.status !== ApprovalStatus.SKIPPED &&
+        !(stepMetadata?.role === "witness" && candidateIsWitness)
+      );
+    },
   );
 
   if (hasPriorPendingStep) {
@@ -893,12 +973,25 @@ export const decideLeaveApproval = async (
       (candidate.status === ApprovalStatus.PENDING ||
         candidate.status === ApprovalStatus.IN_REVIEW),
   );
+  const remainingPendingWitnessSteps =
+    isWitnessStep &&
+    step.leaveApplication.approvalSteps.some(
+      (candidate) =>
+        candidate.id !== step.id &&
+        isWitnessStepMetadata(candidate.metadata) &&
+        (candidate.status === ApprovalStatus.PENDING ||
+          candidate.status === ApprovalStatus.IN_REVIEW),
+    );
 
   const applicationStatus =
     parsed.decision === "APPROVE"
-      ? remainingPendingSteps
-        ? LeaveStatus.UNDER_REVIEW
-        : LeaveStatus.APPROVED
+      ? isWitnessStep
+        ? remainingPendingWitnessSteps
+          ? LeaveStatus.SUBMITTED
+          : LeaveStatus.UNDER_REVIEW
+        : remainingPendingSteps
+          ? LeaveStatus.UNDER_REVIEW
+          : LeaveStatus.APPROVED
       : LeaveStatus.REJECTED;
 
   const isFinalDeanApprovalForHodLeave =
@@ -1016,22 +1109,25 @@ export const decideLeaveApproval = async (
       select: { name: true },
     });
 
-    await sendLeaveStatusUpdateEmail({
-      to: step.leaveApplication.applicant.email,
-      applicantName: step.leaveApplication.applicant.name,
-      referenceCode: step.leaveApplication.referenceCode,
-      leaveType: step.leaveApplication.leaveType.name,
-      status: applicationStatus,
-      startDate: step.leaveApplication.startDate,
-      endDate: step.leaveApplication.endDate,
-      totalDays: step.leaveApplication.totalDays,
-      actionLabel:
-        parsed.decision === "APPROVE"
-          ? "Your leave request status has been updated to Approved."
-          : "Your leave request status has been updated to Rejected.",
-      actionBy: actorUser?.name ?? null,
-      remarks: parsed.remarks ?? null,
-    });
+    if (!isWitnessStep || parsed.decision === "REJECT") {
+      await sendLeaveStatusUpdateEmail({
+        to: step.leaveApplication.applicant.email,
+        applicantName: step.leaveApplication.applicant.name,
+        referenceCode: step.leaveApplication.referenceCode,
+        leaveType: step.leaveApplication.leaveType.name,
+        status: applicationStatus,
+        startDate: step.leaveApplication.startDate,
+        endDate: step.leaveApplication.endDate,
+        totalDays: step.leaveApplication.totalDays,
+        actionLabel: isWitnessStep
+          ? "Your Ex-India leave witness request was rejected."
+          : parsed.decision === "APPROVE"
+            ? "Your leave request status has been updated to Approved."
+            : "Your leave request status has been updated to Rejected.",
+        actionBy: actorUser?.name ?? null,
+        remarks: parsed.remarks ?? null,
+      });
+    }
   } catch (error) {
     console.error("Failed to send leave status update email", error);
   }

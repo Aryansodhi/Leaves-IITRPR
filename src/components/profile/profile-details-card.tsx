@@ -26,6 +26,13 @@ type ProfileResponse = {
     designation: string;
     employeeCode: string;
     phone: string;
+    earnedLeaveBalance?: {
+      leaveType: string;
+      totalAllocated: number;
+      totalConsumed: number;
+      totalEncashed: number;
+      available: number;
+    } | null;
   };
 };
 
@@ -315,6 +322,14 @@ export const ProfileDetailsCard = () => {
         <Row label="Department" value={profile.department} />
         <Row label="Designation" value={profile.designation} />
         <Row label="Employee Code" value={profile.employeeCode} />
+        <Row
+          label="Earned Leave Balance"
+          value={
+            profile.earnedLeaveBalance
+              ? `${profile.earnedLeaveBalance.available} days (out of ${profile.earnedLeaveBalance.totalAllocated})`
+              : "Not available"
+          }
+        />
         <div className="rounded-xl border border-slate-200/80 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>

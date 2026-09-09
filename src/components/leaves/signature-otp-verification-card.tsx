@@ -306,7 +306,7 @@ export const SignatureOtpVerificationCard = ({
       setShowSignaturePad(false);
     }
 
-    if (mode === "typed" && requireOtpForTyped) {
+    if (mode === "typed") {
       const next = typedSignature.trim();
       handleSignatureChange(next ? renderTypedSignatureToCapture(next) : null);
       return;
@@ -398,7 +398,6 @@ export const SignatureOtpVerificationCard = ({
               onChange={(event) => {
                 const next = event.target.value;
                 onTypedSignatureChange(next);
-                if (!requireOtpForTyped) return;
                 handleSignatureChange(
                   next.trim() ? renderTypedSignatureToCapture(next) : null,
                 );
