@@ -128,22 +128,28 @@ export const getAutofillProfile = async () => {
   const cached = getCachedProfile();
   if (cached) return cached;
 
-  const response = await fetch("/api/forms/autofill", {
-    method: "GET",
-    cache: "no-store",
-  });
-  const result = (await response.json()) as {
-    ok?: boolean;
-    message?: string;
-    data?: AutofillProfile;
-  };
+  try {
+    const response = await fetch("/api/forms/autofill", {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
 
-  if (!response.ok || !result.ok || !result.data) {
-    throw new Error(result.message ?? "Unable to load autofill profile.");
+    const result = (await response.json()) as {
+      ok?: boolean;
+      message?: string;
+      data?: AutofillProfile;
+    };
+
+    if (!result.ok || !result.data) {
+      return null;
+    }
+
+    setCachedProfile(result.data);
+    return result.data;
+  } catch {
+    return null;
   }
-
-  setCachedProfile(result.data);
-  return result.data;
 };
 
 export const applyAutofillToForm = async (
@@ -156,7 +162,9 @@ export const applyAutofillToForm = async (
   }
 
   const profile = await getAutofillProfile();
-  applyMany(form, buildCommonProfileMap(profile), false);
+  if (profile) {
+    applyMany(form, buildCommonProfileMap(profile), false);
+  }
 
   return profile;
 };
